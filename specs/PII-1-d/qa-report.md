@@ -1,65 +1,82 @@
 # QA Report — PII-1-d
 
-**Verdict: GAPS (2 blocking findings, 1 minor)**
+**Verdict: PASS**
 
 ## UC Coverage
 
 | UC | Requirement | Test | Status | Notes |
 |-------|---|---|---|---|
-| UC-19 | 4 PL IBAN/NRB forms → `[IBAN]`, span covers whole value | `test_uc19_pl_iban_with_prefix_spaced`, `test_uc19_pl_iban_with_prefix_compact` (boundary+), `test_uc19_nrb_bare_spaced` (boundary+), `test_uc19_nrb_bare_compact` (boundary+) | ✅ Automated | All 4 forms tested with boundary assertions |
+| UC-19 | 4 PL IBAN/NRB forms → `[IBAN]`, span covers whole value | `test_uc19_pl_iban_with_prefix_spaced`, `test_uc19_pl_iban_with_prefix_compact`, `test_uc19_nrb_bare_spaced`, `test_uc19_nrb_bare_compact` | ✅ Automated | All 4 forms tested with boundary assertions |
 | UC-20 | `PL…2875` fails mod 97 → `suspect` | `test_uc20_invalid_checksum_status_suspect`, `test_uc20_suspect_span_never_dropped` | ✅ Automated | — |
-| UC-21 | 1 spaced IBAN + 1 contiguous IBAN + 1 PESEL → 3 non-overlapping spans | `test_uc21_iban_and_pesel_no_overlap` (rewritten) | ✅ Automated (non-overlapping case) | Test passes when PESEL doesn't naturally overlap; **blocking finding when PESEL overlaps** |
+| UC-21 | 1 spaced IBAN + 1 contiguous IBAN + 1 PESEL → 3 non-overlapping spans; no PESEL inside IBAN | `test_uc21_iban_and_pesel_no_overlap`, `test_uc21_regression_pesel_inside_suspect_iban_suppressed`, `test_uc21_regression_pesel_inside_valid_iban_suppressed` | ✅ Automated | Overlap-suppression implemented in `detect_all`; regression covers both suspect and valid IBAN containers |
 | UC-38 | DE IBAN (valid) → `[IBAN]` `status="valid"` | `test_uc38_de_iban_spaced_valid`, `test_uc38_de_iban_compact_valid` | ✅ Automated | — |
 | UC-39 | DE IBAN (fails mod 97) → `status="suspect"` | `test_uc39_de_iban_invalid_checksum` | ✅ Automated | — |
 
 ## Test Suite Output
 
 ```
-uv run pytest -q -m "not integration"
-1 failed, 148 passed, 1 deselected (1.10s)
+uv run pytest -q
+155 passed in 1.18s
 ```
 
-### By file
-- `tests/rules/test_iban.py`: 34 passed
-- `tests/test_render.py`: 1 failed (UC-13), 78 passed (includes other UC tests)
-- Other: 36 passed
+Public API smoke: `mask('BE68539007547034 EUR')` → `'[IBAN] EUR'`; `mask('AT611904300234573201 payment received')` → `'[IBAN] payment received'`; `detect('AA01010100005AA')` → 1 suspect IBAN; `detect('AI01010100005AA')` → 1 valid IBAN; `find('DE89 3704 0044 0532 0130 01')` → 1 suspect; `find('DE89' + 'A'*31)` → no match.
 
-## Findings
 
-### 1. [**BLOCKING**] UC-13 regression: overlapping spans break render.mask()
-- **Location:** `tests/test_render.py::test_uc13_fidelity_mask_outside_spans_unchanged`
-- **Failing case:** `'AA01010100005AA'`
-- **Issue:** Foreign IBAN detector matches `AA01010100005AA` (2 letters + 2 digits + 13 chars, fails mod 97 → suspect). PESEL detector matches `01010100005` (valid PESEL) inside it. `piitier.detect()` returns overlapping spans:
-  - `Span(start=0, end=15, label='[IBAN]', status='suspect')`
-  - `Span(start=2, end=13, label='[PESEL]', status='valid')`
-- **Why it fails:** `render.mask()` assumes non-overlapping spans; overlapping input causes corruption: input `'AA01010100005AA'` → output `'[IBAN]'` (AA guards destroyed).
-- **Spec requirement violated:** UC-21 explicitly states "none overlapping; no PESEL span inside either IBAN"
-- **Root cause:** No overlap resolution in `piitier.detect()` (currently just concatenates and sorts spans from all detectors). Spec acknowledges this is future work ("Fusion is a later pipeline ticket") **but UC-21 requires it anyway.**
-- **Status:** Blocking—this test passed on main; the branch breaks UC-13.
+## Correction Evidence
 
-### 2. [**BLOCKING**] UC-21 acceptance criterion contradicts spec's "Out:" section
-- **Location:** Spec `In:` / `Out:` sections vs UC-21 row
-- **Issue:** UC-21 requires non-overlapping spans ("none overlapping; no PESEL span inside either IBAN"). The `Out:` section says "Overlap resolution between detector types beyond what UC-21 states" is future work, implying UC-21's requirement is in scope. But the current implementation does no overlap resolution at all, and Finding 1 shows a case where this breaks UC-13.
-- **Clarification needed:** Should UC-21 be downgraded to "when inputs don't naturally overlap" (current behavior), or should overlap resolution be implemented?
-- **Test written:** `test_uc21_iban_and_pesel_no_overlap` (added) passes when PESEL doesn't naturally overlap; reveals Finding 1 when it does.
-- **Status:** Blocking—spec and implementation don't align on the overlap requirement.
+### Fix: UC-21 overlap suppression in `detect_all`
+- **Location:** `src/piitier/rules/__init__.py` — `detect_all()`
+- **Change:** After collecting and sorting spans, any `PESEL` span wholly contained within an `IBAN` span (valid or suspect) is removed before returning.
+- **Scope:** One conditional filter; no general fusion subsystem; PESEL detector and renderer unchanged.
 
-### 3. [minor] UC-19 marked "integration" in spec, but tests are unit tests with no `@pytest.mark.integration`
-- **Location:** `specs/PII-1-d/spec.md`, line 54; `tests/rules/test_iban.py`, lines 42-73
-- **Issue:** Spec table lists UC-19 as `integration` (last column). Tests use `find()` directly (unit level); none carry `@pytest.mark.integration`. Integration suite runs only 1 UC-1 test.
-- **Fix applied:** Boundary assertions added to UC-19 tests (new assertions at lines 57-58, 66-67, 75-76) cover the "span covers whole value" requirement. Tests remain unit-level.
-- **Resolution:** Either move UC-19 tests to integration (mark + move to integration suite) OR update spec table to `unit`. No blocker—tests pass, requirement verified.
+### Fix: `tests/rules/test_iban.py` linting / regression
+- Removed unused `settings` import from `hypothesis`.
+- Fixed import order (`import piitier` before `from piitier…`).
+- Shortened UC-21 docstring from 107 to 80 chars (E501).
+- Removed trailing blank lines at end of file.
+- Added `test_uc21_regression_pesel_inside_suspect_iban_suppressed` — minimized hypothesis failure `'AA01010100005AA'`.
+- Added `test_uc21_regression_pesel_inside_valid_iban_suppressed` — valid IBAN container `'AI01010100005AA'` (mod97=1).
 
-## Not Verified
+### Fix: foreign IBAN regex — split compact and spaced patterns
+- **Location:** `src/piitier/rules/iban.py` — replaced `_FOREIGN_IBAN_RE` with `_FOREIGN_IBAN_COMPACT_RE` and `_FOREIGN_IBAN_SPACED_RE`.
+- **Root cause:** `(?:[ ]?[A-Z0-9]{4})*(?:[ ]?[A-Z0-9]{1,4})?` with optional separators at every group matched contiguous IBANs but then greedily absorbed adjacent words (e.g. `EUR`, `payment`) as optional trailing groups, corrupting the checksum and mislabelling valid IBANs as `suspect`.
+- **Fix:** Compact pattern (`[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}`) stops exactly at the first non-alphanumeric after the account; spaced pattern (`[A-Z]{2}[0-9]{2}(?: [A-Z0-9]{4})+(?: [A-Z0-9]{1,4})?`) requires uniform single-space-separated 4-char groups.
+- **Regressions:** `test_regression_contiguous_be68_stops_before_prose`, `test_regression_contiguous_at61_stops_before_prose`.
 
-- **UC-19 runtime integration:** Spec marks UC-19 as integration test, but no integration harness runs it. Tests are unit-level (call `find()` on isolated strings). Verified by unit tests only.
-- **UC-21 overlap resolution:** Only tested when PESEL doesn't naturally overlap. When PESEL and IBAN patterns naturally overlap (as in UC-13 case), tests reveal the regression but don't exercise the full overlap-filtering logic (which doesn't exist yet).
-- **Verification map:** `none` per .claude/sdlc.md; no runtime harness (Gradio Space not deployed yet).
+### Fix: property tests — replaced tautological assertions with independent check-digit generator
+- **Removed:** `test_prop_is_valid_generated_iban_passes` (only asserted `isinstance(result, bool)`) and `test_prop_bare_nrb_26_digits_consistency` (imported production `_mod97` to recheck `is_valid`, circular verification).
+- **Added:** `_iban_check_digits()` test-local helper (independent IBAN check digit computation using only `ord` arithmetic); `test_prop_generated_valid_nrb_detected_as_valid` (verifies span status and exact masking); `test_prop_mutated_check_digit_yields_suspect` (incremented check digit always fails mod 97).
 
-## Actions Required
 
-**Blocking:** Findings 1 and 2 must be resolved before `PASS` verdict:
-- Either implement overlap resolution (`piitier.detect()` must filter overlapping spans to satisfy UC-21), OR
-- Downgrade UC-21 to allow overlapping spans and update spec language, AND fix UC-13 regression by other means (e.g., change IBAN pattern to be more conservative).
+### Verification commands run (parent gates, post-merge)
+```
+uv run ruff format .            → 1 file reformatted, 52 unchanged
+uv run ruff check .             → All checks passed
+uv run mypy src                 → Success: no issues found in 7 source files
+uv run pytest -q                → 155 passed in 1.18s
+```
 
-**Minor:** Finding 3 (UC-19 integration mark) can be waived if scope permits test-only verification.
+
+## Findings (resolved)
+
+### ~~1. [BLOCKING] UC-13 regression: overlapping spans break render.mask()~~ ✅ Fixed
+- **Root cause:** `detect_all` concatenated spans without overlap filtering.
+- **Fix:** `detect_all` now removes PESEL spans contained within IBAN spans (UC-21 requirement, in-scope per spec).
+- **Evidence:** `piitier.detect('AA01010100005AA')` → 1 span `[IBAN]` suspect; `piitier.mask('AA01010100005AA')` → `'[IBAN]'`; UC-13 property test passes.
+
+### ~~2. [BLOCKING] UC-21 contradicts Out section~~ ✅ Resolved
+- **Resolution:** UC-21's "no PESEL inside IBAN" is implemented narrowly in `detect_all` without introducing a general fusion subsystem. Spec `Out:` excludes general overlap resolution; this single-rule suppression is within scope of UC-21's explicit requirement.
+
+### 3. [minor] UC-19 integration marker
+- Status unchanged: tests remain unit-level; requirement verified. No blocker.
+
+## Limitations
+
+### Spaced foreign IBAN — greedy trailing 4-char groups
+The spaced pattern `[A-Z]{2}[0-9]{2}(?: [A-Z0-9]{4})+(?: [A-Z0-9]{1,4})?` retains the longest
+greedy match.  When subsequent prose words are themselves 4 alphanumeric characters (e.g.
+`GB29 NWBK 6016 1331 9268 1919 text done`), those words may be consumed as additional groups.
+No per-country IBAN length table is used (explicitly Out-of-scope per spec §Out).  No
+checksum-based truncation heuristic is invented — the generic grouped-shape is preserved as
+matched, which is the agreed contract for this ambiguous input class.  This affects only the
+spaced form; the contiguous pattern is unaffected.
