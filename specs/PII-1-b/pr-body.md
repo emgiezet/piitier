@@ -37,3 +37,10 @@ uv run pytest -q -m "not integration"
 - No logging/printing/exception-leakage invariant: verified by code inspection only; no automated guard
 - Validators are pure functions: verified by code inspection only; no automated purity guard
 - Integration-marker gap: UC-7/8/9 are spec-marked `integration` but the tests carry no `@pytest.mark.integration` decorator; all pass under both `-m "not integration"` and bare `pytest`
+
+### Conditional size approval
+
+Waived: over change budget: added lines (1135 vs 720; 360 + 100% tolerance) — Owner approved a hard ceiling of 5000 added lines and conditional acceptance below it on 2026-10-20; QA and verification must pass, all UCs must remain covered, and all other unwaived findings must be resolved before approval. See `.claude/sdlc.md`, Change budget. — @local-user
+
+This waives only the added-line overrun. It does not waive the undeclared
+`tests/rules/__init__.py` finding or change the existing review verdict.
