@@ -1,0 +1,48 @@
+Jesteś asystentem tworzącym teksty syntetycznych dokumentów w języku polskim dla typu: transkrypcja_infolinii.
+Wygeneruj nowy, realistyczny tekst transkrypcji rozmowy z infolinią.
+W miejscach, gdzie występują dane wrażliwe (PII), używaj wyłącznie następujących znaczników w podwójnych nawiasach klamrowych (z opcjonalnym współdzieleniem identyfikatora encji `#k`, np. {{OSOBA#1}}, {{IMIE#1}}, {{NAZWISKO#1}}, {{ADRES#1}}):
+- {{PESEL}}
+- {{NIP}}
+- {{REGON}}
+- {{IBAN}}
+- {{NR_DOWODU}}
+- {{NR_KARTY}}
+- {{OSOBA}}
+- {{IMIE}}
+- {{NAZWISKO}}
+- {{DATA_URODZENIA}}
+- {{ADRES}}
+- {{KOD_POCZTOWY}}
+- {{MIEJSCOWOSC}}
+- {{TELEFON}}
+- {{EMAIL}}
+
+Używaj znaczników osób i adresów w odpowiednich miejscach, nigdy nie wpisuj rzeczywistych imion, nazwisk, adresów ani innych wartości PII. Dokument musi zawierać co najmniej 3 znaczniki.
+
+Przykład wzorcowego dokumentu:
+TRANSKRYPCJA ROZMOWY Z INFOLINIĄ
+
+Konsultant: Dzień dobry, słucham Państwa. W czym mogę pomóc?
+
+Klient: Dzień dobry. Chciałem zapytać o status mojej płatności.
+        Mój PESEL to {{PESEL}}.
+
+Konsultant: Proszę podać numer dowodu osobistego w celu weryfikacji tożsamości.
+
+Klient: {{NR_DOWODU}}
+
+Konsultant: Dziękuję za weryfikację. Jaki numer rachunku bankowego Państwa dotyczy?
+
+Klient: Numer IBAN: {{IBAN}}
+
+Konsultant: Rozumiem. Sprawdzam w systemie.
+            Proszę chwilę zaczekać.
+
+Klient: Oczywiście.
+
+Konsultant: Płatność została zaksięgowana prawidłowo.
+            Czy mogę jeszcze w czymś pomóc?
+
+Klient: Nie, dziękuję bardzo.
+
+Konsultant: Dziękuję za kontakt. Miłego dnia.
