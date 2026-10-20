@@ -9,8 +9,12 @@ paths:
 ## Environment
 
 - Python 3.12, managed with uv. The environment comes from `uv sync`; run tools as `uv run <tool>`.
-- Add dependencies with an exact pin: `uv add <package>==<version>` (`--dev` for test and lint
-  tools). Never use a floating range or `@latest`. Commit `pyproject.toml` and `uv.lock` together.
+- Add dependencies with an exact pin to the current stable release (`pip index versions <pkg>`
+  shows it): `uv add <pkg>==<version>`. Never use a floating range or `@latest`.
+- Test and lint tools (pytest, hypothesis, ruff, mypy) go in `[dependency-groups] dev` via
+  `uv add --dev <pkg>==<version>`. **Never `[project.optional-dependencies]`**: `uv sync --frozen`
+  skips extras, and `uv run` then falls back to global binaries that lack these modules.
+- Commit `pyproject.toml` and `uv.lock` together.
 - `src/` layout: the importable package is `src/piitier/`. `training/` and `eval/` are
   top-level packages that import `piitier`. `piitier` never imports from them.
 
@@ -45,11 +49,12 @@ paths:
 
 ## Verification
 
-Run from the repo root before calling a task done. A missing `pyproject.toml` means the
-project has not been bootstrapped yet: say so and stop. Do not create one ad hoc.
+Run from the repo root before calling a task done. A missing `pyproject.toml` means the project
+is not bootstrapped: stop, unless your spec creates it (PII-1-a). Do not create one ad hoc.
 
 ```bash
-uv sync
+uv sync --frozen
+test -x .venv/bin/pytest && test -x .venv/bin/mypy && test -x .venv/bin/ruff
 uv run ruff format --check .
 uv run ruff check .
 uv run mypy src

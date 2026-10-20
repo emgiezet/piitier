@@ -15,13 +15,13 @@ value, because the pipeline has nowhere to put its output otherwise.
 - **Branch naming:** `ai/<TICKET>-<slug>` for agent runs
 - **Pull request label:** `ai-sdlc`
 - **Default base ref:** `main`
-  <!-- no git remote yet; switch to origin/main once one is added -->
+  <!-- GitHub hosting: https://github.com/emgiezet/piitier (private); local main remains the queue base. -->
 - **Briefs live in:** `specs/briefs/`
 
 ## Issue tracker
 
 - **Kind:** `local`
-  <!-- no git remote; switch to github once emgiezet/piitier (or similar) exists -->
+  <!-- Keep existing local issues and PRs; GitHub hosting does not migrate the tracker. -->
 - **Tracker descriptor:** `.claude/trackers/local.md`
 - **Pipeline labels:** `review`, `changes-requested`, `merge-ready`, `blocked`
 - **Claim label:** `in-progress`

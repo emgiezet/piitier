@@ -104,3 +104,22 @@ Issue: `me=${AISDLC_USER:-local-user}; grep -q '^labels: .*in-progress' $I || { 
 PR: `me=${AISDLC_USER:-local-user}; jq -e --argjson n {n} 'select(.number==$n).labels|index("in-progress")' $P >/dev/null || { echo free; exit 0; }; jq -e --argjson n {n} --arg me "$me" 'select(.number==$n).assignees|index($me)' $P >/dev/null && { echo mine; exit 0; }; cf=.aisdlc/tracker/prs/{n}.comments.md; ts_login=$(awk 'prev ~ /^[0-9]{4}/ && /🤖 .* claimed/ {print prev} {prev=$0}' "$cf" 2>/dev/null | tail -1); login=$(echo "$ts_login" | sed 's/.*@//'); ts=$(echo "$ts_login" | grep -oE '[0-9]{4}-[0-9T:-]+Z' | head -1); [ -z "$ts" ] && { echo "other:${login:-unknown}"; exit 0; }; [ $(( $(date -u +%s) - $(date -d "$ts" +%s 2>/dev/null || echo 0) )) -gt 3600 ] && echo "stale:$login" || echo "other:$login"`
 ### release
 **unlabel-issue**/**unlabel-pr** `in-progress`, then comment `🤖 /sdlc:{command} completed: {outcome}. Lock released.`
+
+## GitHub hosting (local tracker retained)
+
+Hosting the git repository on GitHub does not migrate local issues or PRs.
+The following operations require explicit user authorization to create a repository.
+
+### hosting-auth-check
+`gh auth status --hostname github.com`
+
+### hosting-current-user
+`gh api user --jq .login`
+
+### get-repository
+`gh api repos/{owner}/{repo} --jq '{full_name,private,html_url,ssh_url,clone_url,default_branch}'`
+
+### create-private-repository
+`gh repo create {owner}/{repo} --private`
+Do not initialize, clone, or push automatically. Verify `private: true` with
+**get-repository** before adding the remote and pushing selected git branches.
