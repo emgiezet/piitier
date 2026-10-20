@@ -1,5 +1,5 @@
 ## PII-2-d — `python -m piitier.datagen build`: reproducible JSONL dataset split by template
-**QA verdict: PASS** · **Code review: APPROVED** · UC coverage: 8/8 automated · Tests: 340 → 361 (+21) · Skipped: 0
+**QA verdict: PASS** · **Code review: APPROVED** · UC coverage: 8/8 automated · Tests: 340 → 362 (+22) · Skipped: 0
 
 Written from `specs/PII-2-d/spec.md`. Review the spec's `Out:` scope first —
 that is where an unattended run is most likely to have overstepped.
@@ -56,4 +56,4 @@ production corpus, no HF upload. Those are explicitly out of scope (PII-2-e and 
 
 ### Size approval
 
-Waived: over budget: 1085 added lines > 760 (380 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA/verification passing, all UCs covered and no other unwaived findings. All changed code/test paths are declared. DatasetReview approved; zero unwaived findings. — @local-user (2026-10-20)
+Waived: over budget: 1148 added lines > 760 (380 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA/verification passing, all UCs covered and no other unwaived findings. All changed code/test paths are declared. DatasetReview APPROVED; zero unwaived findings. — @local-user (2026-10-20)

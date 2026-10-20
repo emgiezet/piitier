@@ -3,7 +3,7 @@
 > **GAPS** — Size budget exceeded; all changed files are declared in spec scope. Size finding waived under standing approval; zero unwaived findings.
 
 Base: `18c6a6b` (ai/pii-1g-2a-integration)  
-Checked: 2026-10-20
+Checked: 2026-10-21
 
 ## File classification
 
@@ -31,7 +31,7 @@ Verdict: GAPS
 
 | Measure | This branch | Budget |
 |---|---|---|
-| Added lines | 1085 | 380 +100% (hard ceiling 5000) |
+| Added lines | 1148 | 380 +100% (hard ceiling 5000) |
 | Files touched | 11 | 8 +100% |
 | Modules touched | 2 | 3 +100% |
 
@@ -42,6 +42,6 @@ excluded; deleted lines never count against the budget.
 
 ### Findings
 
-- over budget: 1085 added lines > 760 (380 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
+- over budget: 1148 added lines > 760 (380 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
 
-Waived under standing owner approval — @local-user (2026-10-20). Zero unwaived findings.
+Waived under standing owner approval — @local-user (2026-10-20). DatasetReview APPROVED; zero unwaived findings.

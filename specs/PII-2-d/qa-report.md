@@ -2,7 +2,7 @@
 
 ## Verdict: PASS
 
-Every UC has a passing test carrying its id. Full suite: 361 passed, zero skipped.
+Every UC has a passing test carrying its id. Full suite: 362 passed, zero skipped.
 
 ## UC Coverage Map
 
@@ -23,10 +23,10 @@ All UCs present: 8/8 automated. All passing.
 
 **Unit & Integration Tests:**
 ```
-uv run pytest -q: 361 passed
+uv run pytest -q: 362 passed
 ```
 
-- Baseline: 340 tests; feature branch: 361 tests (+21).
+- Baseline: 340 tests; feature branch: 362 tests (+22).
 - Skipped: 0.
 - Integration-marked tests require the wheel installed in the isolated environment; no model or network is needed.
 
@@ -48,6 +48,7 @@ uv run pytest -q: 361 passed
 - Non-empty output dir: exit 2, nothing written
 
 **Earlier isolated-wheel packaging smoke also PASS.**
+- CRLF template literal preservation: `test_crlf_template_literal_preservation` PASS; parent probe confirms 3 CRLF sequences preserved verbatim through `read_bytes` decode.
 
 ## Findings
 
