@@ -67,8 +67,8 @@ uv run pytest -q                → 155 passed in 1.18s
 ### ~~2. [BLOCKING] UC-21 contradicts Out section~~ ✅ Resolved
 - **Resolution:** UC-21's "no PESEL inside IBAN" is implemented narrowly in `detect_all` without introducing a general fusion subsystem. Spec `Out:` excludes general overlap resolution; this single-rule suppression is within scope of UC-21's explicit requirement.
 
-### 3. [minor] UC-19 integration marker
-- Status unchanged: tests remain unit-level; requirement verified. No blocker.
+### ~~3. [minor] UC-19 integration marker~~ ✅ Resolved
+- All four UC-19 tests now explicitly assert `spans[0].status == "valid"`: `test_uc19_pl_iban_with_prefix_spaced` (already present), `test_uc19_pl_iban_with_prefix_compact`, `test_uc19_nrb_bare_spaced`, `test_uc19_nrb_bare_compact`. Three assertions added; no other test or production code changed.
 
 ## Limitations
 

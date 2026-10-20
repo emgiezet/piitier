@@ -55,6 +55,7 @@ def test_uc19_pl_iban_with_prefix_compact() -> None:
     spans = find(IBAN_PL_VALID_COMPACT)
     assert len(spans) == 1
     assert spans[0].label is Label.IBAN
+    assert spans[0].status == "valid"
     assert spans[0].start == 0
     assert spans[0].end == len(IBAN_PL_VALID_COMPACT)
 
@@ -64,6 +65,7 @@ def test_uc19_nrb_bare_spaced() -> None:
     spans = find(IBAN_NRB_VALID_SPACED)
     assert len(spans) == 1
     assert spans[0].label is Label.IBAN
+    assert spans[0].status == "valid"
     assert spans[0].start == 0
     assert spans[0].end == len(IBAN_NRB_VALID_SPACED)
 
@@ -73,6 +75,7 @@ def test_uc19_nrb_bare_compact() -> None:
     spans = find(IBAN_NRB_VALID_COMPACT)
     assert len(spans) == 1
     assert spans[0].label is Label.IBAN
+    assert spans[0].status == "valid"
     assert spans[0].start == 0
     assert spans[0].end == len(IBAN_NRB_VALID_COMPACT)
 

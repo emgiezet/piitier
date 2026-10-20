@@ -52,4 +52,4 @@ Public API smoke: `mask('BE68539007547034 EUR')` → `'[IBAN] EUR'`;
 
 ## Scope
 
-Waived: over budget: 675 added lines > 480 (240 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA and verification passing, every UC covered and no other unwaived scope/correctness/security/test-integrity findings. — @local-user (2026-10-20)
+Waived: over budget: 678 added lines > 480 (240 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA and verification passing, every UC covered and no other unwaived scope/correctness/security/test-integrity findings. — @local-user (2026-10-20)
