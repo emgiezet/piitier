@@ -3,7 +3,7 @@
 > **GAPS** — Some changed files were not declared in the spec scope.
 
 Base: `main`  
-Checked: 2026-10-20T13:21:06Z
+Checked: 2026-10-20T14:01:05Z
 
 ## File classification
 
@@ -23,7 +23,7 @@ Verdict: GAPS
 
 | Measure | This branch | Budget |
 |---|---|---|
-| Added lines | 546 | 240 +100% (hard ceiling 5000) |
+| Added lines | 675 | 240 +100% (hard ceiling 5000) |
 | Files touched | 3 | 3 +100% |
 | Modules touched | 2 | 2 +100% |
 
@@ -34,4 +34,4 @@ excluded; deleted lines never count against the budget.
 
 ### Findings
 
-- over budget: 546 added lines > 480 (240 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
+- over budget: 675 added lines > 480 (240 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
