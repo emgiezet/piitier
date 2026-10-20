@@ -3,7 +3,7 @@
 > **GAPS** — Some changed files were not declared in the spec scope.
 
 Base: `main`  
-Checked: 2026-10-20T11:47:45Z
+Checked: 2026-10-20T11:59:59Z
 
 ## File classification
 
@@ -16,20 +16,19 @@ Checked: 2026-10-20T11:47:45Z
 | `tests/rules/test_pesel.py` | in scope |
 | `tests/test_api.py` | in scope |
 | `tests/test_render.py` | in scope |
-| `tests/rules/__init__.py` | **undeclared** |
 
 ## Verdict
 
 Verdict: GAPS
 
-7 in scope · 1 undeclared · 0 out of bounds
+7 in scope · 0 undeclared · 0 out of bounds
 
 ## Size
 
 | Measure | This branch | Budget |
 |---|---|---|
 | Added lines | 1135 | 360 +100% (hard ceiling 5000) |
-| Files touched | 8 | 7 +100% |
+| Files touched | 7 | 7 +100% |
 | Modules touched | 4 | 4 +100% |
 
 Modules: src/piitier,tests/rules,tests/test_api.py,tests/test_render.py
