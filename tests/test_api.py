@@ -134,3 +134,90 @@ def test_mask_multiple_pesels() -> None:
 def test_uc36_mask_separated_format_returns_placeholder(text: str) -> None:
     """UC-36: mask on each separated format returns exactly '[PESEL]'."""
     assert piitier.mask(text) == "[PESEL]"
+
+
+# ---------------------------------------------------------------------------
+# UC-14: mask() on NIP with multiple formats — public-API assertion
+# ---------------------------------------------------------------------------
+
+
+def test_uc14_mask_nip_contiguous_digits_via_api() -> None:
+    """UC-14: mask('5260001246') via public API becomes '[NIP]'; span status='valid'."""
+    text = "5260001246"
+    result = piitier.mask(text)
+    assert result == "[NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "5260001246"
+
+
+def test_uc14_mask_nip_with_dashes_via_api() -> None:
+    """UC-14: mask('526-000-12-46') via public API becomes '[NIP]'; span covers dashes."""
+    text = "526-000-12-46"
+    result = piitier.mask(text)
+    assert result == "[NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "526-000-12-46"
+
+
+def test_uc14_mask_nip_with_alternate_dashes_via_api() -> None:
+    """UC-14: mask('526-00-01-246') via public API becomes '[NIP]'; span covers dashes."""
+    text = "526-00-01-246"
+    result = piitier.mask(text)
+    assert result == "[NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "526-00-01-246"
+
+
+def test_uc14_mask_nip_with_pl_prefix_via_api() -> None:
+    """UC-14: mask('PL5260001246') via public API becomes '[NIP]'; span covers prefix."""
+    text = "PL5260001246"
+    result = piitier.mask(text)
+    assert result == "[NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "PL5260001246"
+
+
+def test_uc14_mask_nip_keyword_with_spaces_via_api() -> None:
+    """UC-14: mask('NIP: 526 000 12 46') via public API; 'NIP: ' stays, span covers prefix/separators."""
+    text = "NIP: 526 000 12 46"
+    result = piitier.mask(text)
+    assert result == "NIP: [NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "526 000 12 46"
+
+
+# ---------------------------------------------------------------------------
+# UC-16: mask() on REGON with valid checksums — public-API assertion
+# ---------------------------------------------------------------------------
+
+
+def test_uc16_mask_regon_9_with_keyword_via_api() -> None:
+    """UC-16: mask('REGON: 123456785') via public API becomes '[REGON]'; status='valid'."""
+    text = "REGON: 123456785"
+    result = piitier.mask(text)
+    assert result == "REGON: [REGON]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "123456785"
+
+
+def test_uc16_mask_regon_14_bare_via_api() -> None:
+    """UC-16: mask('12345678000012') via public API becomes '[REGON]'; status='valid'."""
+    text = "12345678000012"
+    result = piitier.mask(text)
+    assert result == "[REGON]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "12345678000012"

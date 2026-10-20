@@ -246,10 +246,8 @@ def test_regon_embedded_in_filler_text() -> None:
 
 def test_regon14_check_10_maps_to_0() -> None:
     """When sum mod 11 == 10, the check digit is 0."""
-    # Construct a 13-digit base where sum mod 11 == 10
-    # Weights: 2,4,8,5,0,9,7,3,6,1,2,4,8
-    # We need sum ≡ 10 (mod 11)
-    # Try: all 1s: 2+4+8+5+0+9+7+3+6+1+2+4+8 = 59, 59 % 11 = 4
-    # Try: 9s: 18+36+72+45+0+81+63+27+54+9+18+36+72 = 531, 531 % 11 = 3
-    # For simplicity, we rely on hypothesis to find edge cases
-    pass  # The edge case is implicitly tested via hypothesis
+    # Base 13 = "5000000000000" produces sum = 5*2 = 10, and 10 % 11 = 10
+    # Per REGON-14 checksum rules, if sum % 11 == 10, the check digit maps to 0.
+    # Append 0 to get "50000000000000" and verify it is valid
+    regon14_with_check_10_maps_to_0 = "50000000000000"
+    assert is_valid(regon14_with_check_10_maps_to_0) is True

@@ -254,11 +254,8 @@ def test_nip_embedded_in_filler_text() -> None:
 
 def test_nip_check_digit_never_10() -> None:
     """A NIP where the sum mod 11 would be 10 is invalid (never valid)."""
-    # We need to construct a 9-digit base where sum % 11 == 10
-    # For example: 1+8+49+36+15+24+35+48+63 = 279, 279 % 11 = 2
-    # Try: 2+20+49+36+15+24+35+48+63 = 292, 292 % 11 = 5
-    # Try finding by brute force or use a known case
-    # For simplicity, test that any NIP with check digit of an impossible value is invalid
-    # This is a synthetic case - we just verify the logic
-    # If somehow the sum gives 10, the NIP is considered invalid
-    pass  # The edge case is implicitly tested via hypothesis
+    # Base 9 = "900000000" produces sum = 9*6 = 54, and 54 % 11 = 10
+    # Per NIP checksum rules, if sum % 11 == 10, the NIP is invalid.
+    # Append any digit (we use 0) to get "9000000000"
+    nip_with_impossible_check = "9000000000"
+    assert is_valid(nip_with_impossible_check) is False
