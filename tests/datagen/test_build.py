@@ -538,3 +538,66 @@ def test_check_invalid_utf8_exit1_no_traceback(tmp_path: Path) -> None:
     assert "Traceback" not in result.stderr, f"traceback leaked: {result.stderr!r}"
     # Error message must reference the filename but not raw bytes
     assert "train.jsonl" in result.stderr, f"filename absent from stderr: {result.stderr!r}"
+
+
+# ---------------------------------------------------------------------------
+# Regression: CRLF template fidelity (CLAUDE.md invariant 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_crlf_template_literal_preservation(tmp_path: Path) -> None:
+    """collect_templates preserves CRLF verbatim; text outside spans is byte-identical
+    to the template source (CLAUDE.md invariant 4).
+
+    Root cause: Path.read_text() performs universal-newline translation (\\r\\n → \\n).
+    Fix: read_bytes().decode('utf-8') is used instead.
+    """
+    # Build a custom template directory with a single CRLF template.
+    tmpl_dir = tmp_path / "templates" / "polisa"
+    tmpl_dir.mkdir(parents=True)
+
+    # write_bytes guarantees no OS newline translation at write time.
+    crlf_template = "Naglowek\r\nPESEL {{PESEL}}\r\nKoniec\r\n"
+    (tmpl_dir / "crlf_01.txt").write_bytes(crlf_template.encode("utf-8"))
+
+    out = tmp_path / "output"
+    result = _run(
+        "build",
+        "--templates",
+        str(tmp_path / "templates"),
+        "--n",
+        "1",
+        "--seed",
+        "0",
+        "--out",
+        str(out),
+    )
+    assert result.returncode == 0, f"build failed: {result.stderr}"
+
+    records = _records(out)
+    assert len(records) == 1
+    rec = records[0]
+    text = rec["text"]
+    spans = rec["spans"]
+    assert spans, "Expected at least one span (PESEL)"
+
+    pesel_span = spans[0]
+    start = pesel_span["start"]
+    end = pesel_span["end"]
+
+    # Exact prefix and suffix outside the generated span must match the template source.
+    expected_prefix = "Naglowek\r\nPESEL "
+    expected_suffix = "\r\nKoniec\r\n"
+
+    assert text[:start] == expected_prefix, (
+        f"Prefix outside span not preserved (CRLF lost?): {text[:start]!r}"
+    )
+    assert text[end:] == expected_suffix, (
+        f"Suffix outside span not preserved (CRLF lost?): {text[end:]!r}"
+    )
+
+    # Offset integrity: the slice must equal the recorded span text.
+    assert text[start:end] == pesel_span["text"], (
+        f"Span offset mismatch: {text[start:end]!r} != {pesel_span['text']!r}"
+    )
