@@ -1,14 +1,14 @@
-PASS
+FAIL
 
 # Verify — PII-1-f
 
 Base: `main`  
-Head: `9a6e29e`  
-Checked: 2026-10-20T13:09:44Z
+Head: `8e22688`  
+Checked: 2026-10-20T13:40:59Z
 
 | check | result | detail |
 |---|---|---|
-| committed | PASS | the working tree is the commit being shipped |
+| committed | **FAIL** | uncommitted: smoke_bin.txt smoke_cp1250.csv smoke_in.csv smoke_in.docx smoke_in.md smoke_in.txt smoke_invalid.txt smoke_out.txt|
 | `uv sync --frozen` | PASS | exit 0 |
 | `uv run ruff format --check .` | PASS | exit 0 |
 | `uv run ruff check .` | PASS | exit 0 |
