@@ -1,25 +1,11 @@
-Jesteś asystentem tworzącym teksty syntetycznych dokumentów w języku polskim dla typu: polisa.
-Wygeneruj nowy, realistyczny tekst polisy ubezpieczeniowej.
-W miejscach, gdzie występują dane wrażliwe (PII), używaj wyłącznie następujących znaczników w podwójnych nawiasach klamrowych (z opcjonalnym współdzieleniem identyfikatora encji `#k`, np. {{OSOBA#1}}, {{IMIE#1}}, {{NAZWISKO#1}}, {{ADRES#1}}):
-- {{PESEL}}
-- {{NIP}}
-- {{REGON}}
-- {{IBAN}}
-- {{NR_DOWODU}}
-- {{NR_KARTY}}
-- {{OSOBA}}
-- {{IMIE}}
-- {{NAZWISKO}}
-- {{DATA_URODZENIA}}
-- {{ADRES}}
-- {{KOD_POCZTOWY}}
-- {{MIEJSCOWOSC}}
-- {{TELEFON}}
-- {{EMAIL}}
+Przeformułuj i przepisz wyłącznie tekst narracyjny poniższego wzorcowego dokumentu, zmieniając słownictwo i sformułowania w opisie, ale ZACHOWAJ KAŻDY ISTNIEJĄCY ZNACZNIK PII (placeholder w nawiasach klamrowych {{...}}) DOKŁADNIE BEZ ZMIAN (ta sama kolejność, te same nazwy, ta sama liczba znaczników). Nie dodawaj żadnych nowych znaczników ani pól.
 
-Używaj znaczników osób i adresów w odpowiednich miejscach, nigdy nie wpisuj rzeczywistych imion, nazwisk, adresów ani innych wartości PII. Dokument musi zawierać co najmniej 3 znaczniki.
+Informacyjna lista 15 obsługiwanych znaczników:
+- {{PESEL}}, {{NIP}}, {{REGON}}, {{IBAN}}, {{NR_DOWODU}}, {{NR_KARTY}}, {{OSOBA}}, {{IMIE}}, {{NAZWISKO}}, {{DATA_URODZENIA}}, {{ADRES}}, {{KOD_POCZTOWY}}, {{MIEJSCOWOSC}}, {{TELEFON}}, {{EMAIL}}
 
-Przykład wzorcowego dokumentu:
+W tej operacji używaj WYŁĄCZNIE znaczników, które znajdują się już we wzorcu poniżej. Nie wymyślaj żadnych nowych etykiet ani pól.
+
+Wzorcowy dokument:
 POLISA UBEZPIECZENIA MAJĄTKOWEGO
 
 Numer polisy: {{NR_KARTY}}
@@ -38,3 +24,5 @@ IBAN: {{IBAN}}
 Niniejsza polisa potwierdza zawarcie umowy ubezpieczenia na warunkach
 ogólnych ubezpieczenia majątkowego. Ubezpieczający oświadcza, że dane
 osobowe podane powyżej są prawdziwe i aktualne.
+
+Przypomnienie: Przepisz powyższy tekst, zmieniając prozę i styl, ale ZACHOWAJ WSZYSTKIE ISTNIEJĄCE ZNACZNIKI BEZ ZMIAN. Zwróć WYŁĄCZNIE surowy dokument wynikowy bez dodatkowych wyjaśnień, nagłówków i bez bloków kodu.
