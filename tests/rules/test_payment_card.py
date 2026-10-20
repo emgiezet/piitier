@@ -9,6 +9,9 @@ Acceptance criteria covered:
 
 from __future__ import annotations
 
+import pytest
+
+import piitier
 from piitier.labels import Label
 from piitier.rules.payment_card import _luhn_check, _strip_separators, find, is_valid
 
@@ -257,9 +260,6 @@ def test_various_valid_cards() -> None:
 # ---------------------------------------------------------------------------
 # UC-24: Integration test — mask() replaces payment cards with placeholder
 # ---------------------------------------------------------------------------
-
-import pytest
-import piitier
 
 
 @pytest.mark.integration

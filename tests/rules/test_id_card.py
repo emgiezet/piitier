@@ -10,12 +10,13 @@ Property tests cover is_valid() and find() with hypothesis-generated values.
 
 from __future__ import annotations
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import piitier
 from piitier.labels import Label
 from piitier.rules.id_card import _checksum_ok, _strip_separator, find, is_valid
-import piitier
 
 # ---------------------------------------------------------------------------
 # Helpers & hypothesis strategies
@@ -285,8 +286,6 @@ def test_property_cards_with_space_detected(card: str) -> None:
 # ---------------------------------------------------------------------------
 # UC-22: Integration test — mask() replaces ID cards with placeholder
 # ---------------------------------------------------------------------------
-
-import pytest
 
 
 @pytest.mark.integration

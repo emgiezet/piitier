@@ -53,7 +53,7 @@ All tests pass. No skipped tests. All UC-marked tests exercise the observable re
 ```python
 # Before (buggy)
 digit_positions = [0, 1, 2, 4, 5]  # Included check digit position 0
-check_digit = int(digits[3])       # Used position 3 instead of 0
+check_digit = int(digits[3])  # Used position 3 instead of 0
 ```
 
 The spec states: "The 4th character is the check digit" (position 4 in the full card, index 0 in the 6-digit string). The implementation was using index 3, which is position 7 of the full card — 3 positions off.
@@ -64,7 +64,7 @@ The spec states: "The 4th character is the check digit" (position 4 in the full 
 ```python
 # After (fixed)
 digit_positions = [1, 2, 3, 4, 5]  # Data digits only (skip check at 0)
-check_digit = int(digits[0])       # Check digit at position 0 ✓
+check_digit = int(digits[0])  # Check digit at position 0 ✓
 ```
 
 Test data updated:
@@ -145,3 +145,14 @@ check      = (3 + 0) % 10 = 3 ✓ (matches ABA300000)
 - **Implementation now matches spec exactly** ✓
 
 Verdict: **PASS** — Ready for /sdlc:scope-check and /sdlc:ship.
+
+## Recovery verification
+
+Moved misplaced imports to the module import blocks and formatted the existing report examples.
+No tests or assertions were removed or weakened. Final checks:
+
+- `uv run ruff check .` and `uv run ruff format --check .`: PASS.
+- `uv run mypy src`: PASS.
+- `uv run pytest -q`: 179 passed, zero skipped.
+- Public-API smoke: all declared ID-card and payment-card formats masked correctly;
+  checksum failures retained as suspect; PESEL detection unchanged.
