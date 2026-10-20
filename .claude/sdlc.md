@@ -45,8 +45,17 @@ value, because the pipeline has nowhere to put its output otherwise.
 - **Added lines:** 400
 - **Files:** 15
 - **Modules:** 3
-- **Hard ceiling:** 3000
+- **Hard ceiling:** 5000
 - **Tolerance:** 100%
+- **Conditional acceptance of added-line overruns:** The spec/repo added-line budget plus
+  tolerance is a soft review threshold. Up to and including 5000 added lines, an overrun
+  alone does not require decomposition when QA and verification pass, every UC is covered,
+  and there are no unwaived scope, correctness, security, or test-integrity findings.
+  Keep the size finding in the scope report; record its exact text as a `Waived:` line
+  in the PR body, citing this standing approval by @local-user (2026-10-20).
+  File/module budgets and out-of-bounds rules remain unchanged. More than 5000 added
+  lines is BLOCKED, without tolerance or a size waiver. Counts use the existing
+  scope-check exclusions, not total repository LOC.
 
 ## Contracts and decisions
 
