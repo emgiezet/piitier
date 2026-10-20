@@ -105,7 +105,7 @@ def collect_templates(templates_dir: Path) -> list[Template]:
         if not type_dir.is_dir():
             continue
         for path in sorted(type_dir.glob("*.txt")):
-            text = path.read_text(encoding="utf-8")
+            text = path.read_bytes().decode("utf-8")
             result.append(
                 Template(
                     template_id=path.stem,
