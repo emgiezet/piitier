@@ -10,10 +10,10 @@ function to ``_DETECTORS``.
 
 from __future__ import annotations
 
-from piitier.rules import pesel
+from piitier.rules import nip, pesel
 from piitier.spans import Span
 
-_DETECTORS = [pesel.find]
+_DETECTORS = [pesel.find, nip.find]
 
 
 def detect_all(text: str) -> list[Span]:
