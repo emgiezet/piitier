@@ -1,21 +1,18 @@
-# Scope Report — PII-2-a
+# Scope Report — Combined PII-1-g + PII-2-a
 
 ## Scope Summary
-- **In-scope files (7):**
-  1. `src/piitier/datagen/__init__.py`
-  2. `src/piitier/datagen/template.py`
-  3. `src/piitier/datagen/values.py`
-  4. `src/piitier/datagen/render.py`
-  5. `tests/datagen/__init__.py`
-  6. `tests/datagen/test_template.py`
-  7. `tests/datagen/test_render.py`
+- **In-scope files (11 excluding specs and lock):**
+  - PII-1-g (5): `src/piitier/cli.py`, `src/piitier/loaders.py`, `tests/test_loaders_pdf.py`, `pyproject.toml`, `uv.lock`
+  - PII-2-a (6 code/test): `src/piitier/datagen/__init__.py`, `src/piitier/datagen/template.py`, `src/piitier/datagen/values.py`, `src/piitier/datagen/render.py`, `tests/datagen/__init__.py`, `tests/datagen/test_template.py`, `tests/datagen/test_render.py` (total 11 files across 4 native modules: `src/piitier`, `tests`, etc.).
 - **Undeclared files:** 0
-- **Out of bounds (OOB):** 0 (Context declares all including marker)
-- **Native modules (first 2 path segments):** 2 (`src/piitier`, `tests/datagen`)
+- **Out of bounds (OOB):** 0
+- **Native modules (first 2 path segments):** 4 modules excluding specs and `uv.lock`.
 
-## Size & Budget Findings
-- **Added lines:** 998 added excluding docs.
-- **Budget limit:** 350 added lines + 100% tolerance = 700 added lines soft ceiling.
-- **Size finding:** `over budget: 998 added lines > 700 (350 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)`
-- **Status:** Retained size finding; waived under standing approval.
-- **Waiver status:** `Waived: over budget: 998 added lines > 700 (350 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)` under standing approval by @local-user (2026-10-20), conditional on QA/static/all 8 UCs and review zero unwaived findings (`DatagenFinalReview` APPROVED with zero unwaived findings).
+## Size & Budget Findings (Combined PR)
+- **Added lines:** 1288 added excluding docs and lock.
+- **Budget limit:** 400 added lines + 100% tolerance = 800 added lines soft ceiling.
+- **Combined Size Finding:** `over budget: 1288 added lines > 800 (400 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)`
+- **Component Size Finding (PII-2-a):** `over budget: 998 added lines > 700 (350 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)`
+- **Waiver Status:** 
+  - `Waived: over budget: 1288 added lines > 800 (400 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)` under standing approval by @local-user (2026-10-20), conditional on all 11 UCs covered, all gates PASS, and zero unwaived findings.
+  - `Waived: over budget: 998 added lines > 700 (350 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)` under standing approval by @local-user (2026-10-20).
