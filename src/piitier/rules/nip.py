@@ -36,22 +36,18 @@ _WEIGHTS: tuple[int, ...] = (6, 5, 7, 2, 3, 4, 5, 6, 7)
 # One separator character (space, tab, or dash) is optional between any two digits.
 _SEP = r"[ \t-]?"
 
-# Pattern for detecting NIP candidates by shape:
-# - Optional PL prefix
-# - 10 digits with optional separators between them
-# Lookbehind: not preceded by a digit (prevents matching at tail of longer runs).
-# Lookahead: not followed by an optional separator then a digit (prevents matching at head).
+# Without a keyword, only contiguous digits and the two standard dash layouts
+# are candidates. Do not extract a suffix of a longer separated digit run.
 _NIP_RE = re.compile(
-    r"(?<!\d)"
-    r"(PL)?(\d(?:" + _SEP + r"\d){9})"
+    r"(?<!\d)(?<!\d[ \t-])"
+    r"(PL)?(\d{10}|\d{3}-\d{3}-\d{2}-\d{2}|\d{3}-\d{2}-\d{2}-\d{3})"
     r"(?!" + _SEP + r"\d)",
 )
 
-# Pattern for detecting NIP after keyword (NIP or VAT ID).
-# After the keyword, any single space/tab/dash separators before the first digit.
+# A keyword permits arbitrary single separators; include an optional PL prefix.
 _NIP_KEYWORD_RE = re.compile(
-    r"(?:NIP|VAT\s+ID)(?:[ \t-]{1})"
-    r"((?:\d(?:[ \t-]?\d)*){10})",
+    r"\b(?:NIP|VAT[ \t]+ID)\b[ \t:,-]*"
+    r"((?:PL)?\d(?:[ \t-]?\d){9})(?![ \t-]?\d)",
     re.IGNORECASE,
 )
 
@@ -102,10 +98,15 @@ def find(text: str) -> list[Span]:
     # First pass: keyword-based detection (NIP or VAT ID keyword).
     for match in _NIP_KEYWORD_RE.finditer(text):
         raw = match.group(1)
-        digits = _strip_separators(raw)
+        digits = _strip_separators(raw).upper().removeprefix("PL")
 
         # Skip if not exactly 10 digits
         if len(digits) != 10 or not digits.isdigit():
+            continue
+
+        match_start = match.start(1)
+        preceding_text = text[max(0, match_start - 40) : match_start]
+        if re.search(r"\bKRS\b", preceding_text, re.IGNORECASE):
             continue
 
         checksum_valid = _checksum_ok(digits)

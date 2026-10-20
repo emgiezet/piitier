@@ -13,6 +13,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import piitier
 from piitier.labels import Label
 from piitier.rules.nip import find, is_valid
 
@@ -191,8 +192,8 @@ def test_nip_modified_check_digit_fails(check_digit: int) -> None:
     ],
 )
 def test_nip_format_variants_detected(nip_text: str) -> None:
-    """Every format variant is detected and has status='valid'."""
-    text = f"nr faktury {nip_text} na dokumencie"
+    """Every keyword-labelled format variant is detected and has status='valid'."""
+    text = f"NIP: {nip_text} na dokumencie"
     spans = find(text)
     assert len(spans) == 1
     assert spans[0].status == "valid"
@@ -259,3 +260,85 @@ def test_nip_check_digit_never_10() -> None:
     # Append any digit (we use 0) to get "9000000000"
     nip_with_impossible_check = "9000000000"
     assert is_valid(nip_with_impossible_check) is False
+
+
+# ---------------------------------------------------------------------------
+# UC-14: mask() on NIP with multiple formats — public-API assertion
+# ---------------------------------------------------------------------------
+
+
+def test_uc14_mask_nip_contiguous_digits_via_api() -> None:
+    """UC-14: mask('5260001246') via public API becomes '[NIP]'; span status='valid'."""
+    text = "5260001246"
+    result = piitier.mask(text)
+    assert result == "[NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "5260001246"
+
+
+def test_uc14_mask_nip_with_dashes_via_api() -> None:
+    """UC-14: mask('526-000-12-46') via public API becomes '[NIP]'; span covers dashes."""
+    text = "526-000-12-46"
+    result = piitier.mask(text)
+    assert result == "[NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "526-000-12-46"
+
+
+def test_uc14_mask_nip_with_alternate_dashes_via_api() -> None:
+    """UC-14: mask('526-00-01-246') via public API becomes '[NIP]'; span covers dashes."""
+    text = "526-00-01-246"
+    result = piitier.mask(text)
+    assert result == "[NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "526-00-01-246"
+
+
+def test_uc14_mask_nip_with_pl_prefix_via_api() -> None:
+    """UC-14: mask('PL5260001246') via public API becomes '[NIP]'; span covers prefix."""
+    text = "PL5260001246"
+    result = piitier.mask(text)
+    assert result == "[NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "PL5260001246"
+
+
+def test_uc14_mask_nip_keyword_with_spaces_via_api() -> None:
+    """UC-14: preserve the NIP keyword and mask the entire space-separated value."""
+    text = "NIP: 526 000 12 46"
+    result = piitier.mask(text)
+    assert result == "NIP: [NIP]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "526 000 12 46"
+
+
+@pytest.mark.parametrize("text", ["526 000 12 46", "526\t000\t12\t46", "5260-001246"])
+def test_uc14_arbitrary_separators_require_keyword(text: str) -> None:
+    assert find(text) == []
+
+
+@pytest.mark.parametrize("keyword", ["NIP", "nip", "VAT ID", "vat id"])
+def test_uc14_keyword_prefix_is_masked_once(keyword: str) -> None:
+    text = f"{keyword}: PL526 000 12 46"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert text[spans[0].start : spans[0].end] == "PL526 000 12 46"
+    assert piitier.mask(text) == f"{keyword}: [NIP]"
+
+
+def test_uc18_krs_exclusion_also_applies_after_nip_keyword() -> None:
+    assert find("KRS NIP 0000123456") == []
+
+
+def test_uc14_does_not_extract_suffix_from_longer_separated_run() -> None:
+    assert find("9 5260001246") == []

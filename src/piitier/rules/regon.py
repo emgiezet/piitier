@@ -6,7 +6,7 @@ Two variants: 9-digit (REGON-9) and 14-digit (REGON-14).
 Checksum
 --------
 REGON-9: Weights ``(8, 9, 2, 3, 4, 5, 6, 7)`` are applied to the first 8 digits.
-         Check digit = sum % 11.
+         Check digit = sum % 11, where 10 → 0.
 
 REGON-14: Weights ``(2, 4, 8, 5, 0, 9, 7, 3, 6, 1, 2, 4, 8)`` are applied to the first 13 digits.
           Check digit = sum % 11, where 10 → 0.
@@ -38,7 +38,7 @@ _REGON_14_RE = re.compile(r"(?<!\d)(\d{14})(?!\d)")
 # The keyword can be followed by optional separators (space, tab, dash, colon, etc.).
 # We accept any non-digit characters as separators.
 _REGON_9_KEYWORD_RE = re.compile(
-    r"(?:REGON)[\s:,-]*(\d{9})",
+    r"\bREGON\b[\s:,-]*(\d{9})(?!\d)",
     re.IGNORECASE,
 )
 
@@ -53,6 +53,7 @@ def _checksum_ok_9(digits: str) -> bool:
         return False
     total = sum(w * int(d) for w, d in zip(_WEIGHTS_9, digits[:8]))
     check = total % 11
+    check = 0 if check == 10 else check
     return check == int(digits[8])
 
 

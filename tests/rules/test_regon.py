@@ -13,6 +13,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import piitier
 from piitier.labels import Label
 from piitier.rules.regon import find, is_valid
 
@@ -27,7 +28,7 @@ _WEIGHTS_14 = (2, 4, 8, 5, 0, 9, 7, 3, 6, 1, 2, 4, 8)
 def _compute_check_digit_9(base8: str) -> str:
     """Compute the REGON-9 check digit for an 8-digit base string."""
     total = sum(w * int(d) for w, d in zip(_WEIGHTS_9, base8))
-    return str(total % 11)
+    return str((total % 11) % 10)
 
 
 def _compute_check_digit_14(base13: str) -> str:
@@ -138,9 +139,7 @@ def test_regon9_valid_numbers_pass_validator(base8: int) -> None:
     base_str = str(base8).zfill(8)
     total = sum(w * int(d) for w, d in zip(_WEIGHTS_9, base_str))
     check = total % 11
-    if check == 10:
-        # Skip since 10 is never valid for REGON-9 (no 10 → 0 mapping like REGON-14)
-        return
+    check = 0 if check == 10 else check
     regon9 = base_str + str(check)
     assert is_valid(regon9) is True
 
@@ -251,3 +250,51 @@ def test_regon14_check_10_maps_to_0() -> None:
     # Append 0 to get "50000000000000" and verify it is valid
     regon14_with_check_10_maps_to_0 = "50000000000000"
     assert is_valid(regon14_with_check_10_maps_to_0) is True
+
+
+# ---------------------------------------------------------------------------
+# UC-16: mask() on REGON with valid checksums — public-API assertion
+# ---------------------------------------------------------------------------
+
+
+def test_uc16_mask_regon_9_with_keyword_via_api() -> None:
+    """UC-16: mask('REGON: 123456785') via public API becomes '[REGON]'; status='valid'."""
+    text = "REGON: 123456785"
+    result = piitier.mask(text)
+    assert result == "REGON: [REGON]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "123456785"
+
+
+def test_uc16_mask_regon_14_bare_via_api() -> None:
+    """UC-16: mask('12345678000012') via public API becomes '[REGON]'; status='valid'."""
+    text = "12345678000012"
+    result = piitier.mask(text)
+    assert result == "[REGON]"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert text[spans[0].start : spans[0].end] == "12345678000012"
+
+
+def test_uc16_regon9_remainder_ten_maps_to_zero() -> None:
+    assert is_valid("400000000")
+    spans = piitier.detect("REGON: 400000000")
+    assert len(spans) == 1
+    assert spans[0].status == "valid"
+    assert piitier.mask("REGON: 400000000") == "REGON: [REGON]"
+
+
+def test_uc16_keyword_regon14_is_not_also_regon9() -> None:
+    text = "REGON: 12345678000012"
+    spans = piitier.detect(text)
+    assert len(spans) == 1
+    assert text[spans[0].start : spans[0].end] == "12345678000012"
+    assert piitier.mask(text) == "REGON: [REGON]"
+
+
+@pytest.mark.parametrize("text", ["REGON 1234567850", "REGON 123456780000120"])
+def test_uc18_regon9_is_not_prefix_of_longer_number(text: str) -> None:
+    assert find(text) == []
