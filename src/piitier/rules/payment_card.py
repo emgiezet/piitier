@@ -58,7 +58,7 @@ def _luhn_check(digits: str) -> bool:
 
 
 def is_valid(value: str) -> bool:
-    """Return ``True`` iff *value* is a 16-digit card or passes Luhn validation.
+    """Return ``True`` iff *value* passes Luhn validation.
 
     Pure function: no I/O, no globals, no logging.
 
@@ -66,16 +66,9 @@ def is_valid(value: str) -> bool:
         value: Card number string with optional spaces/dashes between digit groups.
     """
     clean = _strip_separators(value)
-
-    # 16 digits: always valid by shape
-    if len(clean) == 16 and clean.isdigit():
-        return True
-
-    # 13-15 or 17-19 digits: valid only if Luhn passes
-    if len(clean) in range(13, 16) or len(clean) in range(17, 20):
-        return _luhn_check(clean)
-
-    return False
+    if len(clean) not in range(13, 20):
+        return False
+    return _luhn_check(clean)
 
 
 def find(text: str) -> list[Span]:
@@ -100,8 +93,9 @@ def find(text: str) -> list[Span]:
         if len(clean) != 16 or not clean.isdigit():
             continue
 
-        # 16-digit cards are valid by shape
-        status = "valid"
+        # 16-digit cards are candidates by shape; checksum decides status
+        luhn_valid = _luhn_check(clean)
+        status = "valid" if luhn_valid else "suspect"
 
         span_key = (match.start(), match.end())
         if span_key not in seen_ranges:
@@ -122,16 +116,16 @@ def find(text: str) -> list[Span]:
         raw = match.group(1)
         clean = _strip_separators(raw)
 
-        # Only consider runs that are 13-15 or 17-19 digits
+        # Only consider runs that are 13-15 or 17-19 digits and pass Luhn
         if len(clean) not in range(13, 16) and len(clean) not in range(17, 20):
             continue
         if not clean.isdigit():
             continue
+        if not _luhn_check(clean):
+            continue
 
         span_key = (match.start(), match.end())
         if span_key not in seen_ranges:
-            luhn_valid = _luhn_check(clean)
-            status = "valid" if luhn_valid else "suspect"
             seen_ranges.add(span_key)
             spans.append(
                 Span(
@@ -140,7 +134,7 @@ def find(text: str) -> list[Span]:
                     label=Label.NR_KARTY,
                     source="rule",
                     score=1.0,
-                    status=status,
+                    status="valid",
                 )
             )
 
