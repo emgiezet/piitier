@@ -1,3 +1,6 @@
 .aisdlc/
 data/
 training/out/
+__pycache__/
+*.egg-info/
+.hypothesis/

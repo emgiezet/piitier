@@ -30,7 +30,7 @@ Out:
 - The CLI and file loaders, which are PII-1-f.
 - Unicode normalisation, NER, fusion, coreference/numbering, and the risk-weight column in the
   taxonomy (that last one is a later evaluation ticket).
-- Art. 9/10 "other" categories and quasi-identifiers as labels. They appear in `docs/TAXONOMY.md`
+- Art. 9/10 "other" categories and quasi-identifiers as labels. They appear in the taxonomy doc
   under a `Roadmap` heading and get no enum member.
 - CI configuration, pre-commit, publishing to PyPI or the Hugging Face Hub.
 
