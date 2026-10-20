@@ -3,7 +3,7 @@
 > **GAPS** — Size budget exceeded; all changed files are declared in spec scope. Size finding waived under standing approval; zero unwaived findings.
 
 Base: `18c6a6b` (ai/pii-1g-2a-integration)  
-Checked: 2026-10-20
+Checked: 2026-10-21
 
 ## File classification
 
@@ -31,7 +31,7 @@ Verdict: GAPS
 
 | Measure | This branch | Budget |
 |---|---|---|
-| Added lines | 1085 | 380 +100% (hard ceiling 5000) |
+| Added lines | 1148 | 380 +100% (hard ceiling 5000) |
 | Files touched | 11 | 8 +100% |
 | Modules touched | 2 | 3 +100% |
 
@@ -42,36 +42,35 @@ excluded; deleted lines never count against the budget.
 
 ### Findings
 
-- over budget: 1085 added lines > 760 (380 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
+- over budget: 1148 added lines > 760 (380 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
 
-Waived under standing owner approval — @local-user (2026-10-20). Zero unwaived findings.
+Waived under standing owner approval — @local-user (2026-10-20). DatasetReview APPROVED; zero unwaived findings.
 
 ---
 
 ## Combined scope — PII-2-b + PII-2-d
 
 Base: `18c6a6b` (ai/pii-1g-2a-integration, PR#2 open — this PR stacks onto that branch, not main)  
-Checked: 2026-10-20
+Checked: 2026-10-21
 
 ### Combined size
 
 | Measure | This PR | Budget |
 |---|---|---|
-| Added lines | 1851 | 400 +100% (hard ceiling 5000) |
-| Files touched | 16 | — |
-| Modules touched | 3 | — |
+| Added lines | 1930 | 400 +100% (hard ceiling 5000) |
+| Files touched | 16 | 15 +100% |
+| Modules touched | 3 | 3 +100% |
 
 Modules: src/piitier,tests/datagen,pyproject.toml  
 Generated output, vendored trees, lock files and the specs directory are excluded; deleted lines never count against the budget.
 
 ### Combined findings
 
-- over budget: 1851 added lines > 800 (400 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
+- over budget: 1930 added lines > 800 (400 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
 
-Component findings (each carrying a standing waiver):
+Component findings:
 
-- PII-2-b: over budget: 766 added lines > 660 (330 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
-- PII-2-d: over budget: 1085 added lines > 760 (380 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
+- PII-2-b: over budget: 782 added lines > 660 (330 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
+- PII-2-d: over budget: 1148 added lines > 760 (380 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing)
 
-Waived under standing owner approval — @local-user (2026-10-20). Conditional until PeopleReview closes.  
-DatasetReview: APPROVED. PeopleReview: PENDING. Zero unwaived findings once PeopleReview approves.
+All three findings waived under standing owner approval — @local-user (2026-10-20). All conditions met: QA/static PASS, all UCs covered, combined total below 5000 hard limit; files/modules within 100% tolerance without separate waivers. Both reviews APPROVED; zero unwaived findings.
