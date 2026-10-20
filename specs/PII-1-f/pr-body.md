@@ -1,5 +1,5 @@
 ## PII-1-f — `piitier mask <file>`: CLI for TXT, Markdown and CSV
-**QA verdict: PASS** · UC coverage: 8/8 automated · Tests: 140 → 148 · Skipped: 0
+**QA verdict: PASS** · UC coverage: 8/8 automated · Tests: 118 → 140 · Skipped: 0
 
 🤖 Written by an agent from `specs/PII-1-f/spec.md`. Review the spec's `Out:` scope first —
 that is where an unattended run is most likely to have overstepped.
@@ -19,8 +19,8 @@ that is where an unattended run is most likely to have overstepped.
 
 ### How to verify
 ```bash
-uv run pytest -q -m "not integration"              # 140 passing
-uv run pytest -q                                    # 148 passing (integration tests included)
+uv run pytest -q -m "not integration"                # 138 passed, 2 deselected
+uv run pytest -q                                    # 140 passed, zero skipped
 uv run ruff format --check . && uv run ruff check . # no lint issues
 uv run mypy src                                     # no type issues
 ```
@@ -32,12 +32,16 @@ Smoke test scenario:
 - `-o out.txt` writes to file; `-o test.txt` refuses with exit 2
 
 ### Review here first
-- `src/piitier/cli.py` (39 lines): entry point for the `piitier mask <file>` command; encoding detection and loader dispatch
-- `src/piitier/loaders.py` (68 lines): registry pattern for file type handlers; TXT/Markdown/CSV loaders share the text→mask→text pipeline
-- `tests/test_cli.py`: 10 tests including 8 UC tests plus 2 fixtures; coverage of edge cases (missing files, unsupported types, encoding errors)
+- `src/piitier/cli.py:43`: specific decode errors must precede the general ValueError handler.
+- `src/piitier/loaders.py:16`: encoding fallback and byte-preserving text loading.
+- `tests/test_cli.py:201`: exact stderr and privacy regression for undecodable input.
 
 ### Not covered
-- Per-column CSV rules (deferred to PII-1-h)
+- Per-column CSV rules (out of scope)
 - PDF support (deferred to PII-1-g)
 - Directory/batch mode (out of scope)
 
+
+### Conditional size approval
+
+Waived: over budget: 610 added lines > 520 (260 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA/verification passing, all UCs covered and no other unwaived findings. All changed code/test paths are declared. — @local-user

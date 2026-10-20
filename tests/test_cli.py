@@ -206,7 +206,7 @@ def test_uc35_invalid_utf8_undefined_cp1250(tmp_path: Path) -> None:
     exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(txt_path)])
 
     assert exit_code == 2
-    assert b"cannot decode:" in stderr_bytes
+    assert stderr_bytes == f"cannot decode: {txt_path}\n".encode("utf-8")
     assert stdout_bytes == b""
     # Verify PESEL is not in stderr (privacy: no PII in errors)
     assert b"90051512340" not in stderr_bytes

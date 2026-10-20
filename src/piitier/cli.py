@@ -46,14 +46,14 @@ def mask_file(input_path: Path, output_path: Path | None) -> int:
     except FileNotFoundError:
         print(f"not found: {input_path}", file=sys.stderr)
         return 2
-    except ValueError as e:
-        # Binary file or other file-related error
-        print(str(e), file=sys.stderr)
-        return 2
     except UnicodeDecodeError as e:
         # Decoding failed (both UTF-8 and cp1250)
         # Extract the error message from the exception
         print(e.reason, file=sys.stderr)
+        return 2
+    except ValueError as e:
+        # Binary file or other file-related error
+        print(str(e), file=sys.stderr)
         return 2
 
     # Mask the content
