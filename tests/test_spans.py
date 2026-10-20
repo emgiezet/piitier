@@ -75,6 +75,33 @@ def test_uc5_error_message_contains_offsets() -> None:
     assert "3" in msg
 
 
+def test_UC_5_error_message_offsets_only_never_text() -> None:
+    """UC-5 (added): ValueError message carries offsets only, never field text.
+
+    Spec requirement: "the message carries offsets only, never text".
+    Verifies that other field values (source, status, score, label name) do NOT
+    appear in the offset-error message — only start/end integer values are present.
+    """
+    sentinel = "SENTINEL_PII_TEXT_XYZZY_42"
+    with pytest.raises(ValueError) as exc_info:
+        Span(
+            start=5,
+            end=3,
+            label=_LABEL,
+            source=sentinel,
+            score=0.99,
+            status="valid",
+        )
+    msg = str(exc_info.value)
+    # Must contain the offset values
+    assert "5" in msg
+    assert "3" in msg
+    # Must NOT contain any other field value — no text leaks into the error
+    assert sentinel not in msg, f"source field value leaked into ValueError message: {msg!r}"
+    assert "0.99" not in msg, f"score field value leaked into ValueError message: {msg!r}"
+    assert "PESEL" not in msg, f"label name leaked into ValueError message: {msg!r}"
+
+
 def test_uc5_negative_end_raises() -> None:
     """Negative end also violates start < end constraint."""
     with pytest.raises(ValueError):
