@@ -77,9 +77,7 @@ def run_piitier_mask(args: list[str]) -> tuple[int, bytes, bytes]:
 
 def test_uc28_mask_txt_stdout(tmp_txt_pesel: Path) -> None:
     """UC-28: piitier mask in.txt outputs masked text to stdout."""
-    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
-        ["mask", str(tmp_txt_pesel)]
-    )
+    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(tmp_txt_pesel)])
 
     assert exit_code == 0
     assert stdout_bytes == b"PESEL: [PESEL], tel."
@@ -94,9 +92,7 @@ def test_uc28_mask_txt_stdout(tmp_txt_pesel: Path) -> None:
 def test_uc29_mask_md_preserves_structure(tmp_md_pesel: Path) -> None:
     """UC-29: piitier mask in.md preserves Markdown byte-for-byte outside spans."""
     original = tmp_md_pesel.read_text(encoding="utf-8")
-    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
-        ["mask", str(tmp_md_pesel)]
-    )
+    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(tmp_md_pesel)])
 
     assert exit_code == 0
     assert stderr_bytes == b""
@@ -124,16 +120,12 @@ def test_uc29_mask_md_preserves_structure(tmp_md_pesel: Path) -> None:
 
 def test_uc30_mask_csv_preserves_format(tmp_csv_pesel: Path) -> None:
     """UC-30: piitier mask in.csv preserves row count, delimiter, CRLF."""
-    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
-        ["mask", str(tmp_csv_pesel)]
-    )
+    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(tmp_csv_pesel)])
 
     assert exit_code == 0
     assert stderr_bytes == b""
     # Verify line endings are CRLF
-    assert stdout_bytes == (
-        b"Name;ID;Amount\r\nJohn;[PESEL];1000\r\nJane;[PESEL];2000\r\n"
-    )
+    assert stdout_bytes == (b"Name;ID;Amount\r\nJohn;[PESEL];1000\r\nJane;[PESEL];2000\r\n")
     # Verify row count (split by CRLF)
     lines = stdout_bytes.split(b"\r\n")
     assert len(lines) == 4  # 3 rows + empty after final CRLF
@@ -170,10 +162,7 @@ def test_uc33_refuse_overwrite_input(tmp_txt_pesel: Path) -> None:
     )
 
     assert exit_code == 2
-    assert (
-        stderr_bytes.decode("utf-8")
-        == f"refusing to overwrite input: {tmp_txt_pesel}\n"
-    )
+    assert stderr_bytes.decode("utf-8") == f"refusing to overwrite input: {tmp_txt_pesel}\n"
     assert stdout_bytes == b""
     assert tmp_txt_pesel.read_text(encoding="utf-8") == original_content
 
@@ -187,9 +176,7 @@ def test_uc34_unsupported_file_type(tmp_path: Path) -> None:
     """UC-34: piitier mask in.docx exits 2, stderr 'unsupported file type'."""
     docx_path = tmp_path / "in.docx"
     docx_path.write_bytes(b"fake docx content")
-    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
-        ["mask", str(docx_path)]
-    )
+    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(docx_path)])
 
     assert exit_code == 2
     assert b"unsupported file type: .docx" in stderr_bytes
@@ -199,9 +186,7 @@ def test_uc34_unsupported_file_type(tmp_path: Path) -> None:
 def test_uc34_missing_file(tmp_path: Path) -> None:
     """UC-34: piitier mask missing.txt exits 2, stderr 'not found'."""
     missing_path = tmp_path / "missing.txt"
-    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
-        ["mask", str(missing_path)]
-    )
+    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(missing_path)])
 
     assert exit_code == 2
     assert b"not found:" in stderr_bytes
@@ -218,9 +203,7 @@ def test_uc35_invalid_utf8_undefined_cp1250(tmp_path: Path) -> None:
     txt_path = tmp_path / "invalid.txt"
     # PESEL followed by bytes invalid in both UTF-8 and cp1250
     txt_path.write_bytes(b"90051512340\x81\x98")
-    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
-        ["mask", str(txt_path)]
-    )
+    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(txt_path)])
 
     assert exit_code == 2
     assert b"cannot decode:" in stderr_bytes
@@ -237,9 +220,7 @@ def test_uc35_invalid_utf8_undefined_cp1250(tmp_path: Path) -> None:
 @pytest.mark.integration
 def test_uc40_mask_cp1250_csv(tmp_csv_cp1250: Path) -> None:
     """UC-40: piitier mask on cp1250 .csv outputs UTF-8 'Łódź;[PESEL]'."""
-    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
-        ["mask", str(tmp_csv_cp1250)]
-    )
+    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(tmp_csv_cp1250)])
 
     assert exit_code == 0
     assert stderr_bytes == b""
@@ -255,9 +236,7 @@ def test_uc41_binary_file_with_nul_byte(tmp_path: Path) -> None:
     """UC-41: piitier mask on file with NUL in first 4096 bytes exits 2."""
     bin_path = tmp_path / "binary.txt"
     bin_path.write_bytes(b"some text\x0089051512340 more text")
-    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
-        ["mask", str(bin_path)]
-    )
+    exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(["mask", str(bin_path)])
 
     assert exit_code == 2
     assert b"binary content:" in stderr_bytes
