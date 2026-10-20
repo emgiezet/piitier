@@ -1,12 +1,14 @@
 """Integration tests for the piitier public API — detect() and mask().
 
 Covers the integration-level acceptance criteria from PII-1-b:
-  UC-7, UC-8, UC-9.
+  UC-7, UC-8, UC-9, UC-36 (mask on separated formats).
 
 All PESEL numbers are synthetic, computed for this spec.
 """
 
 from __future__ import annotations
+
+import pytest
 
 import piitier
 from piitier.labels import Label
@@ -114,3 +116,21 @@ def test_mask_multiple_pesels() -> None:
     text = "P1=90051512340 P2=05250112343"
     result = piitier.mask(text)
     assert result == "P1=[PESEL] P2=[PESEL]"
+
+
+# ---------------------------------------------------------------------------
+# UC-36: mask() on separated-format PESELs — public-API assertion
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "900 515 123 40",
+        "9005-1512-340",
+        "90051 512340",
+    ],
+)
+def test_uc36_mask_separated_format_returns_placeholder(text: str) -> None:
+    """UC-36: mask on each separated format returns exactly '[PESEL]'."""
+    assert piitier.mask(text) == "[PESEL]"
