@@ -16,7 +16,6 @@ from hypothesis import strategies as st
 from piitier.labels import Label
 from piitier.rules.nip import find, is_valid
 
-
 # ---------------------------------------------------------------------------
 # Helpers & hypothesis strategies
 # ---------------------------------------------------------------------------
@@ -117,7 +116,7 @@ def test_uc14_mask_nip_keyword_with_spaces() -> None:
 
 
 def test_uc15_mask_nip_suspect_bad_check() -> None:
-    """mask on 'nr zamówienia 5260001247' (10 digits, wrong check digit, no keyword) → 'nr zamówienia [NIP]'; span status='suspect'."""
+    """mask on 'nr zamówienia 5260001247' (wrong check); 'nr zamówienia [NIP]'; status='suspect'."""
     text = "nr zamówienia 5260001247"
     spans = find(text)
     assert len(spans) == 1
@@ -166,7 +165,7 @@ def test_nip_modified_check_digit_fails(check_digit: int) -> None:
     nip = "5260001246"
     # Replace the last digit with something different
     original_check = int(nip[9])
-    modified_check = (check_digit % 10)
+    modified_check = check_digit % 10
     if modified_check == original_check:
         # Skip if we accidentally kept it the same
         return
@@ -260,7 +259,6 @@ def test_nip_check_digit_never_10() -> None:
     # Try: 2+20+49+36+15+24+35+48+63 = 292, 292 % 11 = 5
     # Try finding by brute force or use a known case
     # For simplicity, test that any NIP with check digit of an impossible value is invalid
-    base9 = "123456789"
     # This is a synthetic case - we just verify the logic
     # If somehow the sum gives 10, the NIP is considered invalid
     pass  # The edge case is implicitly tested via hypothesis

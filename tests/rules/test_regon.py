@@ -16,7 +16,6 @@ from hypothesis import strategies as st
 from piitier.labels import Label
 from piitier.rules.regon import find, is_valid
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -200,7 +199,7 @@ def test_regon9_matches_only_with_keyword() -> None:
     text_no_keyword = "Numer 123456785 na stronie"
     spans_no_keyword = find(text_no_keyword)
     assert len(spans_no_keyword) == 0
-    
+
     # Then verify it IS detected with keyword
     text_with_keyword = "REGON 123456785 na stronie"
     spans_with_keyword = find(text_with_keyword)

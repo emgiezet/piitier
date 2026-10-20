@@ -128,7 +128,7 @@ def find(text: str) -> list[Span]:
         # group(1) is the optional PL prefix (included in the span)
         # group(2) is the 10-digit part with possible separators
         digits_with_seps = match.group(2)  # The 10-digit part with possible separators
-        
+
         # Strip separators only from the digit part, not the prefix
         digits = _strip_separators(digits_with_seps)
 
