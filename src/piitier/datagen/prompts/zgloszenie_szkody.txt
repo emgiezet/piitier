@@ -1,0 +1,41 @@
+Jesteś asystentem tworzącym teksty syntetycznych dokumentów w języku polskim dla typu: zgloszenie_szkody.
+Wygeneruj nowy, realistyczny tekst zgłoszenia szkody.
+W miejscach, gdzie występują dane wrażliwe (PII), używaj wyłącznie następujących znaczników w podwójnych nawiasach klamrowych (z opcjonalnym współdzieleniem identyfikatora encji `#k`, np. {{OSOBA#1}}, {{IMIE#1}}, {{NAZWISKO#1}}, {{ADRES#1}}):
+- {{PESEL}}
+- {{NIP}}
+- {{REGON}}
+- {{IBAN}}
+- {{NR_DOWODU}}
+- {{NR_KARTY}}
+- {{OSOBA}}
+- {{IMIE}}
+- {{NAZWISKO}}
+- {{DATA_URODZENIA}}
+- {{ADRES}}
+- {{KOD_POCZTOWY}}
+- {{MIEJSCOWOSC}}
+- {{TELEFON}}
+- {{EMAIL}}
+
+Używaj znaczników osób i adresów w odpowiednich miejscach, nigdy nie wpisuj rzeczywistych imion, nazwisk, adresów ani innych wartości PII. Dokument musi zawierać co najmniej 3 znaczniki.
+
+Przykład wzorcowego dokumentu:
+ZGŁOSZENIE SZKODY
+
+DANE ZGŁASZAJĄCEGO
+PESEL: {{PESEL}}
+Dowód osobisty: {{NR_DOWODU}}
+Karta płatnicza: {{NR_KARTY}}
+
+DANE SPRAWCY / FIRMY
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+WYPŁATA ODSZKODOWANIA
+Proszę o przelew odszkodowania na rachunek bankowy:
+{{IBAN}}
+
+Opis zdarzenia:
+Zgłaszam szkodę powstałą w wyniku zdarzenia. Wszystkie dane podane
+w formularzu są zgodne z prawdą. Wyrażam zgodę na przetwarzanie
+danych osobowych w celu rozpatrzenia niniejszego zgłoszenia.

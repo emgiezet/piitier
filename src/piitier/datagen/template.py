@@ -41,6 +41,11 @@ class Placeholder:
 
 _VALID_CASES = frozenset({"nom", "gen", "dat", "acc", "inst", "loc", "voc"})
 
+# Labels for which grammatical case inflection is supported (PII-2-c).
+# parse() enforces this: any other label paired with a case raises TemplateError.
+# TemplateError.reason=='Unknown label' is left untouched for PII-2-e compatibility.
+_INFLECTABLE_LABELS: frozenset[Label] = frozenset({Label.OSOBA, Label.IMIE, Label.NAZWISKO})
+
 
 def parse(template: Template) -> list[str | Placeholder]:
     """Parse template text into literal string segments and Placeholder objects."""
@@ -74,8 +79,7 @@ def parse(template: Template) -> list[str | Placeholder]:
             label_part = parts[0]
             case_part = parts[1]
             if case_part not in _VALID_CASES:
-                raise TemplateError(template.template_id, start, "Invalid case")
-
+                raise TemplateError(template.template_id, start, f"Invalid case {case_part!r}")
         if "#" in label_part:
             parts = label_part.split("#", 1)
             label_part = parts[0]
@@ -90,6 +94,16 @@ def parse(template: Template) -> list[str | Placeholder]:
             label = Label[label_part]
         except KeyError:
             raise TemplateError(template.template_id, start, "Unknown label")
+
+        # PII-2-c: case is only allowed for inflectable labels (OSOBA, IMIE, NAZWISKO).
+        # Validated here (after label resolution) so that parse() callers — including
+        # PII-2-e completion validation — also reject e.g. {{PESEL#1:gen}}.
+        if case_part is not None and label not in _INFLECTABLE_LABELS:
+            raise TemplateError(
+                template.template_id,
+                start,
+                f"Case not allowed for {label.name}",
+            )
 
         result.append(Placeholder(label=label, entity=entity_part, case=case_part, offset=start))
         i = end + 2

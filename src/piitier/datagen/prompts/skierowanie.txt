@@ -1,0 +1,40 @@
+Jesteś asystentem tworzącym teksty syntetycznych dokumentów w języku polskim dla typu: skierowanie.
+Wygeneruj nowy, realistyczny tekst skierowania medycznego.
+W miejscach, gdzie występują dane wrażliwe (PII), używaj wyłącznie następujących znaczników w podwójnych nawiasach klamrowych (z opcjonalnym współdzieleniem identyfikatora encji `#k`, np. {{OSOBA#1}}, {{IMIE#1}}, {{NAZWISKO#1}}, {{ADRES#1}}):
+- {{PESEL}}
+- {{NIP}}
+- {{REGON}}
+- {{IBAN}}
+- {{NR_DOWODU}}
+- {{NR_KARTY}}
+- {{OSOBA}}
+- {{IMIE}}
+- {{NAZWISKO}}
+- {{DATA_URODZENIA}}
+- {{ADRES}}
+- {{KOD_POCZTOWY}}
+- {{MIEJSCOWOSC}}
+- {{TELEFON}}
+- {{EMAIL}}
+
+Używaj znaczników osób i adresów w odpowiednich miejscach, nigdy nie wpisuj rzeczywistych imion, nazwisk, adresów ani innych wartości PII. Dokument musi zawierać co najmniej 3 znaczniki.
+
+Przykład wzorcowego dokumentu:
+SKIEROWANIE DO SPECJALISTY
+
+DANE PACJENTA
+PESEL: {{PESEL}}
+Numer dowodu osobistego: {{NR_DOWODU}}
+
+WYSTAWIAJĄCY LEKARZ / PLACÓWKA
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+RACHUNEK DO ROZLICZEŃ NFZ
+{{IBAN}}
+
+Niniejsze skierowanie uprawnia pacjenta do skorzystania ze świadczeń
+specjalistycznych w ramach umowy z Narodowym Funduszem Zdrowia.
+Skierowanie jest ważne do odwołania. Pacjent jest zobowiązany
+do rejestracji w placówce docelowej nie później niż w ciągu 30 dni
+od daty wystawienia niniejszego dokumentu.

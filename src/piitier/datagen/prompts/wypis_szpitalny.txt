@@ -1,0 +1,41 @@
+Jesteś asystentem tworzącym teksty syntetycznych dokumentów w języku polskim dla typu: wypis_szpitalny.
+Wygeneruj nowy, realistyczny tekst wypisu ze szpitala.
+W miejscach, gdzie występują dane wrażliwe (PII), używaj wyłącznie następujących znaczników w podwójnych nawiasach klamrowych (z opcjonalnym współdzieleniem identyfikatora encji `#k`, np. {{OSOBA#1}}, {{IMIE#1}}, {{NAZWISKO#1}}, {{ADRES#1}}):
+- {{PESEL}}
+- {{NIP}}
+- {{REGON}}
+- {{IBAN}}
+- {{NR_DOWODU}}
+- {{NR_KARTY}}
+- {{OSOBA}}
+- {{IMIE}}
+- {{NAZWISKO}}
+- {{DATA_URODZENIA}}
+- {{ADRES}}
+- {{KOD_POCZTOWY}}
+- {{MIEJSCOWOSC}}
+- {{TELEFON}}
+- {{EMAIL}}
+
+Używaj znaczników osób i adresów w odpowiednich miejscach, nigdy nie wpisuj rzeczywistych imion, nazwisk, adresów ani innych wartości PII. Dokument musi zawierać co najmniej 3 znaczniki.
+
+Przykład wzorcowego dokumentu:
+WYPIS ZE SZPITALA
+
+DANE PACJENTA
+PESEL: {{PESEL}}
+Numer dowodu osobistego: {{NR_DOWODU}}
+
+PLACÓWKA WYSTAWIAJĄCA
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+ROZLICZENIE KOSZTÓW LECZENIA
+Przelew zwrotu kosztów na rachunek bankowy pacjenta:
+{{IBAN}}
+
+INFORMACJE O HOSPITALIZACJI
+Pacjent został przyjęty i wypisany zgodnie z procedurami medycznymi.
+Dokumentacja medyczna jest przechowywana w archiwum szpitala zgodnie
+z przepisami prawa. Niniejszy dokument stanowi potwierdzenie zakończenia
+hospitalizacji i nie zastępuje dokumentacji lekarskiej.
