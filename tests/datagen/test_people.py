@@ -174,7 +174,15 @@ def test_uc11_address_fields_and_format() -> None:
     assert _POSTCODE_RE.match(postcode), (
         f"KOD_POCZTOWY {postcode!r} does not match \\d{{2}}-\\d{{3}}"
     )
-    assert _DIGIT_RE.search(adres), f"ADRES {adres!r} contains no digit (house number missing)"
+    # Postcode digits would satisfy a bare _DIGIT_RE.search(adres); instead isolate
+    # the street portion by stripping the known ", {postcode} {town}" suffix and
+    # check that the terminal token — Faker's building_number() — contains a digit.
+    suffix = f", {postcode} {miejscowosc}"
+    assert adres.endswith(suffix), f"ADRES {adres!r} does not end with expected suffix {suffix!r}"
+    street_part = adres[: -len(suffix)]
+    assert _DIGIT_RE.search(street_part.split()[-1]), (
+        f"Terminal token of street portion {street_part!r} is not a building number"
+    )
     assert len(miejscowosc) > 0, "MIEJSCOWOSC is empty"
     # ADRES is composed from one AddressRecord — postcode and town must appear in it
     assert postcode in adres, f"KOD_POCZTOWY {postcode!r} not found in ADRES {adres!r}"
@@ -220,9 +228,17 @@ def test_uc11_address_shared_across_seeds() -> None:
         doc = _render("{{KOD_POCZTOWY#1}} {{MIEJSCOWOSC#1}}, {{ADRES#1}}", seed)
         sbl = _spans_by_label(doc)
         kp_text = sbl[Label.KOD_POCZTOWY][0].text
+        msc_text = sbl[Label.MIEJSCOWOSC][0].text
         adres_text = sbl[Label.ADRES][0].text
         assert _POSTCODE_RE.match(kp_text), f"seed={seed}: bad postcode {kp_text!r}"
-        assert _DIGIT_RE.search(adres_text), f"seed={seed}: no house number in ADRES {adres_text!r}"
+        street_suffix = f", {kp_text} {msc_text}"
+        assert adres_text.endswith(street_suffix), (
+            f"seed={seed}: ADRES {adres_text!r} doesn't end with {street_suffix!r}"
+        )
+        street_part = adres_text[: -len(street_suffix)]
+        assert _DIGIT_RE.search(street_part.split()[-1]), (
+            f"seed={seed}: missing numeric building-number token"
+        )
         assert kp_text in adres_text, (
             f"seed={seed}: KOD_POCZTOWY {kp_text!r} not in ADRES {adres_text!r}"
         )
