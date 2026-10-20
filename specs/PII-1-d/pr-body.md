@@ -39,7 +39,7 @@ Public API smoke: `mask('BE68539007547034 EUR')` → `'[IBAN] EUR'`;
 
 ## Risks
 
-- **Grouped-shape ambiguity (minor, accepted):** The spaced foreign IBAN pattern
+- **Grouped-shape ambiguity (known grammar ambiguity):** The spaced foreign IBAN pattern
   `[A-Z]{2}[0-9]{2}(?: [A-Z0-9]{4})+(?: [A-Z0-9]{1,4})?` greedily consumes trailing 4-char
   alphanumeric prose tokens when they directly follow a valid IBAN group sequence
   (e.g. `GB29 NWBK 6016 1331 9268 1919 text done`). No per-country length table is in scope
@@ -52,4 +52,4 @@ Public API smoke: `mask('BE68539007547034 EUR')` → `'[IBAN] EUR'`;
 
 ## Scope
 
-> **Waived** — @local-user (2026-10-20): over budget: 675 added lines > 480 (240 + 100% tolerance). Accepted; all 5 UCs verified, no other findings, line count ≤ 5000.
+Waived: over budget: 675 added lines > 480 (240 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA and verification passing, every UC covered and no other unwaived scope/correctness/security/test-integrity findings. — @local-user (2026-10-20)
