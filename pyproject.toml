@@ -8,8 +8,9 @@ version = "0.1.0"
 description = "Polish PII anonymiser for regulated sectors (fintech, insurtech, medtech)"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
-dependencies = []
 
+[project.scripts]
+piitier = "piitier.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/piitier"]
 
