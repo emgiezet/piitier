@@ -252,3 +252,48 @@ def test_various_valid_cards() -> None:
         assert spans[0].label is Label.NR_KARTY
         assert spans[0].status == "valid"
         assert spans[0].end - spans[0].start == expected_len
+
+
+# ---------------------------------------------------------------------------
+# UC-24: Integration test — mask() replaces payment cards with placeholder
+# ---------------------------------------------------------------------------
+
+import pytest
+import piitier
+
+
+@pytest.mark.integration
+def test_uc24_mask_contiguous_16() -> None:
+    """UC-24 integration: mask("4111111111111111") → "[NR_KARTY]", status="valid"."""
+    result = piitier.mask(VISA_VALID)
+    assert result == "[NR_KARTY]"
+
+
+@pytest.mark.integration
+def test_uc24_mask_spaced_16() -> None:
+    """UC-24 integration: mask("4111 1111 1111 1111") → "[NR_KARTY]", status="valid"."""
+    text = "4111 1111 1111 1111"
+    result = piitier.mask(text)
+    assert result == "[NR_KARTY]"
+
+
+@pytest.mark.integration
+def test_uc24_mask_dashed_16() -> None:
+    """UC-24 integration: mask("4111-1111-1111-1111") → "[NR_KARTY]", status="valid"."""
+    text = "4111-1111-1111-1111"
+    result = piitier.mask(text)
+    assert result == "[NR_KARTY]"
+
+
+# ---------------------------------------------------------------------------
+# UC-27: Edge case — Luhn-invalid 15-digit run should not match
+# ---------------------------------------------------------------------------
+
+
+def test_uc27_luhn_invalid_15_digit_no_match() -> None:
+    """UC-27: detect on Luhn-invalid 15-digit run → no [NR_KARTY] span."""
+    # Use a 15-digit number that fails Luhn check
+    # 15 consecutive 1s fails Luhn
+    spans = find("111111111111111")
+    # Should not find any payment card (fails Luhn)
+    assert not any(s.label is Label.NR_KARTY for s in spans)

@@ -15,6 +15,7 @@ from hypothesis import strategies as st
 
 from piitier.labels import Label
 from piitier.rules.id_card import _checksum_ok, _strip_separator, find, is_valid
+import piitier
 
 # ---------------------------------------------------------------------------
 # Helpers & hypothesis strategies
@@ -26,16 +27,15 @@ _LETTER_VALUES = {chr(ord("A") + i): 10 + i for i in range(26)}
 
 
 def _compute_check_digit(letters: str, digits_without_check: str) -> str:
-    """Compute the ID card check digit for given letters and 5-digit base string.
+    """Compute the ID card check digit for given letters and 5-digit data string.
 
     Args:
         letters: 3 uppercase letters.
-        digits_without_check: 5 digits (positions 0,1,2,4,5 only - skip position 3).
+        digits_without_check: 5 digits (the data digits at positions 5-9 of the full card).
     """
     letter_sum = sum(w * _LETTER_VALUES[letter] for w, letter in zip(_WEIGHTS_LETTERS, letters))
-    # The 5 digits are at positions [0:3] and [4:6] of the full 6-digit card
-    # So we use them as: pos0, pos1, pos2, pos4, pos5
-    digit_sum = sum(w * int(digits_without_check[i]) for w, i in zip(_WEIGHTS_DIGITS, range(5)))
+    # Apply weights [7, 3, 1, 7, 3] to all 5 data digits
+    digit_sum = sum(w * int(digits_without_check[i]) for i, w in enumerate(_WEIGHTS_DIGITS))
     total = (letter_sum + digit_sum) % 10
     return str(total)
 
@@ -45,11 +45,11 @@ def _make_id_card(letters: str, digits_without_check: str) -> str:
 
     Args:
         letters: 3 uppercase letters.
-        digits_without_check: 5 digits (will be formatted as d0 d1 d2 [check] d4 d5).
+        digits_without_check: 5 digits (positions 5-9 of the full card, the data digits).
     """
     check = _compute_check_digit(letters, digits_without_check)
-    # Reconstruct: first 3 digits, then check, then last 2 digits
-    return f"{letters}{digits_without_check[0:3]}{check}{digits_without_check[3:5]}"
+    # Reconstruct: check digit (position 4 of full card) followed by all 5 data digits
+    return f"{letters}{check}{digits_without_check}"
 
 
 @st.composite
@@ -65,30 +65,24 @@ def valid_id_card_digits(draw: st.DrawFn) -> str:
 # Known synthetic examples — anchors for UC tests
 # ---------------------------------------------------------------------------
 
-# ABA300000 — synthetic card with checksum
+# ABA300000 — synthetic card with correct checksum
 # A=10 (weight 7), B=11 (weight 3), A=10 (weight 1)
-# letter_sum = 7*10 + 3*11 + 1*10 = 70 + 33 + 10 = 113, mod 10 = 3
-# digits: 3,0,0,0,0,0 → positions [0:3] + [3] (check) + [4:6]
-# For "ABA300000": A=10, B=11, A=10, then 3,0,0,0,0,0
-# Actually the format is: 3 letters + 6 digits, where digit[3] is the check digit
-# So ABA300000 has check digit = 0 (position 3)
-# digits 0-2: 3,0,0; digit 3: 0 (check); digits 4-5: 0,0
-# Let's compute: letter_sum = 7*10 + 3*11 + 1*10 = 113
-# digit_sum = 7*3 + 3*0 + 1*0 + 7*0 + 3*0 = 21
-# total = (113 + 21) % 10 = 134 % 10 = 4
-# So check digit should be 4, making it ABA340000
+# letter_sum = 7*10 + 3*11 + 1*10 = 113 ≡ 3 (mod 10)
+# data digits: 0,0,0,0,0 (positions 5-9)
+# digit_sum = 7*0 + 3*0 + 1*0 + 7*0 + 3*0 = 0
+# check = (3 + 0) % 10 = 3 → card = ABA300000 ✓
 
 ABA_LETTERS = "ABA"
-ABA_DIGIT_BASE = "30000"  # d0=3, d1=0, d2=0, d4=0, d5=0
+ABA_DIGIT_BASE = "00000"  # data digits at positions 5-9
 ABA_CHECK = _compute_check_digit(ABA_LETTERS, ABA_DIGIT_BASE)
-ABA300000 = f"{ABA_LETTERS}{ABA_DIGIT_BASE[0:3]}{ABA_CHECK}{ABA_DIGIT_BASE[3:5]}"
+ABA300000 = _make_id_card(ABA_LETTERS, ABA_DIGIT_BASE)
 
 XYZ_LETTERS = "XYZ"
-XYZ_DIGIT_BASE = "12345"  # d0=1, d1=2, d2=3, d4=4, d5=5
+XYZ_DIGIT_BASE = "12345"  # data digits at positions 5-9
 XYZ_CHECK = _compute_check_digit(XYZ_LETTERS, XYZ_DIGIT_BASE)
-XYZ712345 = f"{XYZ_LETTERS}{XYZ_DIGIT_BASE[0:3]}{XYZ_CHECK}{XYZ_DIGIT_BASE[3:5]}"
+XYZ712345 = _make_id_card(XYZ_LETTERS, XYZ_DIGIT_BASE)
 
-# ABA400000 has wrong check digit (4 instead of correct digit)
+# ABA400000 has wrong check digit (4 instead of correct digit 3)
 ABA400000_WRONG = "ABA400000"
 
 # ---------------------------------------------------------------------------
@@ -109,7 +103,7 @@ def test_is_valid_wrong_checksum() -> None:
 
 def test_is_valid_with_space() -> None:
     """is_valid accepts ID card with space between letters and digits."""
-    text_with_space = f"{ABA_LETTERS} {ABA_DIGIT_BASE[0:3]}{ABA_CHECK}{ABA_DIGIT_BASE[3:5]}"
+    text_with_space = f"{ABA_LETTERS} {ABA_CHECK}{ABA_DIGIT_BASE}"
     assert is_valid(text_with_space) is True
 
 
@@ -140,7 +134,7 @@ def test_is_valid_not_all_digits() -> None:
 
 def test_checksum_ok_correct() -> None:
     """_checksum_ok returns True for correct check digit."""
-    assert _checksum_ok(ABA_LETTERS, ABA_DIGIT_BASE[0:3] + ABA_CHECK + ABA_DIGIT_BASE[3:5]) is True
+    assert _checksum_ok(ABA_LETTERS, ABA_CHECK + ABA_DIGIT_BASE) is True
 
 
 def test_checksum_ok_wrong() -> None:
@@ -176,7 +170,7 @@ def test_uc22_single_id_card_contiguous() -> None:
 
 def test_uc22_single_id_card_with_space() -> None:
     """UC-22: detect on ABA 300000 → [NR_DOWODU], status='valid'."""
-    text = f"ABA {ABA_DIGIT_BASE[0:3]}{ABA_CHECK}{ABA_DIGIT_BASE[3:5]}"
+    text = f"{ABA_LETTERS} {ABA_CHECK}{ABA_DIGIT_BASE}"
     spans = find(text)
     assert len(spans) == 1
     assert spans[0].label is Label.NR_DOWODU
@@ -286,3 +280,32 @@ def test_property_cards_with_space_detected(card: str) -> None:
     spans = find(text_with_space)
     assert len(spans) >= 1
     assert text_with_space[spans[0].start : spans[0].end] == text_with_space.strip()
+
+
+# ---------------------------------------------------------------------------
+# UC-22: Integration test — mask() replaces ID cards with placeholder
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+@pytest.mark.integration
+def test_uc22_mask_contiguous() -> None:
+    """UC-22 integration: mask("ABA300000") → "[NR_DOWODU]", status="valid"."""
+    result = piitier.mask(ABA300000)
+    assert result == "[NR_DOWODU]"
+
+
+@pytest.mark.integration
+def test_uc22_mask_with_space() -> None:
+    """UC-22 integration: mask("ABA 300000") → "[NR_DOWODU]", status="valid"."""
+    text = f"{ABA_LETTERS} {ABA_CHECK}{ABA_DIGIT_BASE}"
+    result = piitier.mask(text)
+    assert result == "[NR_DOWODU]"
+
+
+@pytest.mark.integration
+def test_uc22_mask_xyz_card() -> None:
+    """UC-22 integration: mask("XYZ712345") → "[NR_DOWODU]", status="valid"."""
+    result = piitier.mask(XYZ712345)
+    assert result == "[NR_DOWODU]"

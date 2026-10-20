@@ -37,11 +37,11 @@ def _strip_separator(value: str) -> str:
 
 
 def _checksum_ok(letters: str, digits: str) -> bool:
-    """Return ``True`` when the digit at position 3 (index 3) is the correct check digit.
+    """Return ``True`` when the digit at position 4 (index 0 in digits) is the correct check digit.
 
     Args:
         letters: 3 uppercase letters.
-        digits: 6 digits.
+        digits: 6 digits (positions 4–9).
     """
     if len(letters) != 3 or len(digits) != 6:
         return False
@@ -54,11 +54,11 @@ def _checksum_ok(letters: str, digits: str) -> bool:
     letter_sum = sum(w * _LETTER_VALUES[letter] for w, letter in zip(_WEIGHTS_LETTERS, letters))
 
     # Calculate weighted sum of digits (positions 5-9, skipping position 4 which is check digit)
-    digit_positions = [0, 1, 2, 4, 5]  # Skip index 3 (the check digit itself)
+    digit_positions = [1, 2, 3, 4, 5]  # Skip index 0 (the check digit itself)
     digit_sum = sum(w * int(digits[pos]) for w, pos in zip(_WEIGHTS_DIGITS, digit_positions))
 
     total = (letter_sum + digit_sum) % 10
-    check_digit = int(digits[3])  # The check digit is at position 3 (4th character overall)
+    check_digit = int(digits[0])  # The check digit is at position 4 (index 0 in digits)
     return total == check_digit
 
 
