@@ -46,6 +46,7 @@ value, because the pipeline has nowhere to put its output otherwise.
 - **Files:** 15
 - **Modules:** 3
 - **Hard ceiling:** 3000
+- **Tolerance:** 100%
 
 ## Contracts and decisions
 
