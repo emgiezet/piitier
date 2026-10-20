@@ -68,6 +68,12 @@ kolejności: biblioteka najpierw, benchmark później [ASSUMPTION].
   [EVIDENCE: nvidia-smi, ollama list]. Ollama nasłuchuje na `*:11434`, czyli na wszystkich interfejsach
   [EVIDENCE: ss -ltn].
 
+## Clarification (owner, 2026-10-20)
+
+Cel nr 1 jest potrzebny do budowy danych treningowych. Rdzeń i loadery są etapem przygotowawczym
+do PII-2, nie zamiennikiem celu modelowego. — owner: autor (emgiezet)
+[EVIDENCE: session reply, 2026-10-20].
+
 ## Open questions
 
 - Jaka kolejność b) i c)? Odpowiedź „a następnie a” jest niejednoznaczna. Nie blokuje pierwszego specu, bo oba kryteria wymagają tego samego rdzenia.
