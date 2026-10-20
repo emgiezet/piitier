@@ -297,11 +297,19 @@ def test_uc30_valid_template_accepted_and_written(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_uc31_leaked_value_rejected(tmp_path: Path) -> None:
-    """UC-31: template with 8-digit literal run → rejected.leaked_value=1, no file."""
+@pytest.mark.parametrize(
+    "leaked_text",
+    [
+        LEAKED_NUMBER_ZGLOSZENIE,
+        VALID_ZGLOSZENIE.replace("{{PESEL}}", "90051512340"),
+        VALID_ZGLOSZENIE.replace("{{NR_DOWODU}}", "ABA300000"),
+    ],
+)
+def test_uc31_leaked_value_rejected(tmp_path: Path, leaked_text: str) -> None:
+    """UC-31: template with leaked PII / digit run → rejected.leaked_value=1, no file."""
     llm = _import_llm()
 
-    with _fake_ollama([LEAKED_NUMBER_ZGLOSZENIE]) as server:
+    with _fake_ollama([leaked_text]) as server:
         counts: dict[str, Any] = llm.write_templates(
             doc_type="zgloszenie_szkody",
             count=1,
