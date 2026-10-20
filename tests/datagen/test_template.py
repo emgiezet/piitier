@@ -88,9 +88,13 @@ def test_parse_entity_numbered_form() -> None:
 
 
 def test_parse_entity_and_case_form() -> None:
-    """{{PESEL#1:nom}} → Placeholder with entity='1' and case='nom'."""
+    """{{OSOBA#1:nom}} → Placeholder with entity='1' and case='nom'.
+
+    Updated by PII-2-c: OSOBA/IMIE/NAZWISKO are the inflectable labels;
+    PESEL#1:nom now raises TemplateError in parse() (case not allowed for label).
+    """
     Template, _, Placeholder, parse = _import()
-    result = parse(Template(template_id="t", doc_type="email", text="{{PESEL#1:nom}}"))
+    result = parse(Template(template_id="t", doc_type="email", text="{{OSOBA#1:nom}}"))
     assert len(result) == 1
     p = result[0]
     assert isinstance(p, Placeholder)
@@ -99,18 +103,19 @@ def test_parse_entity_and_case_form() -> None:
 
 
 # ---------------------------------------------------------------------------
-# parse — all seven grammatical case tags accepted (render rejects until PII-2-c)
+# parse — all seven grammatical case tags accepted for inflectable labels (PII-2-c)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("case_tag", ["nom", "gen", "dat", "acc", "inst", "loc", "voc"])
 def test_parse_all_legal_case_tags_accepted(case_tag: str) -> None:
-    """Each of the seven grammatical case tags is valid syntax; parse must not raise.
+    """Each of the seven case tags is valid syntax on an inflectable label; parse must not raise.
 
-    UC-7 'case not supported yet' is a render-time rejection, not a parse error.
+    PII-2-c: case-not-allowed for non-inflectable labels is enforced in parse() after
+    label resolution; OSOBA/IMIE/NAZWISKO are the only inflectable labels.
     """
     Template, _, Placeholder, parse = _import()
-    text = "{{" + f"PESEL#1:{case_tag}" + "}}"
+    text = "{{" + f"OSOBA#1:{case_tag}" + "}}"
     result = parse(Template(template_id="t", doc_type="email", text=text))
     assert len(result) == 1
     p = result[0]

@@ -154,8 +154,7 @@ def test_uc24_check_corrupted_exit1_names_doc_no_text(tmp_path: Path) -> None:
             lines[idx] = json.dumps(rec, ensure_ascii=False)
             break
 
-    if corrupted_id is None:
-        pytest.skip("No spans found in train.jsonl — cannot corrupt")
+    assert corrupted_id is not None, "No spans found in train.jsonl — cannot corrupt"
 
     train.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -372,6 +371,29 @@ def test_uc28_manifest_counts_match_jsonl(tmp_path: Path) -> None:
         f"missing manifest fields: {expected_fields - set(manifest.keys())}"
     )
     assert manifest["inflection_fallbacks"] == 0
+
+
+def test_manifest_fallback_aggregation_sum(monkeypatch, tmp_path: Path) -> None:
+    """manifest inflection_fallbacks sums fallbacks across rendered documents with unknown names."""
+    import random
+    from dataclasses import replace
+
+    from piitier.datagen import people
+    from piitier.datagen.build import build
+
+    tmpl_dir = tmp_path / "templates"
+    polisa_dir = tmpl_dir / "polisa"
+    polisa_dir.mkdir(parents=True)
+    (polisa_dir / "cases.txt").write_text("{{OSOBA#1:gen}}", encoding="utf-8")
+
+    base_person = people.make_person(random.Random(0))
+    fixed = replace(base_person, first_name="Xqzwy", last_name="Xqzwy")
+    monkeypatch.setattr(people, "make_person", lambda rng, avoid=frozenset(): fixed)
+
+    corpus_out = tmp_path / "corpus"
+    build(tmpl_dir, n=2, seed=0, out=corpus_out)
+    manifest_data = json.loads((corpus_out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest_data["inflection_fallbacks"] == 4
 
 
 # ---------------------------------------------------------------------------

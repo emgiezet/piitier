@@ -147,14 +147,14 @@ def build(templates_dir: Path, n: int, seed: int, out: Path) -> None:
     dev_lines: list[str] = []
     span_counts: dict[str, int] = {}
     split_counts: dict[str, int] = {"train": 0, "dev": 0}
-
+    total_fallbacks: int = 0
     for i in range(n):
         tmpl = templates[i % len(templates)]
         doc_seed = seed + i
         doc_id = f"doc_{i:07d}"
 
         doc = render(tmpl, doc_seed)
-
+        total_fallbacks += doc.inflection_fallbacks
         spans_data = [
             {
                 "start": s.start,
@@ -213,7 +213,7 @@ def build(templates_dir: Path, n: int, seed: int, out: Path) -> None:
         "span_counts": dict(sorted(span_counts.items())),
         "split_counts": split_counts,
         "version": piitier.__version__,
-        "inflection_fallbacks": 0,
+        "inflection_fallbacks": total_fallbacks,
     }
     (out / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),

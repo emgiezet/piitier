@@ -6,7 +6,14 @@ import random
 from dataclasses import dataclass
 
 from piitier.datagen import people
-from piitier.datagen.template import Placeholder, Template, TemplateError, parse
+from piitier.datagen.inflect import _inflect
+from piitier.datagen.template import (
+    _INFLECTABLE_LABELS,
+    Placeholder,
+    Template,
+    TemplateError,
+    parse,
+)
 from piitier.datagen.values import generate_value
 from piitier.labels import Label
 from piitier.spans import Span
@@ -37,21 +44,13 @@ class Document:
     doc_type: str
     seed: int
     spans: list[SyntheticSpan]
+    inflection_fallbacks: int = 0
 
 
 def render(template: Template, seed: int) -> Document:
     """Render a labelled synthetic document from a placeholder template."""
     rng = random.Random(seed)
     parsed = parse(template)
-
-    # Reject case syntax until PII-2-c
-    for item in parsed:
-        if isinstance(item, Placeholder) and item.case is not None:
-            raise TemplateError(
-                template.template_id,
-                item.offset,
-                f"Case specifier {item.case!r} not supported yet",
-            )
 
     # Check for labels with no generator (e.g. LEK)
     supported_labels = {
@@ -134,16 +133,19 @@ def render(template: Template, seed: int) -> Document:
             all_address_explicit_ids.add(n_eid)
         return eid
 
-    # Cache values by (label, entity_id)
-    # Person/address record caches: keyed by entity_id string.
+    # Cache values by (label, entity_id, case).
+    # The case component prevents a nominative cache entry from poisoning a
+    # genitive lookup or vice versa (PII-2-c cache-poisoning invariant).
+    # Person/address record caches: keyed by entity_id string (case-independent).
     person_records: dict[str, people.PersonRecord] = {}
     address_records: dict[str, people.AddressRecord] = {}
-    value_cache: dict[tuple[Label, str], str] = {}
+    value_cache: dict[tuple[Label, str, str | None], tuple[str, int]] = {}
 
     # Second pass: build text and spans
     rendered_parts: list[str] = []
     spans: list[SyntheticSpan] = []
     current_offset = 0
+    fallbacks: int = 0  # per-document inflection fallback counter
 
     for item in parsed:
         if isinstance(item, str):
@@ -151,31 +153,51 @@ def render(template: Template, seed: int) -> Document:
             current_offset += len(item)
         elif isinstance(item, Placeholder):
             eid = get_entity_id(item.label, item.entity)
-            cache_key = (item.label, eid)
+            cache_key = (item.label, eid, item.case)
             if cache_key not in value_cache:
                 # Explicit PESEL#k joins the person group; anonymous {{PESEL}} keeps
                 # the old structured path so that UC-1/UC-2 determinism is preserved.
                 is_person_linked = item.label in _PERSON_LABELS or (
                     item.label is Label.PESEL and item.entity is not None
                 )
+                occ_fb = 0
                 if is_person_linked:
                     if eid not in person_records:
                         existing = frozenset(
                             f"{r.first_name} {r.last_name}" for r in person_records.values()
                         )
                         person_records[eid] = people.make_person(rng, existing)
-                    value_cache[cache_key] = people.get_person_field(
-                        item.label, person_records[eid]
-                    )
+
+                    if item.case is not None and item.label in _INFLECTABLE_LABELS:
+                        rec = person_records[eid]
+                        sex = rec.sex.lower()
+                        if item.label is Label.OSOBA:
+                            fn_form, fn_fb = _inflect(rec.first_name, item.case, sex)
+                            ln_form, ln_fb = _inflect(rec.last_name, item.case, sex)
+                            occ_fb = int(fn_fb) + int(ln_fb)
+                            val = f"{fn_form} {ln_form}"
+                        elif item.label is Label.IMIE:
+                            fn_form, fn_fb = _inflect(rec.first_name, item.case, sex)
+                            occ_fb = int(fn_fb)
+                            val = fn_form
+                        else:  # NAZWISKO
+                            ln_form, ln_fb = _inflect(rec.last_name, item.case, sex)
+                            occ_fb = int(ln_fb)
+                            val = ln_form
+                    else:
+                        val = people.get_person_field(item.label, person_records[eid])
+
+                    value_cache[cache_key] = (val, occ_fb)
                 elif item.label in _ADDRESS_LABELS:
                     if eid not in address_records:
                         address_records[eid] = people.make_address(rng)
-                    value_cache[cache_key] = people.get_address_field(
-                        item.label, address_records[eid]
-                    )
+                    val = people.get_address_field(item.label, address_records[eid])
+                    value_cache[cache_key] = (val, 0)
                 else:
-                    value_cache[cache_key] = generate_value(item.label, rng)
-            val = value_cache[cache_key]
+                    val = generate_value(item.label, rng)
+                    value_cache[cache_key] = (val, 0)
+            val, occ_fb = value_cache[cache_key]
+            fallbacks += occ_fb
 
             start = current_offset
             end = start + len(val)
@@ -202,4 +224,5 @@ def render(template: Template, seed: int) -> Document:
         doc_type=template.doc_type,
         seed=seed,
         spans=spans,
+        inflection_fallbacks=fallbacks,
     )
