@@ -109,3 +109,31 @@ def test_uc14_mask_nip_keyword_with_spaces() -> None:
     assert span.status == "valid"
     # The span should be just the number part, not the keyword
     assert text[span.start : span.end] == "526 000 12 46"
+
+
+# ---------------------------------------------------------------------------
+# UC-15: Mask NIP with wrong check digit (suspect)
+# ---------------------------------------------------------------------------
+
+
+def test_uc15_mask_nip_suspect_bad_check() -> None:
+    """mask on 'nr zamówienia 5260001247' (10 digits, wrong check digit, no keyword) → 'nr zamówienia [NIP]'; span status='suspect'."""
+    text = "nr zamówienia 5260001247"
+    spans = find(text)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.label == Label.NIP
+    assert span.status == "suspect"
+    assert text[span.start : span.end] == "5260001247"
+
+
+# ---------------------------------------------------------------------------
+# UC-18: NIP exclusion — KRS keyword within 40 characters
+# ---------------------------------------------------------------------------
+
+
+def test_uc18_no_nip_after_krs_keyword() -> None:
+    """detect on 'KRS 0000123456' → no NIP span for the 10-digit run."""
+    text = "Numer KRS 0000123456 w rejestrze"
+    spans = find(text)
+    assert len(spans) == 0

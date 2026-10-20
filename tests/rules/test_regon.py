@@ -78,6 +78,25 @@ def test_uc16_mask_regon_14_bare() -> None:
 
 
 # ---------------------------------------------------------------------------
+# UC-18: REGON exclusion — 9-digit run without keyword is not a candidate
+# ---------------------------------------------------------------------------
+
+
+def test_uc18_no_bare_9digit_regon() -> None:
+    """detect on bare 123456785 (9 digits, no REGON keyword) → no REGON span."""
+    text = "telefon 123456785 lub"
+    spans = find(text)
+    assert len(spans) == 0
+
+
+def test_uc18_no_phone_number_as_regon() -> None:
+    """detect on 'tel. 600123457' (9 digits, no REGON keyword) → no REGON span."""
+    text = "tel. 600123457 na stronie"
+    spans = find(text)
+    assert len(spans) == 0
+
+
+# ---------------------------------------------------------------------------
 # UC-17: Mask REGON with wrong check digits
 # ---------------------------------------------------------------------------
 
