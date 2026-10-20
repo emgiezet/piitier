@@ -42,5 +42,7 @@ uv run pytest -q -m "not integration"
 
 Waived: over change budget: added lines (1135 vs 720; 360 + 100% tolerance) — Owner approved a hard ceiling of 5000 added lines and conditional acceptance below it on 2026-10-20; QA and verification must pass, all UCs must remain covered, and all other unwaived findings must be resolved before approval. See `.claude/sdlc.md`, Change budget. — @local-user
 
-This waives only the added-line overrun. It does not waive the undeclared
-`tests/rules/__init__.py` finding or change the existing review verdict.
+This waives only the added-line overrun. The undeclared empty
+`tests/rules/__init__.py` was removed before re-review; no test or assertion was
+removed. Full-suite verification after removal: 118 passed, zero skipped;
+ruff format/check and mypy passed.
