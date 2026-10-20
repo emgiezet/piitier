@@ -80,3 +80,119 @@ No per-country IBAN length table is used (explicitly Out-of-scope per spec §Out
 checksum-based truncation heuristic is invented — the generic grouped-shape is preserved as
 matched, which is the agreed contract for this ambiguous input class.  This affects only the
 spaced form; the contiguous pattern is unaffected.
+
+---
+
+## Combined C/D/E/F Integration — `ai/pii-1-integration`
+
+*Evidence from parent-observed gates on the integration branch. This section records the final
+combined state; existing standalone sections above reflect D-branch-only evidence and remain
+accurate for that branch context.*
+
+### Scope differentiation from standalone D evidence
+
+The sections above capture **D-branch state only**: 155 tests, with `detect_all` suppressing
+only PESEL spans contained within an IBAN span (PESEL-only containment guard).
+
+The integration branch (`ai/pii-1-integration`) merges all four features: C (NIP/REGON),
+D (IBAN/NRB), E (ID-card/payment-card), F (CLI). The combined suite reached **295 tests
+passed, zero skipped**. The containment filter in `detect_all` was broadened from PESEL-only
+to any non-IBAN child span, to fix the BE68 trailing-token loss described below.
+
+### BE68 bug — registry containment fix
+
+**Observed symptom:** `mask('BE68539007547034 EUR')` returned `'[IBAN]'` — the trailing
+` EUR` was silently dropped.
+
+**Root cause:** After integrating C, `detect_all` collected both an IBAN span at `0:16`
+and a REGON candidate at `2:16` (substring of the same bytes). The D-branch containment
+guard was PESEL-only and did not suppress the REGON child. At render time, the surviving
+REGON span's end-position 16 advanced the cursor to the same position as the IBAN end,
+consuming the space before `EUR` and causing the trailing token to be dropped.
+
+**Fix location:** `src/piitier/rules/__init__.py` — `detect_all()`. The containment predicate
+was changed from `span.kind == "PESEL"` to any non-IBAN kind (i.e. `span.kind != "IBAN"`),
+so REGON, NIP, NR_DOWODU, and NR_KARTY candidates wholly nested inside an IBAN span are all
+suppressed before the span list is returned. No changes to the renderer, mask module, or any
+fusion subsystem. Valid and suspect outer-span status and regression tests are unaffected.
+
+**Regression coverage:** `test_regression_contiguous_be68_stops_before_prose` and
+`test_regression_contiguous_at61_stops_before_prose` confirm IBAN outer spans are unaffected;
+combined suite re-runs both.
+
+### Full gate results (parent-observed)
+
+| Gate | Result |
+|---|---|
+| `uv run ruff format .` | PASS |
+| `uv run ruff check .` | PASS |
+| `uv run mypy src` (13 source files) | PASS |
+| `uv run pytest -q` | **295 passed, 0 skipped** |
+| LSP registry | OK |
+| API smoke (27 cases, parent-observed) | PASS |
+| Installed CLI smoke | PASS |
+| Six-label CRLF doc (exact mask / no-overlap / fidelity) | PASS |
+| Independent 24-UC smoke (`/tmp/piitier-combined-smoke.py`, 133 assertions) | **PASS — exit 0** |
+
+### API smoke — 27 cases (parent-observed)
+
+Parent ran 27 distinct API and installed-CLI smoke cases covering:
+- IBAN masking: compact and spaced forms, BE/AT/DE foreign IBANs, trailing-prose
+  non-absorption (`BE68539007547034 EUR` → `[IBAN] EUR`), suspect/valid status
+- NIP/REGON masking (valid and suspect), KRS non-confusion
+- ID-card (`NR_DOWODU`) and payment-card (`NR_KARTY`) masking, Luhn verification
+- PESEL suppression inside IBAN (UC-21), REGON/NIP containment inside IBAN (BE68 fix)
+- CLI: UTF-8, cp1250, BOM, CRLF, Markdown, CSV, `-o` output file, same-input refusal,
+  error-privacy (no PII in stderr)
+
+*A separately prepared 656-line smoke script originally had one incorrect expected NIP prefix.
+The corrected version (`/tmp/piitier-combined-smoke.py`) was run by parent and exited 0 with
+133 successful assertions and output `PASS -- all assertions satisfied`. Exact NIP prefix,
+Markdown and CSV byte output corrected per contract; six-label mixed-CRLF document and exact
+span fragments verified. This result is recorded as independent 24-UC evidence alongside the
+27 parent-observed API/CLI cases above.*
+
+### Six output labels
+
+All six PII mask labels declared across C/D/E/F are produced with correct spans, status,
+and non-overlapping boundaries:
+`[IBAN]`, `[PESEL]`, `[NIP]`, `[REGON]`, `[NR_DOWODU]`, `[NR_KARTY]`
+
+CRLF document test verified exact mask text, no span overlap, and full-content fidelity
+across all six labels.
+
+### Aggregate added lines
+
+3,133 lines of added code, tests, and configuration across 16 files (excluding specs and
+lockfiles), below the hard 5,000-line cap. No soft 480-line per-file waiver exceeded
+beyond the three declared paths documented in the integration scope report.
+
+### UC coverage — all 24 use cases
+
+| Feature | UC IDs | Count |
+|---|---|---|
+| C — NIP / REGON | UC-14, UC-15, UC-16, UC-17, UC-18 | 5 |
+| D — IBAN / NRB | UC-19, UC-20, UC-21, UC-38, UC-39 | 5 |
+| E — ID-card / payment-card | UC-22, UC-23, UC-24, UC-25, UC-26, UC-27 | 6 |
+| F — CLI | UC-28, UC-29, UC-30, UC-33, UC-34, UC-35, UC-40, UC-41 | 8 |
+| **Total** | | **24** |
+
+All 24 UCs exercised by automated tests, parent-observed API/CLI smoke (27 cases), and the
+independent corrected 24-UC smoke script (133 assertions, exit 0). No LLM training or
+inference completion is claimed.
+
+### Known limitation (carried forward)
+
+The generic grouped spaced-IBAN pattern described in the `Limitations` section above applies
+unchanged to the integration branch. No per-country IBAN length table was added; this remains
+explicitly out of scope per spec §Out.
+
+### Review approvals
+
+| Scope | Review agent | Verdict |
+|---|---|---|
+| PII-1-c (C — NIP/REGON) | Independent code-reviewer | APPROVED |
+| PII-1-d (D — IBAN/NRB) | DfinalReview (code-reviewer) | APPROVED |
+| PII-1-e (E — ID-card/payment-card) | Independent code-reviewer | APPROVED |
+| PII-1-f (F — CLI) | Independent code-reviewer | APPROVED |
+| Combined integration (`ai/pii-1-integration`) | IntegrationReview (code-reviewer) | APPROVED |
