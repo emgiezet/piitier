@@ -129,7 +129,7 @@ AMOUNT_VALID_TEMPLATE = (
 class _ServerState:
     """Mutable state shared between _FakeServer and _FakeHandler via server reference."""
 
-    def __init__(self, completions: list[str], model_name: str, digest: str) -> None:
+    def __init__(self, completions: list[str], model_name: str, digest: Any) -> None:
         self.completions: queue.Queue[str] = queue.Queue()
         for c in completions:
             self.completions.put(c)
@@ -224,7 +224,7 @@ class _FakeHandler(BaseHTTPRequestHandler):
 def _fake_ollama(
     completions: list[str],
     model_name: str = _FAKE_MODEL,
-    digest: str = _FAKE_DIGEST,
+    digest: Any = _FAKE_DIGEST,
 ) -> Iterator[_FakeServer]:
     """Start a real 127.0.0.1 HTTPServer and yield it; shut down after the block."""
     state = _ServerState(completions, model_name, digest)
@@ -435,7 +435,7 @@ def test_uc34_nonloopback_url_raises_before_any_request(tmp_path: Path) -> None:
     llm = _import_llm()
 
     with _fake_ollama([VALID_ZGLOSZENIE]) as server:
-        with pytest.raises(llm.OllamaURLError, match="non-loopback"):
+        with pytest.raises(llm.OllamaURLError, match="refusing non-loopback"):
             llm.write_templates(
                 doc_type="zgloszenie_szkody",
                 count=1,
@@ -494,7 +494,6 @@ def test_unsupported_scheme_is_rejected(tmp_path: Path) -> None:
 def test_userinfo_in_url_is_rejected(tmp_path: Path) -> None:
     """URL with userinfo (RFC 3986 §3.2.1) → OllamaURLError."""
     llm = _import_llm()
-    # URL assembled at call-time from parts so no literal credential appears in source.
     at_char = chr(0x40)  # '@'
     col_char = chr(0x3A)  # ':'
     synthetic_url = f"http://synth{col_char}synth{at_char}127.0.0.1:11434"
@@ -591,7 +590,6 @@ def test_uc36_manifest_contains_exact_fields(tmp_path: Path) -> None:
     assert e["accepted"] == 1
     assert isinstance(e.get("rejected"), dict)
 
-    # prompt_sha256 must match sha256 of the packaged prompt for this doc type.
     prompt_file = _PROMPTS_DIR / "zgloszenie_szkody.txt"
     expected_prompt_sha = hashlib.sha256(prompt_file.read_bytes()).hexdigest()
     assert e["prompt_sha256"] == expected_prompt_sha
@@ -603,7 +601,7 @@ def test_uc36_manifest_contains_exact_fields(tmp_path: Path) -> None:
 
 
 def test_manifest_appended_across_invocations(tmp_path: Path) -> None:
-    """Each write_templates call appends exactly one JSONL entry to manifest.json."""
+    """Each write_templates call appends exactly one JSON record to manifest.json array."""
     llm = _import_llm()
 
     with _fake_ollama([VALID_ZGLOSZENIE]) as server:
@@ -710,7 +708,6 @@ def test_unknown_label_checked_before_placeholder_count(tmp_path: Path) -> None:
             seed=42,
         )
 
-    # parse() raises TemplateError(reason='Unknown label') → unknown_label, not too_few.
     assert counts["rejected"].get("unknown_label", 0) == 1
     assert counts["rejected"].get("too_few_placeholders", 0) == 0
 
@@ -723,8 +720,6 @@ def test_unknown_label_checked_before_placeholder_count(tmp_path: Path) -> None:
 def test_placeholder_removal_prevents_cross_boundary_digit_run(tmp_path: Path) -> None:
     """4 digits | placeholder | 4 digits: removal must not create an 8-digit run."""
     llm = _import_llm()
-    # After placeholder removal, "1234" and "5678" are separated by the replacement
-    # character — they must not merge into a forbidden 8-digit run.
     template = (
         "FORMULARZ\n\n"
         "Ref: 1234{{PESEL}}5678\n"
@@ -744,7 +739,6 @@ def test_placeholder_removal_prevents_cross_boundary_digit_run(tmp_path: Path) -
             seed=42,
         )
 
-    # Must not be rejected as leaked_value due to a spurious cross-placeholder join.
     assert counts["rejected"].get("leaked_value", 0) == 0
     assert counts["accepted"] == 1
 
@@ -863,12 +857,200 @@ def test_cross_doc_type_deduplication(tmp_path: Path) -> None:
 
 
 def test_proxy_environment_is_ignored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Proxy environment variables must be ignored by the zero-proxy opener."""
+    """Proxy environment variables ignored by zero-proxy opener."""
     llm = _import_llm()
-    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9999")
-    monkeypatch.setenv("https_proxy", "http://127.0.0.1:9999")
+
+    class TrapHandler(BaseHTTPRequestHandler):
+        requests_received = 0
+
+        def do_GET(self) -> None:
+            TrapHandler.requests_received += 1
+            self.send_response(200)
+            self.end_headers()
+
+        def do_POST(self) -> None:
+            TrapHandler.requests_received += 1
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    trap_server = HTTPServer(("127.0.0.1", 0), TrapHandler)
+    trap_port = trap_server.server_address[1]
+    trap_thread = threading.Thread(target=trap_server.serve_forever, daemon=True)
+    trap_thread.start()
+
+    trap_url = f"http://127.0.0.1:{trap_port}"
+    monkeypatch.setenv("http_proxy", trap_url)
+    monkeypatch.setenv("https_proxy", trap_url)
+    monkeypatch.setenv("no_proxy", "")
+    monkeypatch.setenv("NO_PROXY", "")
+
+    try:
+        with _fake_ollama([VALID_ZGLOSZENIE]) as server:
+            counts = llm.write_templates(
+                doc_type="zgloszenie_szkody",
+                count=1,
+                out=tmp_path,
+                model=_FAKE_MODEL,
+                ollama_url=server.url,
+                seed=42,
+            )
+        assert counts["accepted"] == 1
+        assert TrapHandler.requests_received == 0
+    finally:
+        trap_server.shutdown()
+        trap_thread.join(timeout=2.0)
+
+
+@pytest.mark.parametrize(
+    "bad_type",
+    [
+        "../etc/passwd",
+        "..\\windows\\system32",
+        "/etc/passwd",
+        "C:\\windows",
+        "foo/bar",
+        "foo\\bar",
+    ],
+)
+def test_invalid_doc_type_rejected_before_fs_or_network(tmp_path: Path, bad_type: str) -> None:
+    """Absolute paths, traversal, and slashes in doc_type are rejected."""
+    llm = _import_llm()
+    with pytest.raises(ValueError):
+        llm.write_templates(
+            doc_type=bad_type,
+            count=1,
+            out=tmp_path,
+            model=_FAKE_MODEL,
+            ollama_url="http://127.0.0.1:11434",
+            seed=42,
+        )
+
+
+def test_non_allowlist_host_127_0_0_2_rejected(tmp_path: Path) -> None:
+    """127.0.0.2 is rejected despite being an IP loopback address."""
+    llm = _import_llm()
+    with pytest.raises(llm.OllamaURLError, match="refusing non-loopback ollama url"):
+        llm.write_templates(
+            doc_type="zgloszenie_szkody",
+            count=1,
+            out=tmp_path,
+            model=_FAKE_MODEL,
+            ollama_url="http://127.0.0.2:11434",
+            seed=42,
+        )
+
+
+@pytest.mark.parametrize("bad_digest", [None, ["abc123hash"], 123456789])
+def test_null_list_number_digest_rejected_safely(tmp_path: Path, bad_digest: Any) -> None:
+    """Null, list, or number digest causes OllamaUnreachableError."""
+    llm = _import_llm()
+    with _fake_ollama([VALID_ZGLOSZENIE], digest=bad_digest) as server:
+        with pytest.raises(llm.OllamaUnreachableError):
+            llm.write_templates(
+                doc_type="zgloszenie_szkody",
+                count=1,
+                out=tmp_path,
+                model=_FAKE_MODEL,
+                ollama_url=server.url,
+                seed=42,
+            )
+    assert not (tmp_path / "zgloszenie_szkody").exists()
+
+
+def test_blank_manifest_rejected(tmp_path: Path) -> None:
+    """Blank manifest.json is rejected with ValueError."""
+    llm = _import_llm()
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("   \n  ", encoding="utf-8")
 
     with _fake_ollama([VALID_ZGLOSZENIE]) as server:
+        with pytest.raises(ValueError, match="Manifest is blank"):
+            llm.write_templates(
+                doc_type="zgloszenie_szkody",
+                count=1,
+                out=tmp_path,
+                model=_FAKE_MODEL,
+                ollama_url=server.url,
+                seed=42,
+            )
+    assert manifest.read_text(encoding="utf-8") == "   \n  "
+
+
+def test_numeric_model_identifier_metadata_rejected(tmp_path: Path) -> None:
+    """Numeric model identifier in metadata (name=123) does not match string requested model."""
+    llm = _import_llm()
+
+    class NumericModelHandler(_FakeHandler):
+        def do_GET(self) -> None:
+            st = self._state()
+            st.record(self.path)
+            if self.path == "/api/tags":
+                body = json.dumps(
+                    {
+                        "models": [
+                            {
+                                "name": 123,
+                                "model": 123,
+                                "digest": st.digest,
+                                "size": 0,
+                            }
+                        ]
+                    }
+                ).encode()
+                self._send(200, body)
+            else:
+                super().do_GET()
+
+    class NumericModelServer(_FakeServer):
+        def __init__(self, state: _ServerState) -> None:
+            self.state = state
+            super(HTTPServer, self).__init__(
+                ("127.0.0.1", 0), NumericModelHandler, bind_and_activate=True
+            )
+
+    state = _ServerState([VALID_ZGLOSZENIE], "123", _FAKE_DIGEST)
+    server = NumericModelServer(state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(llm.OllamaUnreachableError):
+            llm.write_templates(
+                doc_type="zgloszenie_szkody",
+                count=1,
+                out=tmp_path,
+                model="123",
+                ollama_url=server.url,
+                seed=42,
+            )
+        assert not (tmp_path / "zgloszenie_szkody").exists()
+        assert server.state.received_paths == ["/api/tags"]
+        assert "/api/generate" not in server.state.received_paths
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_supported_person_and_address_labels_accepted(tmp_path: Path) -> None:
+    """Templates using person and address group labels are accepted and build/check pass."""
+    llm = _import_llm()
+    from piitier.datagen.build import build, check
+
+    template_text = (
+        "FORMULARZ\n\n"
+        "Osoba: {{OSOBA}}\n"
+        "Imię: {{IMIE}}\n"
+        "Nazwisko: {{NAZWISKO}}\n"
+        "Data urodzenia: {{DATA_URODZENIA}}\n"
+        "Adres: {{ADRES}}\n"
+        "Kod pocztowy: {{KOD_POCZTOWY}}\n"
+        "Miejscowość: {{MIEJSCOWOSC}}\n\n"
+        "Treść dokumentu końcowego."
+    )
+
+    with _fake_ollama([template_text]) as server:
         counts = llm.write_templates(
             doc_type="zgloszenie_szkody",
             count=1,
@@ -878,3 +1060,54 @@ def test_proxy_environment_is_ignored(tmp_path: Path, monkeypatch: pytest.Monkey
             seed=42,
         )
     assert counts["accepted"] == 1
+
+    dataset_out = tmp_path / "dataset"
+    build(tmp_path, n=5, seed=42, out=dataset_out)
+    code, msg = check(dataset_out)
+    assert code == 0, f"check failed: {msg}"
+
+
+def test_non_string_response_rejected_safely(tmp_path: Path) -> None:
+    """Reject non-string responses without writing output."""
+    llm = _import_llm()
+
+    class BadResponseHandler(_FakeHandler):
+        def do_POST(self) -> None:
+            st = self._state()
+            st.record(self.path)
+            length = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(length)
+            if self.path == "/api/generate":
+                body = json.dumps(
+                    {"response": {"bad": "{{PESEL}} {{NIP}} {{IBAN}}"}, "done": True}
+                ).encode()
+                self._send(200, body)
+            else:
+                self._send(404, b'{"error":"not found"}')
+
+    class BadResponseServer(_FakeServer):
+        def __init__(self, state: _ServerState) -> None:
+            self.state = state
+            super(HTTPServer, self).__init__(
+                ("127.0.0.1", 0), BadResponseHandler, bind_and_activate=True
+            )
+
+    state = _ServerState([], _FAKE_MODEL, _FAKE_DIGEST)
+    server = BadResponseServer(state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(llm.OllamaUnreachableError):
+            llm.write_templates(
+                doc_type="zgloszenie_szkody",
+                count=1,
+                out=tmp_path,
+                model=_FAKE_MODEL,
+                ollama_url=server.url,
+                seed=42,
+            )
+        assert not (tmp_path / "zgloszenie_szkody").exists()
+        assert not (tmp_path / "manifest.json").exists()
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)

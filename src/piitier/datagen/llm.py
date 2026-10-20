@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import http.client
-import ipaddress
 import json
 import re
-import socket
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -15,6 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import piitier
+from piitier.datagen.render import _ADDRESS_LABELS, _PERSON_LABELS
 from piitier.datagen.template import Placeholder, Template, TemplateError, parse
 from piitier.datagen.values import _GENERATORS
 
@@ -25,6 +24,22 @@ class OllamaURLError(Exception):
 
 class OllamaUnreachableError(Exception):
     """Raised when Ollama server cannot be reached."""
+
+
+_ALLOWED_DOC_TYPES = frozenset(
+    {
+        "zgloszenie_szkody",
+        "umowa_kredytowa",
+        "wyciag",
+        "wypis_szpitalny",
+        "mail_klienta",
+        "polisa",
+        "skierowanie",
+        "transkrypcja_infolinii",
+    }
+)
+
+_SUPPORTED_LABELS = frozenset(_GENERATORS) | _PERSON_LABELS | _ADDRESS_LABELS
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -63,14 +78,7 @@ def _validate_ollama_url(url_str: str) -> None:
     if not hostname:
         raise OllamaURLError("refusing non-loopback ollama url")
 
-    if hostname.lower() in ("localhost", "127.0.0.1", "::1", "[::1]"):
-        return
-
-    try:
-        ip = ipaddress.ip_address(hostname)
-        if not ip.is_loopback:
-            raise OllamaURLError("refusing non-loopback ollama url")
-    except ValueError:
+    if hostname.lower() not in ("localhost", "127.0.0.1", "::1", "[::1]"):
         raise OllamaURLError("refusing non-loopback ollama url")
 
 
@@ -83,6 +91,16 @@ def write_templates(
     seed: int | None = None,
     temperature: float = 0.2,
 ) -> dict[str, Any]:
+    if (
+        not isinstance(doc_type, str)
+        or doc_type not in _ALLOWED_DOC_TYPES
+        or "/" in doc_type
+        or "\\" in doc_type
+        or ".." in doc_type
+        or Path(doc_type).is_absolute()
+    ):
+        raise ValueError(f"Invalid doc_type: {doc_type}")
+
     _validate_ollama_url(ollama_url)
 
     prompts_dir = Path(__file__).parent / "prompts"
@@ -93,20 +111,21 @@ def write_templates(
     prompt_sha256 = hashlib.sha256(prompt_bytes).hexdigest()
     prompt_text = prompt_bytes.decode("utf-8")
 
-    # Load and validate existing manifest.json if present (must be valid JSON array)
+    # Load and validate existing manifest.json if present (must be valid JSON array, reject blank)
     manifest_path = out / "manifest.json"
     manifest_records: list[dict[str, Any]] = []
     if manifest_path.exists():
+        m_content = manifest_path.read_text(encoding="utf-8")
+        if not m_content.strip():
+            raise ValueError("Manifest is blank or whitespace-only")
         try:
-            m_content = manifest_path.read_text(encoding="utf-8")
-            if m_content.strip():
-                parsed_json = json.loads(m_content)
-                if isinstance(parsed_json, list):
-                    manifest_records = parsed_json
-                else:
-                    raise ValueError("Manifest must be a JSON array")
-        except Exception as e:
+            parsed_json = json.loads(m_content)
+        except json.JSONDecodeError as e:
             raise ValueError(f"Malformed existing manifest: {e}") from e
+
+        if not isinstance(parsed_json, list):
+            raise ValueError("Manifest must be a JSON array")
+        manifest_records = parsed_json
 
     # Deduplicate against ALL template files under out (across all doc_types)
     seen_hashes: set[str] = set()
@@ -134,9 +153,12 @@ def write_templates(
             if not isinstance(data, dict):
                 raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}")
 
-            digest = ""
-            norm_model = model.strip()
+            digest: str | None = None
+            norm_model = model.strip() if isinstance(model, str) else None
+            if not norm_model:
+                raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}")
             norm_model_latest = norm_model + ":latest" if ":" not in norm_model else norm_model
+
             models_list = data.get("models", [])
             if not isinstance(models_list, list):
                 raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}")
@@ -144,17 +166,22 @@ def write_templates(
             for m in models_list:
                 if not isinstance(m, dict):
                     continue
-                m_name = str(m.get("name", "")).strip()
-                m_model = str(m.get("model", "")).strip()
-                if m_name in (norm_model, norm_model_latest) or m_model in (
-                    norm_model,
-                    norm_model_latest,
-                ):
-                    digest = str(m.get("digest", "")).strip()
-                    break
-            if not digest:
+                m_name = m.get("name")
+                m_model = m.get("model")
+                if isinstance(m_name, str) and isinstance(m_model, str):
+                    s_name = m_name.strip()
+                    s_model = m_model.strip()
+                    if s_name in (norm_model, norm_model_latest) or s_model in (
+                        norm_model,
+                        norm_model_latest,
+                    ):
+                        d_val = m.get("digest")
+                        if isinstance(d_val, str) and d_val.strip():
+                            digest = d_val.strip()
+                        break
+            if not isinstance(digest, str) or not digest:
                 raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}")
-    except (urllib.error.URLError, socket.error, TimeoutError, http.client.HTTPException) as e:
+    except (OSError, urllib.error.URLError, TimeoutError, http.client.HTTPException) as e:
         raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
     except (OllamaURLError, OllamaUnreachableError):
         raise
@@ -201,10 +228,12 @@ def write_templates(
                     raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
                 if not isinstance(res_data, dict):
                     raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}")
-                text = res_data.get("response", "")
+                text = res_data.get("response")
                 if not isinstance(text, str):
-                    text = str(text)
-        except (urllib.error.URLError, socket.error, TimeoutError, http.client.HTTPException) as e:
+                    raise OllamaUnreachableError(
+                        f"ollama not reachable at {ollama_url}: non-string response"
+                    )
+        except (OSError, urllib.error.URLError, TimeoutError, http.client.HTTPException) as e:
             raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
         except (OllamaURLError, OllamaUnreachableError):
             raise
@@ -225,10 +254,10 @@ def write_templates(
         placeholders = [ph for ph in parts if isinstance(ph, Placeholder)]
         literals = [lit for lit in parts if isinstance(lit, str)]
 
-        # Check every label has a generator in _GENERATORS
+        # Check every label is in _SUPPORTED_LABELS
         has_unknown = False
         for ph in placeholders:
-            if ph.label not in _GENERATORS:
+            if ph.label not in _SUPPORTED_LABELS:
                 has_unknown = True
                 break
         if has_unknown:

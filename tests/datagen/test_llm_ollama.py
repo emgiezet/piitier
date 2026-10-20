@@ -6,6 +6,7 @@ with Bielik 11B Q8_0 model installed.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ def test_uc37_real_ollama_cli_workflow(tmp_path: Path) -> None:
     model_tag = "hf.co/SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF:Q8_0"
     ollama_url = "http://127.0.0.1:11434"
 
+    templates_dir = tmp_path / "templates"
     res_wt = subprocess.run(
         [
             sys.executable,
@@ -30,7 +32,7 @@ def test_uc37_real_ollama_cli_workflow(tmp_path: Path) -> None:
             "--count",
             "3",
             "--out",
-            str(tmp_path / "templates"),
+            str(templates_dir),
             "--model",
             model_tag,
             "--ollama-url",
@@ -45,6 +47,15 @@ def test_uc37_real_ollama_cli_workflow(tmp_path: Path) -> None:
     )
     assert res_wt.returncode == 0, f"write-templates failed: {res_wt.stderr}"
 
+    manifest_file = templates_dir / "manifest.json"
+    assert manifest_file.exists()
+    records = json.loads(manifest_file.read_text(encoding="utf-8"))
+    assert isinstance(records, list) and len(records) > 0
+    last_record = records[-1]
+    accepted = last_record.get("accepted", 0)
+    rejected = last_record.get("rejected", {})
+    assert accepted >= 1, f"accepted={accepted}, rejected={rejected}"
+
     dataset_out = tmp_path / "dataset"
     res_build = subprocess.run(
         [
@@ -53,7 +64,7 @@ def test_uc37_real_ollama_cli_workflow(tmp_path: Path) -> None:
             "piitier.datagen",
             "build",
             "--templates",
-            str(tmp_path / "templates"),
+            str(templates_dir),
             "--n",
             "10",
             "--seed",
