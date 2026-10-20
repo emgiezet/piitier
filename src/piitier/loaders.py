@@ -1,16 +1,21 @@
 """File loaders with encoding detection.
 
-Supports .txt, .md, and .csv files. Registry keyed by extension allows
-adding file type support (e.g., .pdf in PII-1-g) without touching cli.py.
+Supports .txt, .md, .csv, and .pdf files. Registry keyed by extension allows
+adding file type support without touching cli.py.
 
 Invariant: text files (.txt, .md, .csv) are read as strings and masked as one,
 preserving byte-for-byte structure (Markdown syntax, delimiters, line endings).
+PDF files: all pages extracted verbatim and joined with '\\n'; empty pages preserved.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable
+
+
+class PdfNoTextError(Exception):
+    """Raised when a PDF contains no extractable text on any page."""
 
 
 def load_text_file(path: Path) -> str:
@@ -54,11 +59,42 @@ def load_text_file(path: Path) -> str:
         ) from None
 
 
+def load_pdf(path: Path) -> str:
+    """Extract the text layer from a PDF file, joining all pages with '\\n'.
+
+    All pages are included verbatim (including empty ones); no stripping or
+    filtering is applied to the output.  The no-text decision uses strip() on
+    each page's text only to determine whether any page has content.
+
+    Args:
+        path: Path to the PDF file.
+
+    Returns:
+        All page texts joined with '\\n'.
+
+    Raises:
+        ValueError: If the PDF is encrypted (message: 'encrypted pdf: <path>').
+        PdfNoTextError: If no page yields any extractable text.
+    """
+    from pypdf import PdfReader
+
+    with PdfReader(str(path)) as reader:
+        if reader.is_encrypted:
+            raise ValueError(f"encrypted pdf: {path}")
+        pages_text = [page.extract_text() or "" for page in reader.pages]
+
+    if not any(t.strip() for t in pages_text):
+        raise PdfNoTextError(f"no text layer: {path}")
+
+    return "\n".join(pages_text)
+
+
 # Registry: extension → loader function
 _LOADERS: dict[str, Callable[[Path], str]] = {
     ".txt": load_text_file,
     ".md": load_text_file,
     ".csv": load_text_file,
+    ".pdf": load_pdf,
 }
 
 
