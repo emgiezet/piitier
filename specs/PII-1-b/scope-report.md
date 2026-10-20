@@ -3,7 +3,7 @@
 > **GAPS** — Some changed files were not declared in the spec scope.
 
 Base: `main`  
-Checked: 2026-10-20T11:19:34Z
+Checked: 2026-10-20T11:47:45Z
 
 ## File classification
 
@@ -28,7 +28,7 @@ Verdict: GAPS
 
 | Measure | This branch | Budget |
 |---|---|---|
-| Added lines | 1135 | 360 +100% (hard ceiling 3000) |
+| Added lines | 1135 | 360 +100% (hard ceiling 5000) |
 | Files touched | 8 | 7 +100% |
 | Modules touched | 4 | 4 +100% |
 
