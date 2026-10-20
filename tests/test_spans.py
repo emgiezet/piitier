@@ -75,7 +75,7 @@ def test_uc5_error_message_contains_offsets() -> None:
     assert "3" in msg
 
 
-def test_UC_5_error_message_offsets_only_never_text() -> None:
+def test_uc5_error_message_offsets_only_never_text() -> None:
     """UC-5 (added): ValueError message carries offsets only, never field text.
 
     Spec requirement: "the message carries offsets only, never text".

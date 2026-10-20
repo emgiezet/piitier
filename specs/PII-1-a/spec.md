@@ -45,8 +45,8 @@ Change budget: 610 added lines, 10 files, 7 modules
   `src/piitier/labels.py`, exact pins, test layout.
 - `.claude/playbooks/taxonomy-change.md`: the enum/taxonomy sync test this slice introduces.
 - New: `pyproject.toml`, `uv.lock`, `src/piitier/__init__.py`, `src/piitier/py.typed`,
-  `src/piitier/spans.py`, `src/piitier/labels.py`, `docs/TAXONOMY.md`, `tests/test_labels.py`,
-  `tests/test_spans.py`.
+  `src/piitier/spans.py`, `src/piitier/labels.py`, `docs/TAXONOMY.md`, `tests/__init__.py`,
+  `tests/test_labels.py`, `tests/test_spans.py`.
 
 ## Acceptance criteria
 
