@@ -34,7 +34,7 @@ KRS exclusion, the REGON remainder-10 case, and suspect masking.
 
 ### Conditional size approval
 
-Waived: over change budget: added lines (960 vs 660; 330 + 100% tolerance) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA/verification passing, all UCs covered and no other unwaived findings. All five changed code/test paths are declared. — @local-user
+Waived: over budget: 943 added lines > 660 (330 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA/verification passing, all UCs covered and no other unwaived findings. — @local-user (2026-10-20)
 
 ### Not covered
 
