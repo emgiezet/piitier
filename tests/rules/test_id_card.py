@@ -10,7 +10,6 @@ Property tests cover is_valid() and find() with hypothesis-generated values.
 
 from __future__ import annotations
 
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -24,6 +23,8 @@ from piitier.rules.id_card import _checksum_ok, _strip_separator, find, is_valid
 _WEIGHTS_LETTERS = (7, 3, 1)
 _WEIGHTS_DIGITS = (7, 3, 1, 7, 3)
 _LETTER_VALUES = {chr(ord("A") + i): 10 + i for i in range(26)}
+
+
 def _compute_check_digit(letters: str, digits_without_check: str) -> str:
     """Compute the ID card check digit for given letters and 5-digit base string.
 
@@ -31,16 +32,10 @@ def _compute_check_digit(letters: str, digits_without_check: str) -> str:
         letters: 3 uppercase letters.
         digits_without_check: 5 digits (positions 0,1,2,4,5 only - skip position 3).
     """
-    letter_sum = sum(
-        w * _LETTER_VALUES[letter]
-        for w, letter in zip(_WEIGHTS_LETTERS, letters)
-    )
+    letter_sum = sum(w * _LETTER_VALUES[letter] for w, letter in zip(_WEIGHTS_LETTERS, letters))
     # The 5 digits are at positions [0:3] and [4:6] of the full 6-digit card
     # So we use them as: pos0, pos1, pos2, pos4, pos5
-    digit_sum = sum(
-        w * int(digits_without_check[i])
-        for w, i in zip(_WEIGHTS_DIGITS, range(5))
-    )
+    digit_sum = sum(w * int(digits_without_check[i]) for w, i in zip(_WEIGHTS_DIGITS, range(5)))
     total = (letter_sum + digit_sum) % 10
     return str(total)
 
@@ -60,9 +55,7 @@ def _make_id_card(letters: str, digits_without_check: str) -> str:
 @st.composite
 def valid_id_card_digits(draw: st.DrawFn) -> str:
     """Strategy: generate a syntactically and semantically valid ID card (9 chars)."""
-    letters = "".join(
-        chr(ord("A") + draw(st.integers(0, 25))) for _ in range(3)
-    )
+    letters = "".join(chr(ord("A") + draw(st.integers(0, 25))) for _ in range(3))
     # Generate 5 digits for positions 0,1,2,4,5 (skipping position 3 which is the check digit)
     digit_base = "".join(str(draw(st.integers(0, 9))) for _ in range(5))
     return _make_id_card(letters, digit_base)

@@ -51,17 +51,11 @@ def _checksum_ok(letters: str, digits: str) -> bool:
         return False
 
     # Calculate weighted sum of letters
-    letter_sum = sum(
-        w * _LETTER_VALUES[letter]
-        for w, letter in zip(_WEIGHTS_LETTERS, letters)
-    )
+    letter_sum = sum(w * _LETTER_VALUES[letter] for w, letter in zip(_WEIGHTS_LETTERS, letters))
 
     # Calculate weighted sum of digits (positions 5-9, skipping position 4 which is check digit)
     digit_positions = [0, 1, 2, 4, 5]  # Skip index 3 (the check digit itself)
-    digit_sum = sum(
-        w * int(digits[pos])
-        for w, pos in zip(_WEIGHTS_DIGITS, digit_positions)
-    )
+    digit_sum = sum(w * int(digits[pos]) for w, pos in zip(_WEIGHTS_DIGITS, digit_positions))
 
     total = (letter_sum + digit_sum) % 10
     check_digit = int(digits[3])  # The check digit is at position 3 (4th character overall)
