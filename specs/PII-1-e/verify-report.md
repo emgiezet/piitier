@@ -3,8 +3,8 @@ PASS
 # Verify — PII-1-e
 
 Base: `main`  
-Head: `d01bc60`  
-Checked: 2026-10-20T13:36:39Z
+Head: `a8d6436`  
+Checked: 2026-10-20T13:53:34Z
 
 | check | result | detail |
 |---|---|---|

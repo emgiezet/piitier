@@ -23,23 +23,6 @@ from piitier.rules.nip import find, is_valid
 
 _WEIGHTS = (6, 5, 7, 2, 3, 4, 5, 6, 7)
 
-
-def _compute_check_digit(base9: str) -> str:
-    """Compute the NIP check digit for a 9-digit base string."""
-    total = sum(w * int(d) for w, d in zip(_WEIGHTS, base9))
-    check = total % 11
-    # A result of 10 is never valid — the NIP is rejected
-    if check == 10:
-        # This should not happen with valid weights/input, but return '0' as fallback
-        return "0"
-    return str(check)
-
-
-def _make_nip(base9: str) -> str:
-    """Construct a synthetic valid NIP string (10 digits)."""
-    return base9 + _compute_check_digit(base9)
-
-
 # ---------------------------------------------------------------------------
 # Known synthetic examples — anchors for UC tests
 # ---------------------------------------------------------------------------

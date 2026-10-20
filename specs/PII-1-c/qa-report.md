@@ -83,6 +83,10 @@ Tests added:
   suite passes. Public-API smoke verified labelled formats, KRS exclusion, valid and suspect
   checksums, and complete masking of keyword-labelled REGON-14.
 
+### Post-review cleanup
+
+- Removed two unused test helpers (`_compute_check_digit` and `_make_nip`, formerly at lines 27–40 of `tests/rules/test_nip.py`). Both functions duplicated logic already inlined in `test_nip_valid_numbers_pass_validator` and were never called elsewhere. No behavioral test was changed. The `_WEIGHTS` constant they shared with the property test is retained at line 24. Removal reduces the added-line count from 960 to 943.
+
 ---
 
 ## Not verified

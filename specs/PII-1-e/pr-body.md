@@ -36,7 +36,7 @@ unchanged PESEL behavior.
 
 ### Conditional size approval
 
-Waived: over change budget: added lines (871 vs 540; 270 + 100% tolerance) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA/verification passing, all UCs covered and no other unwaived findings. All five changed code/test paths are declared. — @local-user
+Waived: over budget: 871 added lines > 540 (270 + 100% tolerance). One spec is one PR: split it (spec-authoring, Sizing) — Standing owner approval in `.claude/sdlc.md` permits added-line overruns up to 5000, conditional on QA/verification passing, all UCs covered and no other unwaived findings. — @local-user (2026-10-20)
 
 ### Not covered
 
