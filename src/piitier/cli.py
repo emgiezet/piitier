@@ -2,11 +2,10 @@
 
 Entry point: piitier mask <path> [-o <out>]
 
-Behavior:
-- Reads a .txt, .md, or .csv file
+- Reads a .txt, .md, .csv, or text-layer .pdf file
 - Masks PII using piitier.mask()
 - Writes masked content to stdout (default) or file (-o <out>)
-- Exit 0 on success, 2 on usage/input error
+- Exit 0 on success, 2 on usage/input error, 3 on PDF with no text layer
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 import piitier
-from piitier.loaders import get_loader
+from piitier.loaders import PdfNoTextError, get_loader
 
 
 def mask_file(input_path: Path, output_path: Path | None) -> int:
@@ -51,8 +50,11 @@ def mask_file(input_path: Path, output_path: Path | None) -> int:
         # Extract the error message from the exception
         print(e.reason, file=sys.stderr)
         return 2
+    except PdfNoTextError as e:
+        print(str(e), file=sys.stderr)
+        return 3
     except ValueError as e:
-        # Binary file or other file-related error
+        # Binary file, encrypted PDF, or other file-related error
         print(str(e), file=sys.stderr)
         return 2
 
@@ -91,7 +93,7 @@ def main() -> int:
     mask_parser.add_argument(
         "input",
         type=Path,
-        help="Input file path (.txt, .md, .csv)",
+        help="Input file path (.txt, .md, .csv, .pdf)",
     )
     mask_parser.add_argument(
         "-o",
