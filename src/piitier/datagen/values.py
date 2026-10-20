@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import calendar
 import random
+import re
+from collections.abc import Callable
 
+from piitier.datagen.people import generate_email, generate_telefon
 from piitier.labels import Label
 from piitier.rules import iban, id_card, nip, payment_card, pesel, regon
+
+_TELEFON_RE: re.Pattern[str] = re.compile(r"\+48 \d{3} \d{3} \d{3}|\d{3} \d{3} \d{3}|\d{9}")
+_EMAIL_RE: re.Pattern[str] = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
 
 _PESEL_WEIGHTS: tuple[int, ...] = (1, 3, 7, 9, 1, 3, 7, 9, 1, 3)
 _NIP_WEIGHTS: tuple[int, ...] = (6, 5, 7, 2, 3, 4, 5, 6, 7)
@@ -142,22 +148,26 @@ def generate_nr_karty(rng: random.Random) -> str:
     return full
 
 
-_GENERATORS = {
+_GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.PESEL: generate_pesel,
     Label.NIP: generate_nip,
     Label.REGON: generate_regon,
     Label.IBAN: generate_iban,
     Label.NR_DOWODU: generate_nr_dowodu,
     Label.NR_KARTY: generate_nr_karty,
+    Label.TELEFON: generate_telefon,
+    Label.EMAIL: generate_email,
 }
 
-_VALIDATORS = {
+_VALIDATORS: dict[Label, Callable[[str], bool]] = {
     Label.PESEL: lambda v: pesel.is_valid(pesel._strip_separators(v)),
     Label.NIP: lambda v: nip.is_valid(nip._strip_separators(v).upper().removeprefix("PL")),
     Label.REGON: regon.is_valid,
     Label.IBAN: iban.is_valid,
     Label.NR_DOWODU: id_card.is_valid,
     Label.NR_KARTY: payment_card.is_valid,
+    Label.TELEFON: lambda v: bool(_TELEFON_RE.fullmatch(v)),
+    Label.EMAIL: lambda v: bool(_EMAIL_RE.fullmatch(v)),
 }
 
 
