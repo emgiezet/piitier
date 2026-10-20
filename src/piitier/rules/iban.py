@@ -90,9 +90,11 @@ def is_valid(value: str) -> bool:
 # Regex patterns for IBAN detection
 # Polish IBAN: PL + 26 digits, with optional spaces between digit groups
 # Bare Polish NRB: 26 digits, with optional spaces between groups
-# Foreign IBAN: 2 letters + 2 digits + 11-30 alphanumerics, optionally spaced
+# Foreign IBAN: 2 letters + 2 digits + 11–30 alphanumerics, contiguous OR
+# uniformly spaced in 4-character groups.  Two separate patterns prevent the
+# optional-separator (`[ ]?`) approach from swallowing adjacent prose tokens.
 
-_SEP = r"[ ]?"  # Single space separator between digit groups
+_SEP = r"[ ]?"  # Single space separator between digit groups (PL patterns only)
 
 # Polish NRB with PL prefix: PL + groups of 4 digits
 _PL_IBAN_RE = re.compile(
@@ -109,12 +111,26 @@ _BARE_NRB_RE = re.compile(
     r"(?![A-Z0-9])",
 )
 
-# Foreign IBAN: 2 letters + 2 digits + up to 30 alphanumerics
-# Allow grouping: typically 4-digit groups separated by spaces
-# Last group can be 1-4 characters
-_FOREIGN_IBAN_RE = re.compile(
+# Foreign IBAN — COMPACT form: entirely contiguous, no spaces.
+# The `(?![A-Z0-9])` lookahead ensures the match ends exactly at the last
+# alphanumeric of the account number; adjacent words (e.g. "EUR", "payment")
+# are never consumed.  Length 15–34 is enforced structurally: 2+2+{11,30}.
+_FOREIGN_IBAN_COMPACT_RE = re.compile(
     r"(?<![A-Z0-9])"
-    r"([A-Z]{2}[0-9]{2}(?:" + _SEP + r"[A-Z0-9]{4})*(?:" + _SEP + r"[A-Z0-9]{1,4})?)"
+    r"([A-Z]{2}[0-9]{2}[A-Z0-9]{11,30})"
+    r"(?![A-Z0-9])",
+    re.IGNORECASE,
+)
+
+# Foreign IBAN — SPACED form: uniform single-space-separated groups of exactly
+# 4 alphanumerics; the last group may be 1–4 characters.
+# Known limitation: subsequent prose words that are themselves 4 alphanumeric
+# characters (e.g. "text", "done" after a valid IBAN) may be consumed by the
+# greedy `+`.  No country table or checksum-based truncation is applied per
+# spec; the longest matching shape is retained.  See QA report §Limitations.
+_FOREIGN_IBAN_SPACED_RE = re.compile(
+    r"(?<![A-Z0-9])"
+    r"([A-Z]{2}[0-9]{2}(?: [A-Z0-9]{4})+(?: [A-Z0-9]{1,4})?)"
     r"(?![A-Z0-9])",
     re.IGNORECASE,
 )
@@ -177,35 +193,40 @@ def find(text: str) -> list[Span]:
             )
             covered_ranges.append((match.start(1), match.end(1)))
 
-    # Find foreign IBANs (not Polish, not bare NRB)
-    for match in _FOREIGN_IBAN_RE.finditer(text):
-        raw = match.group(1)
-        clean = _strip_spaces(raw)
-
-        # Skip if it matches the Polish patterns (already handled above)
-        if clean.upper().startswith("PL") or (len(clean) == 26 and clean.isdigit()):
-            continue
-
-        # Foreign IBAN: must have 2-letter country code + 2-digit check + 11-30 alphanumerics
-        if (
-            len(clean) >= 15
-            and len(clean) <= 34
-            and clean[:2].isalpha()
-            and clean[2:4].isdigit()
-            and not _is_overlapping(match.start(1), match.end(1))
-        ):
-            checksum_valid = is_valid(raw)
-            status = "valid" if checksum_valid else "suspect"
-            spans.append(
-                Span(
-                    start=match.start(1),
-                    end=match.end(1),
-                    label=Label.IBAN,
-                    source="rule",
-                    score=1.0,
-                    status=status,
+    def _try_foreign(pattern: re.Pattern[str]) -> None:
+        """Emit a foreign IBAN span for each match of *pattern* not yet covered."""
+        for match in pattern.finditer(text):
+            raw = match.group(1)
+            clean = _strip_spaces(raw)
+            # Delegate PL and bare-NRB tokens to the specialised loops above.
+            if clean.upper().startswith("PL") or (len(clean) == 26 and clean.isdigit()):
+                continue
+            # Enforce total clean length 15–34 and basic structure.
+            if (
+                len(clean) >= 15
+                and len(clean) <= 34
+                and clean[:2].isalpha()
+                and clean[2:4].isdigit()
+                and not _is_overlapping(match.start(1), match.end(1))
+            ):
+                checksum_valid = is_valid(raw)
+                status = "valid" if checksum_valid else "suspect"
+                spans.append(
+                    Span(
+                        start=match.start(1),
+                        end=match.end(1),
+                        label=Label.IBAN,
+                        source="rule",
+                        score=1.0,
+                        status=status,
+                    )
                 )
-            )
-            covered_ranges.append((match.start(1), match.end(1)))
+                covered_ranges.append((match.start(1), match.end(1)))
+
+    # Find foreign IBANs — contiguous form first, then uniformly spaced form.
+    # Processing compact first prevents a spaced-pattern partial re-match of the
+    # same token; covered_ranges suppresses any overlap.
+    _try_foreign(_FOREIGN_IBAN_COMPACT_RE)
+    _try_foreign(_FOREIGN_IBAN_SPACED_RE)
 
     return spans

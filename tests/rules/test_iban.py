@@ -7,12 +7,12 @@ handling.
 
 from __future__ import annotations
 
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
+import piitier
 from piitier.labels import Label
 from piitier.rules.iban import find, is_valid
-import piitier
 
 # ---------------------------------------------------------------------------
 # Known synthetic examples — anchors for UC tests
@@ -103,7 +103,7 @@ def test_uc20_suspect_span_never_dropped() -> None:
 
 
 def test_uc21_iban_and_pesel_no_overlap() -> None:
-    """UC-21: detect on text with 1 spaced IBAN + 1 contiguous IBAN + 1 PESEL → 3 non-overlapping spans."""
+    """UC-21: 1 spaced IBAN + 1 contiguous IBAN + 1 PESEL → 3 non-overlapping spans."""
     # Use PESEL that doesn't overlap with IBANs
     pesel = "12345678901"
     text = f"Invoice: {IBAN_PL_VALID_SPACED} or {IBAN_NRB_VALID_COMPACT} person {pesel}"
@@ -121,6 +121,39 @@ def test_uc21_iban_and_pesel_no_overlap() -> None:
     for iban_span in iban_spans:
         assert not (iban_span.start <= pesel_span.start < iban_span.end), "PESEL starts inside IBAN"
         assert not (iban_span.start < pesel_span.end <= iban_span.end), "PESEL ends inside IBAN"
+
+
+# ---------------------------------------------------------------------------
+# UC-21: Regression — no PESEL inside IBAN (overlapping span suppression)
+# ---------------------------------------------------------------------------
+
+
+def test_uc21_regression_pesel_inside_suspect_iban_suppressed() -> None:
+    """UC-21 regression (suspect): PESEL inside suspect IBAN is suppressed.
+
+    'AA01010100005AA': foreign IBAN [0,15) status=suspect AND PESEL at [2,13).
+    Before the fix detect_all returned both, breaking mask() fidelity.
+    """
+    spans = piitier.detect("AA01010100005AA")
+    assert len(spans) == 1, f"Expected 1 span, got {len(spans)}: {spans}"
+    assert spans[0].label is Label.IBAN
+    assert spans[0].status == "suspect"
+    assert spans[0].start == 0
+    assert spans[0].end == 15
+
+
+def test_uc21_regression_pesel_inside_valid_iban_suppressed() -> None:
+    """UC-21 regression (valid): PESEL inside valid IBAN is suppressed.
+
+    'AI01010100005AA': foreign IBAN [0,15) status=valid (mod97=1) AND PESEL at [2,13).
+    Suppression must apply to valid IBAN containers, not only suspect ones.
+    """
+    spans = piitier.detect("AI01010100005AA")
+    assert len(spans) == 1, f"Expected 1 span, got {len(spans)}: {spans}"
+    assert spans[0].label is Label.IBAN
+    assert spans[0].status == "valid"
+    assert spans[0].start == 0
+    assert spans[0].end == 15
 
 
 # ---------------------------------------------------------------------------
@@ -298,36 +331,99 @@ def test_is_valid_non_ascii() -> None:
 # ---------------------------------------------------------------------------
 
 
-@given(
-    country_code=st.sampled_from(["PL", "DE", "FR", "IT", "ES"]),
-    check_digits=st.integers(min_value=0, max_value=99),
-    remaining_digits=st.text(alphabet="0123456789", min_size=11, max_size=30),
-)
-def test_prop_is_valid_generated_iban_passes(
-    country_code: str, check_digits: int, remaining_digits: str
-) -> None:
-    """Property: generated IBAN structure is checked for validity.
+def _iban_check_digits(country: str, bban: str) -> str:
+    """Independently compute IBAN check digits for *country* + *bban*.
 
-    is_valid returns a boolean consistently based on mod 97 checksum.
+    Algorithm (test-local; does NOT call production _mod97):
+      1. Build BBAN + CC_numeric + "00" as a decimal string.
+      2. check = (98 - int(rearranged) % 97) % 97, zero-padded to 2 digits.
+
+    Letters map A=10 … Z=35 via ord arithmetic.
     """
-    iban = f"{country_code}{check_digits:02d}{remaining_digits}"
-    # Verify that is_valid doesn't crash and returns a boolean
-    result = is_valid(iban)
-    assert isinstance(result, bool)
+    cc_num = "".join(
+        str(ord(c.upper()) - ord("A") + 10) if c.isalpha() else c for c in country.upper()
+    )
+    n = int(bban + cc_num + "00") % 97
+    return f"{(98 - n) % 97:02d}"
 
 
-@given(nrb=st.text(alphabet="0123456789", min_size=26, max_size=26))
-def test_prop_bare_nrb_26_digits_consistency(nrb: str) -> None:
-    """Property: is_valid consistency for 26-digit bare NRB.
+@given(bban=st.text(alphabet="0123456789", min_size=24, max_size=24))
+def test_prop_generated_valid_nrb_detected_as_valid(bban: str) -> None:
+    """Property: PL NRB with independently computed check digits → status='valid', mask='[IBAN]'.
 
-    If is_valid returns True, mod 97 of PL+NRB must equal 1.
+    The check-digit helper is a self-contained test fixture that does not
+    re-invoke any production function to verify its own output.
     """
-    result = is_valid(nrb)
-    if result:
-        # If valid, verify mod 97 equals 1
-        from piitier.rules.iban import _mod97
+    check = _iban_check_digits("PL", bban)
+    iban = f"PL{check}{bban}"
+    spans = find(iban)
+    assert len(spans) == 1, f"Expected 1 span for {iban!r}"
+    assert spans[0].status == "valid", f"Expected valid, got {spans[0].status!r}"
+    assert spans[0].start == 0
+    assert spans[0].end == len(iban)
+    assert piitier.mask(iban) == "[IBAN]"
 
-        iban_with_pl = "PL" + nrb
-        assert _mod97(iban_with_pl) == 1
+
+@given(bban=st.text(alphabet="0123456789", min_size=24, max_size=24))
+def test_prop_mutated_check_digit_yields_suspect(bban: str) -> None:
+    """Property: PL NRB with a single wrong check digit → span status='suspect'.
+
+    wrong_check = (correct + 1) % 100 is always different from the correct
+    value (which is 0–96) so the mutated IBAN always fails mod 97.
+    """
+    check = _iban_check_digits("PL", bban)
+    wrong_check = f"{(int(check) + 1) % 100:02d}"
+    iban = f"PL{wrong_check}{bban}"
+    spans = find(iban)
+    assert len(spans) == 1, f"Expected 1 span for {iban!r}"
+    assert spans[0].status == "suspect"
 
 
+# ---------------------------------------------------------------------------
+# Regression — contiguous foreign IBAN must not swallow adjacent prose
+# ---------------------------------------------------------------------------
+
+
+def test_regression_contiguous_be68_stops_before_prose() -> None:
+    """Regression: 'BE68539007547034 EUR' → span covers only the IBAN; status='valid'.
+
+    Previously the mixed-separator regex grabbed ' EUR' as an optional final group,
+    corrupting the checksum and producing status='suspect' on a valid IBAN.
+    """
+    text = "BE68539007547034 EUR"
+    spans = find(text)
+    assert len(spans) == 1, f"Expected 1 span, got {spans}"
+    matched = text[spans[0].start : spans[0].end]
+    assert matched == "BE68539007547034", f"Span swallowed prose: {matched!r}"
+    assert spans[0].status == "valid"
+    assert piitier.mask(text) == "[IBAN] EUR"
+
+
+def test_regression_contiguous_at61_stops_before_prose() -> None:
+    """Regression: 'AT611904300234573201 payment received' → span covers only the IBAN.
+
+    Previously 'paym' was swallowed as a space-optional group and 'ent' as the
+    final partial group, producing status='suspect' on a valid IBAN.
+    """
+    text = "AT611904300234573201 payment received"
+    spans = find(text)
+    assert len(spans) == 1, f"Expected 1 span, got {spans}"
+    matched = text[spans[0].start : spans[0].end]
+    assert matched == "AT611904300234573201", f"Span swallowed prose: {matched!r}"
+    assert spans[0].status == "valid"
+    assert piitier.mask(text) == "[IBAN] payment received"
+
+
+# ---------------------------------------------------------------------------
+# Boundary — overlong contiguous token must not partially match
+# ---------------------------------------------------------------------------
+
+
+def test_hard_negative_overlong_contiguous_foreign_iban() -> None:
+    """A contiguous 35-char foreign-IBAN-like token (> 34 clean chars) → no match.
+
+    The compact pattern enforces [A-Z0-9]{11,30} after CC+NN; combined with the
+    (?![A-Z0-9]) lookahead, a 35-char token forces all suffix widths to fail.
+    """
+    token = "DE89" + "A" * 31  # 4 + 31 = 35 chars, exceeds the 34-char maximum
+    assert find(token) == []
