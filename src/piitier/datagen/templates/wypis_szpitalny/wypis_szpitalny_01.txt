@@ -1,0 +1,19 @@
+WYPIS ZE SZPITALA
+
+DANE PACJENTA
+PESEL: {{PESEL}}
+Numer dowodu osobistego: {{NR_DOWODU}}
+
+PLACÓWKA WYSTAWIAJĄCA
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+ROZLICZENIE KOSZTÓW LECZENIA
+Przelew zwrotu kosztów na rachunek bankowy pacjenta:
+{{IBAN}}
+
+INFORMACJE O HOSPITALIZACJI
+Pacjent został przyjęty i wypisany zgodnie z procedurami medycznymi.
+Dokumentacja medyczna jest przechowywana w archiwum szpitala zgodnie
+z przepisami prawa. Niniejszy dokument stanowi potwierdzenie zakończenia
+hospitalizacji i nie zastępuje dokumentacji lekarskiej.
