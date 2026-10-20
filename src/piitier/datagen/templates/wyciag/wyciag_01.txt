@@ -1,0 +1,17 @@
+WYCIĄG Z RACHUNKU BANKOWEGO
+
+POSIADACZ RACHUNKU
+PESEL: {{PESEL}}
+Numer rachunku: {{IBAN}}
+Karta płatnicza: {{NR_KARTY}}
+
+HISTORIA TRANSAKCJI
+Data       Opis                                Kwota
+--------   ---------------------------------   ----------
+Saldo otwarcia                                 ---
+Przelewy przychodzące                          ---
+Przelewy wychodzące                            ---
+Saldo zamknięcia                               ---
+
+Wyciąg wygenerowany automatycznie dla okresu rozliczeniowego.
+Nie wymaga podpisu ani pieczęci bankowej.

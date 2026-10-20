@@ -1,0 +1,20 @@
+Od: klient@example.pl
+Do: obsluga@bank.pl
+Temat: Zapytanie dotyczące rachunku bankowego
+
+Szanowni Państwo,
+
+zwracam się z prośbą o weryfikację danych mojego rachunku.
+
+Moje dane identyfikacyjne:
+PESEL: {{PESEL}}
+Numer dowodu osobistego: {{NR_DOWODU}}
+NIP: {{NIP}}
+
+Rachunek bankowy: {{IBAN}}
+
+Proszę o potwierdzenie poprawności powyższych danych
+oraz o informację o aktualnym saldzie konta.
+
+Z poważaniem
+Klient banku

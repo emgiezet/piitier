@@ -1,0 +1,19 @@
+UMOWA KREDYTOWA
+
+KREDYTOBIORCA
+PESEL: {{PESEL}}
+Numer dowodu osobistego: {{NR_DOWODU}}
+Karta debetowa: {{NR_KARTY}}
+
+BANK - KREDYTODAWCA
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+RACHUNEK DO WYPŁATY KREDYTU
+{{IBAN}}
+
+Niniejsza umowa kredytowa zostaje zawarta pomiędzy Kredytobiorcą
+a Bankiem na warunkach określonych w Ogólnych Warunkach Umowy Kredytowej.
+Kredytobiorca zobowiązuje się do spłaty kredytu wraz z należnymi odsetkami
+w terminach wskazanych w harmonogramie spłat stanowiącym załącznik do umowy.
+Kredytobiorca potwierdza otrzymanie egzemplarza niniejszej umowy.
