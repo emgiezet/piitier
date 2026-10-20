@@ -24,7 +24,7 @@ uv run pytest -q: 299 passed (2.07s)
 
 - Baseline: 295 tests; feature branch: 299 tests.
 - Skipped: 0.
-- Ruff format/check, mypy PASS.
+- Ruff format/check, mypy (13 src files) PASS.
 
 **Installed Console Actual 4 Cases PASS:**
 1. Text-2-page PDF: exact spaces/join/masking, exit 0
@@ -33,8 +33,8 @@ uv run pytest -q: 299 passed (2.07s)
 4. Encrypted PDF: exit 2, exact safe error (`encrypted pdf: <path>`)
 
 ## Implementation Scope & Sizing
-- Files changed: 5 (`pyproject.toml`, `uv.lock`, `src/piitier/cli.py`, `src/piitier/loaders.py`, `tests/test_loaders_pdf.py`).
-- Added lines: pyproject 3, cli 8, loaders 38, test 241, lock 13 => 303 including lock / 290 excluding lock. Well under the 400 soft limit.
+- Total diff: 303 added lines across 5 files including `uv.lock`.
+- Native budget (excluding `uv.lock`): 290 added lines across 4 files and 3 modules, well within limits.
 - Text-layer PDF only (via `pypdf==6.21.1`, BSD-3-Clause license).
 - Output is text only, not PDF; no OCR.
 - Current behavior preserves page whitespace and empty page separators, and rejects encrypted PDF before extraction.

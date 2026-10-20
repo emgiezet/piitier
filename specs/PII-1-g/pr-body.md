@@ -32,6 +32,6 @@ Installed console 4 cases verified:
   - `test_uc42_encrypted_pdf_exit2_exact_stderr`
 
 ### Scope, Sizing & Constraints
-- Sizing: 5 files changed (`pyproject.toml`, `uv.lock`, `src/piitier/cli.py`, `src/piitier/loaders.py`, `tests/test_loaders_pdf.py`). Added lines: pyproject 3, cli 8, loaders 38, test 241, lock 13 => 303 including lock / 290 excluding lock. Under 400 soft limit.
+- Sizing: 303 added lines total across 5 files including `uv.lock`. Native budget (excluding `uv.lock`) is 290 added lines across 4 files and 3 modules, well within limits.
 - Text-layer PDF only; output text not PDF; no OCR.
 - Preserves page whitespace/empty page separators and rejects encrypted PDF before extraction.
