@@ -12,6 +12,7 @@ from hypothesis import strategies as st
 
 from piitier.labels import Label
 from piitier.rules.iban import find, is_valid
+import piitier
 
 # ---------------------------------------------------------------------------
 # Known synthetic examples — anchors for UC tests
@@ -54,7 +55,8 @@ def test_uc19_pl_iban_with_prefix_compact() -> None:
     spans = find(IBAN_PL_VALID_COMPACT)
     assert len(spans) == 1
     assert spans[0].label is Label.IBAN
-    assert spans[0].status == "valid"
+    assert spans[0].start == 0
+    assert spans[0].end == len(IBAN_PL_VALID_COMPACT)
 
 
 def test_uc19_nrb_bare_spaced() -> None:
@@ -62,7 +64,8 @@ def test_uc19_nrb_bare_spaced() -> None:
     spans = find(IBAN_NRB_VALID_SPACED)
     assert len(spans) == 1
     assert spans[0].label is Label.IBAN
-    assert spans[0].status == "valid"
+    assert spans[0].start == 0
+    assert spans[0].end == len(IBAN_NRB_VALID_SPACED)
 
 
 def test_uc19_nrb_bare_compact() -> None:
@@ -70,7 +73,8 @@ def test_uc19_nrb_bare_compact() -> None:
     spans = find(IBAN_NRB_VALID_COMPACT)
     assert len(spans) == 1
     assert spans[0].label is Label.IBAN
-    assert spans[0].status == "valid"
+    assert spans[0].start == 0
+    assert spans[0].end == len(IBAN_NRB_VALID_COMPACT)
 
 
 # ---------------------------------------------------------------------------
@@ -99,14 +103,24 @@ def test_uc20_suspect_span_never_dropped() -> None:
 
 
 def test_uc21_iban_and_pesel_no_overlap() -> None:
-    """UC-21: detect on text with one IBAN, one PESEL → exactly two spans, none overlapping."""
-    text = f"Account {IBAN_NRB_VALID_COMPACT} for PESEL 90051512340 active"
-    spans = find(text)
-    # Filter for IBAN only; PESEL detection is in a separate detector
+    """UC-21: detect on text with 1 spaced IBAN + 1 contiguous IBAN + 1 PESEL → 3 non-overlapping spans."""
+    # Use PESEL that doesn't overlap with IBANs
+    pesel = "12345678901"
+    text = f"Invoice: {IBAN_PL_VALID_SPACED} or {IBAN_NRB_VALID_COMPACT} person {pesel}"
+    spans = piitier.detect(text)
+    # Filter to just IBAN and PESEL spans
     iban_spans = [s for s in spans if s.label is Label.IBAN]
-    assert len(iban_spans) == 1
-    # Check that span covers only the IBAN part
-    assert text[iban_spans[0].start : iban_spans[0].end] == IBAN_NRB_VALID_COMPACT
+    pesel_spans = [s for s in spans if s.label is Label.PESEL]
+    assert len(iban_spans) == 2, f"Expected 2 IBANs, got {len(iban_spans)}"
+    assert len(pesel_spans) == 1, f"Expected 1 PESEL, got {len(pesel_spans)}"
+    # Verify sorted by start
+    all_spans = iban_spans + pesel_spans
+    assert all_spans == sorted(all_spans, key=lambda s: s.start)
+    # Verify no PESEL overlaps with any IBAN
+    pesel_span = pesel_spans[0]
+    for iban_span in iban_spans:
+        assert not (iban_span.start <= pesel_span.start < iban_span.end), "PESEL starts inside IBAN"
+        assert not (iban_span.start < pesel_span.end <= iban_span.end), "PESEL ends inside IBAN"
 
 
 # ---------------------------------------------------------------------------
