@@ -3,7 +3,7 @@
 > **GAPS** — Some changed files were not declared in the spec scope.
 
 Base: `main`  
-Checked: 2026-10-20T13:09:43Z
+Checked: 2026-10-20T13:40:52Z
 
 ## File classification
 
