@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import piitier
-from piitier.datagen.render import _ADDRESS_LABELS, _PERSON_LABELS
+from piitier.datagen.render import _ADDRESS_LABELS, _DOCTOR_LABELS, _PERSON_LABELS
 from piitier.datagen.template import Placeholder, Template, TemplateError, parse
 from piitier.datagen.values import _GENERATORS
 
@@ -39,7 +39,7 @@ _ALLOWED_DOC_TYPES = frozenset(
     }
 )
 
-_SUPPORTED_LABELS = frozenset(_GENERATORS) | _PERSON_LABELS | _ADDRESS_LABELS
+_SUPPORTED_LABELS = frozenset(_GENERATORS) | _PERSON_LABELS | _ADDRESS_LABELS | _DOCTOR_LABELS
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):

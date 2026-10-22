@@ -44,7 +44,9 @@ _VALID_CASES = frozenset({"nom", "gen", "dat", "acc", "inst", "loc", "voc"})
 # Labels for which grammatical case inflection is supported (PII-2-c).
 # parse() enforces this: any other label paired with a case raises TemplateError.
 # TemplateError.reason=='Unknown label' is left untouched for PII-2-e compatibility.
-_INFLECTABLE_LABELS: frozenset[Label] = frozenset({Label.OSOBA, Label.IMIE, Label.NAZWISKO})
+_INFLECTABLE_LABELS: frozenset[Label] = frozenset(
+    {Label.OSOBA, Label.IMIE, Label.NAZWISKO, Label.LEKARZ}
+)
 
 
 def parse(template: Template) -> list[str | Placeholder]:
@@ -95,7 +97,7 @@ def parse(template: Template) -> list[str | Placeholder]:
         except KeyError:
             raise TemplateError(template.template_id, start, "Unknown label")
 
-        # PII-2-c: case is only allowed for inflectable labels (OSOBA, IMIE, NAZWISKO).
+        # PII-2-c: case is only allowed for inflectable labels (OSOBA, IMIE, NAZWISKO, LEKARZ).
         # Validated here (after label resolution) so that parse() callers — including
         # PII-2-e completion validation — also reject e.g. {{PESEL#1:gen}}.
         if case_part is not None and label not in _INFLECTABLE_LABELS:

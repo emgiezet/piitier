@@ -25,6 +25,8 @@ _PERSON_LABELS: frozenset[Label] = frozenset(
 )
 # Address-group labels: all three share one AddressRecord per entity.
 _ADDRESS_LABELS: frozenset[Label] = frozenset({Label.ADRES, Label.KOD_POCZTOWY, Label.MIEJSCOWOSC})
+# Doctor-group labels: LEKARZ uses person record + prefix.
+_DOCTOR_LABELS: frozenset[Label] = frozenset({Label.LEKARZ})
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,13 @@ def render(template: Template, seed: int) -> Document:
         Label.NR_REJESTRACYJNY,
         Label.VIN,
         Label.NR_KW,
+        # PII-3-b medical labels
+        Label.ICD10,
+        Label.LEK,
+        Label.ROZPOZNANIE,
+        Label.PLACOWKA,
+        Label.LEKARZ,
+        Label.NPWZ,
     }
     for item in parsed:
         if isinstance(item, Placeholder) and item.label not in supported_labels:
@@ -105,6 +114,9 @@ def render(template: Template, seed: int) -> Document:
     all_address_explicit_ids: set[int] = set()
     for _lbl in _ADDRESS_LABELS:
         all_address_explicit_ids.update(explicit_ids.get(_lbl, set()))
+    all_doctor_explicit_ids: set[int] = set()
+    for _lbl in _DOCTOR_LABELS:
+        all_doctor_explicit_ids.update(explicit_ids.get(_lbl, set()))
 
     # Next anonymous counter per label
     anon_counters: dict[Label, int] = {}
@@ -118,6 +130,8 @@ def render(template: Template, seed: int) -> Document:
             avoid = all_person_explicit_ids
         elif label in _ADDRESS_LABELS:
             avoid = all_address_explicit_ids
+        elif label in _DOCTOR_LABELS:
+            avoid = all_doctor_explicit_ids
         else:
             avoid = explicit_ids.get(label, set())
         if label not in anon_counters:
@@ -138,6 +152,8 @@ def render(template: Template, seed: int) -> Document:
             all_person_explicit_ids.add(n_eid)
         elif label in _ADDRESS_LABELS:
             all_address_explicit_ids.add(n_eid)
+        elif label in _DOCTOR_LABELS:
+            all_doctor_explicit_ids.add(n_eid)
         return eid
 
     # Cache values by (label, entity_id, case).
@@ -146,6 +162,7 @@ def render(template: Template, seed: int) -> Document:
     # Person/address record caches: keyed by entity_id string (case-independent).
     person_records: dict[str, people.PersonRecord] = {}
     address_records: dict[str, people.AddressRecord] = {}
+    doctor_records: dict[str, tuple[people.PersonRecord, str]] = {}
     value_cache: dict[tuple[Label, str, str | None], tuple[str, int]] = {}
 
     # Second pass: build text and spans
@@ -167,6 +184,7 @@ def render(template: Template, seed: int) -> Document:
                 is_person_linked = item.label in _PERSON_LABELS or (
                     item.label is Label.PESEL and item.entity is not None
                 )
+                is_doctor_linked = item.label in _DOCTOR_LABELS
                 occ_fb = 0
                 if is_person_linked:
                     if eid not in person_records:
@@ -193,6 +211,26 @@ def render(template: Template, seed: int) -> Document:
                             val = ln_form
                     else:
                         val = people.get_person_field(item.label, person_records[eid])
+
+                    value_cache[cache_key] = (val, occ_fb)
+                elif is_doctor_linked:
+                    if eid not in doctor_records:
+                        existing = frozenset(
+                            f"{r.first_name} {r.last_name}" for r, _ in doctor_records.values()
+                        )
+                        rec = people.make_person(rng, existing)
+                        prefix = rng.choice(["dr", "lek. med."])
+                        doctor_records[eid] = (rec, prefix)
+
+                    rec, prefix = doctor_records[eid]
+                    sex = rec.sex.lower()
+                    if item.case is not None and item.label in _INFLECTABLE_LABELS:
+                        fn_form, fn_fb = _inflect(rec.first_name, item.case, sex)
+                        ln_form, ln_fb = _inflect(rec.last_name, item.case, sex)
+                        occ_fb = int(fn_fb) + int(ln_fb)
+                        val = f"{prefix} {fn_form} {ln_form}"
+                    else:
+                        val = f"{prefix} {rec.first_name} {rec.last_name}"
 
                     value_cache[cache_key] = (val, occ_fb)
                 elif item.label in _ADDRESS_LABELS:

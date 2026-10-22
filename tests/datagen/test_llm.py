@@ -752,9 +752,9 @@ def test_placeholder_removal_prevents_cross_boundary_digit_run(tmp_path: Path) -
 
 
 def test_unsupported_known_label_lek_rejected_as_unknown_label(tmp_path: Path) -> None:
-    """Template with {{LEK}} (known Label member, but no generator) → unknown_label."""
+    """Template with {{WIEK}} (known Label member, but no generator) → unknown_label."""
     llm = _import_llm()
-    template = "Formularz:\nLek: {{LEK}}\nPESEL: {{PESEL}}\nIBAN: {{IBAN}}\nTreść."
+    template = "Formularz:\nLek: {{WIEK}}\nPESEL: {{PESEL}}\nIBAN: {{IBAN}}\nTreść."
     with _fake_ollama([template]) as server:
         counts: dict[str, Any] = llm.write_templates(
             doc_type="zgloszenie_szkody",

@@ -287,6 +287,172 @@ def validate_nr_kw(v: str) -> bool:
     return bool(_NR_KW_RE.fullmatch(v))
 
 
+_ICD10_LIST: tuple[str, ...] = (
+    "I10",
+    "I10.0",
+    "J06.9",
+    "J06",
+    "E11.9",
+    "E11",
+    "J18.9",
+    "J18",
+    "K29.7",
+    "K29",
+    "M54.5",
+    "M54",
+    "N39.0",
+    "N39",
+    "R51",
+    "J02.9",
+    "J02",
+    "J20.9",
+    "J20",
+    "R07.9",
+    "R07",
+    "I21.9",
+    "I21",
+    "E03.9",
+    "E03",
+    "F32.9",
+    "F32",
+    "G43.9",
+    "G43",
+    "L20.9",
+    "L20",
+)
+_ICD10_RE: re.Pattern[str] = re.compile(r"^[A-Z]\d{2}(\.\d{1,2})?$")
+
+_LEK_LIST: tuple[str, ...] = (
+    "paracetamol",
+    "ibuprofen",
+    "amoksycylina",
+    "kwas acetylosalicylowy",
+    "metamizol",
+    "ketoprofen",
+    "diklofenak",
+    "pantoprazol",
+    "omeprazol",
+    "ramipryl",
+    "peryndopryl",
+    "amlodypina",
+    "bisoprolol",
+    "metoprolol",
+    "atorwastatyna",
+    "rozuwastatyna",
+    "acenokumarol",
+    "furosemid",
+    "spironolakton",
+    "hydrochlorotiazyd",
+    "metformina",
+    "insulina",
+    "salbutamol",
+    "budesonid",
+    "flutykazon",
+    "montelukast",
+    "cetyryzyna",
+    "loratadyna",
+    "hydroksyzyna",
+    "sertralina",
+    "escitalopram",
+    "fluoksetyna",
+    "mirtazapina",
+    "diazepam",
+    "zolpidem",
+    "tramadol",
+    "kwas foliowy",
+    "witamina d3",
+    "witamina c",
+    "salbutamol",
+)
+
+_ROZPOZNANIE_LIST: tuple[str, ...] = (
+    "nadciśnienie tętnicze",
+    "ostre zapalenie oskrzeli",
+    "cukrzyca typu 2",
+    "infekcja górnych dróg oddechowych",
+    "ból pleców",
+    "przewlekłe zapalenie żołądka",
+    "zapalenie pęcherza moczowego",
+    "migrena",
+    "stan po zawale serca",
+    "lumbago",
+    "nerwica lękowa",
+    "astma oskrzelowa",
+    "choroba refluksowa przełyku",
+    "niedoczynność tarczycy",
+    "depresja",
+    "zmiany zwyrodnieniowe stawów",
+    "grypa",
+    "covid-19",
+    "zapalenie zatok przynosowych",
+    "zespół jelita drażliwego",
+)
+
+_PLACOWKA_RE: re.Pattern[str] = re.compile(
+    r"^Szpital (?:Wojewódzki|Miejski|Kliniczny|Specjalistyczny) im\. .+ w .+$"
+)
+
+# EVIDENCE: https://cez.gov.pl/HIS_API/site/pl/CodeSystem-pl-zle-practitioner-identifier-system.html
+# NPWZ (Numer Prawa Wykonywania Zawodu) format for medical professionals consists of 7 digits,
+# where the first digit represents the profession code (1 for physicians / lekarz).
+_NPWZ_RE: re.Pattern[str] = re.compile(r"^1\d{6}$")
+
+
+def generate_icd10(rng: random.Random) -> str:
+    """Generate an ICD-10 code from in-repo fact list."""
+    return rng.choice(_ICD10_LIST)
+
+
+def validate_icd10(v: str) -> bool:
+    return bool(_ICD10_RE.fullmatch(v))
+
+
+def generate_lek(rng: random.Random) -> str:
+    """Generate a generic drug name (INN) from in-repo fact list (exact 40 names)."""
+    return rng.choice(_LEK_LIST)
+
+
+def validate_lek(v: str) -> bool:
+    return v in _LEK_LIST
+
+
+def generate_rozpoznanie(rng: random.Random) -> str:
+    """Generate a diagnosis phrase from in-repo fact list."""
+    return rng.choice(_ROZPOZNANIE_LIST)
+
+
+def validate_rozpoznanie(v: str) -> bool:
+    return v in _ROZPOZNANIE_LIST
+
+
+def generate_placowka(rng: random.Random) -> str:
+    """Generate a hospital/placówka name using Faker pl_PL seeded from rng."""
+    from faker import Faker
+
+    fake = Faker("pl_PL")
+    fake.seed_instance(rng.getrandbits(32))
+    h_type = rng.choice(
+        ["Szpital Wojewódzki", "Szpital Miejski", "Szpital Kliniczny", "Szpital Specjalistyczny"]
+    )
+    last_name = fake.last_name_male()
+    town = fake.city()
+    return f"{h_type} im. {last_name} w {town}"
+
+
+def validate_placowka(v: str) -> bool:
+    return bool(_PLACOWKA_RE.fullmatch(v))
+
+
+def generate_npwz(rng: random.Random) -> str:
+    """Generate a 7-digit NPWZ for a physician starting with 1."""
+    digits = "".join(rng.choice("0123456789") for _ in range(6))
+    return f"1{digits}"
+
+
+def validate_npwz(v: str) -> bool:
+    return bool(_NPWZ_RE.fullmatch(v))
+
+
 _GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.PESEL: generate_pesel,
     Label.NIP: generate_nip,
@@ -302,6 +468,11 @@ _GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.NR_REJESTRACYJNY: generate_nr_rejestracyjny,
     Label.VIN: generate_vin,
     Label.NR_KW: generate_nr_kw,
+    Label.ICD10: generate_icd10,
+    Label.LEK: generate_lek,
+    Label.ROZPOZNANIE: generate_rozpoznanie,
+    Label.PLACOWKA: generate_placowka,
+    Label.NPWZ: generate_npwz,
 }
 
 _VALIDATORS: dict[Label, Callable[[str], bool]] = {
@@ -319,6 +490,11 @@ _VALIDATORS: dict[Label, Callable[[str], bool]] = {
     Label.NR_REJESTRACYJNY: validate_nr_rejestracyjny,
     Label.VIN: validate_vin,
     Label.NR_KW: validate_nr_kw,
+    Label.ICD10: validate_icd10,
+    Label.LEK: validate_lek,
+    Label.ROZPOZNANIE: validate_rozpoznanie,
+    Label.PLACOWKA: validate_placowka,
+    Label.NPWZ: validate_npwz,
 }
 
 

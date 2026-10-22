@@ -1,0 +1,20 @@
+SKIEROWANIE DO PORADNI SPECJALISTYCZNEJ
+
+DANE PACJENTA
+Imię i nazwisko: {{OSOBA#1}}
+PESEL: {{PESEL#1}}
+Adres zamieszkania: {{ADRES#1}}, {{KOD_POCZTOWY}} {{MIEJSCOWOSC}}
+Numer dowodu osobistego: {{NR_DOWODU}}
+
+WYSTAWIAJĄCY
+Placówka medyczna: {{PLACOWKA}}
+Skierujący lekarz: {{LEKARZ#1}}
+Numer PWZ: {{NPWZ}}
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+ROZLICZENIA NFZ
+Rachunek: {{IBAN}}
+
+KIEROWANIE DO PORADNI
+Skierowanie dotyczy konsultacji specjalistycznej i dalszego leczenia w ramach NFZ.

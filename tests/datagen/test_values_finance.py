@@ -86,7 +86,7 @@ def test_uc41_render_all_six_new_labels() -> None:
 
 def test_uc42_unsupported_label_raises_template_error() -> None:
     """UC-42: template with unknown/unsupported label raises TemplateError."""
-    t = Template(template_id="unknown-test", doc_type="test", text="Test {{LEK}}.")
+    t = Template(template_id="unknown-test", doc_type="test", text="Test {{WIEK}}.")
     with pytest.raises(TemplateError):
         render(t, seed=42)
 
@@ -207,6 +207,6 @@ def test_uc45_prompt_label_list_matches_supported_labels() -> None:
     prompts_dir = Path(__file__).parent.parent.parent / "src" / "piitier" / "datagen" / "prompts"
     for prompt_file in prompts_dir.glob("*.txt"):
         content = prompt_file.read_text(encoding="utf-8")
-        assert "21 obsługiwanych znaczników" in content
+        assert "27 obsługiwanych znaczników" in content
         for lbl in _SUPPORTED_LABELS:
             assert f"{{{{{lbl.name}}}}}" in content

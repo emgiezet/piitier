@@ -1,0 +1,25 @@
+WYPIS ZE SZPITALA
+
+DANE PACJENTA
+Pacjent: {{OSOBA#1}} (PESEL: {{PESEL#1}})
+Adres: {{ADRES#1}}, {{KOD_POCZTOWY}} {{MIEJSCOWOSC}}
+Data urodzenia: {{DATA_URODZENIA#1}}
+Numer dowodu: {{NR_DOWODU}}
+
+PLACOWKA WYSTAWIAJĄCA I LEKARZ
+Placówka: {{PLACOWKA}}
+Lekarz prowadzący: {{LEKARZ#1}}
+Numer PWZ lekarza: {{NPWZ}}
+NIP placówki: {{NIP}}
+REGON placówki: {{REGON}}
+
+ROZPOZNANIE I LECZENIE
+Rozpoznanie: {{ROZPOZNANIE}}
+Kod ICD-10: {{ICD10}}
+Zalecone leki: {{LEK}}, {{LEK}}
+
+ROZLICZENIE KOSZTÓW
+Rachunek bankowy do zwrotu kosztów: {{IBAN}}
+
+INFORMACJE DODATKOWE
+Pacjent wypisany w stanie dobrym. Zalecona kontrola w poradni specjalistycznej.
