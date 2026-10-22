@@ -14,6 +14,8 @@ import pytest
 from piitier.datagen import Template, TemplateError, render, values
 from piitier.labels import Label
 
+_FAKE_MODEL = "hf.co/SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF:Q8_0"
+
 
 def test_uc38_generators_and_validators_100_draws() -> None:
     """UC-38: 100 draws per generator with Random(42) pass validators without exceptions."""
@@ -138,8 +140,8 @@ def test_uc44_llm_write_templates_accepts_new_labels(tmp_path: Path) -> None:
                     {
                         "models": [
                             {
-                                "name": llm._DEFAULT_MODEL,
-                                "model": llm._DEFAULT_MODEL,
+                                "name": _FAKE_MODEL,
+                                "model": _FAKE_MODEL,
                                 "digest": "fake",
                                 "size": 0,
                             }
@@ -185,10 +187,13 @@ def test_uc44_llm_write_templates_accepts_new_labels(tmp_path: Path) -> None:
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
     try:
-        import os
-
-        os.environ["OLLAMA_HOST"] = srv.url
-        res = llm.write_templates(doc_type="zgloszenie_szkody", count=1, out=tmp_path)
+        res = llm.write_templates(
+            doc_type="zgloszenie_szkody",
+            count=1,
+            model=_FAKE_MODEL,
+            out=tmp_path,
+            ollama_url=srv.url,
+        )
         assert res.get("rejected", {}) == {}
     finally:
         srv.shutdown()
