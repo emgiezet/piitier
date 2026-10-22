@@ -65,7 +65,7 @@ def test_uc54_offset_integrity_100_docs() -> None:
 def test_uc55_strip_diacritics_alphabet_and_others() -> None:
     """UC-55: strip_diacritics replaces Polish diacritics, leaves others unchanged."""
     diac_text = (
-        "ąęćłńóśźż ĄĘĆŁŃÓŚŹŹ abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 !@#$%"
+        "ąęćłńóśźż ĄĘĆŁŃÓŚŹŻ abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 !@#$%"
     )
     doc = Document(
         text=diac_text,
@@ -178,15 +178,19 @@ def test_uc57_space_digit_groups_numeric_spans_only() -> None:
 
 def test_uc58_determinism_and_stochasticity() -> None:
     """UC-58: same seed -> identical result; different seed -> different (stochastic)."""
-    doc = render(Template("t1", "test", "PESEL {{PESEL}} and O 0 1 l"), seed=42)
+    t = Template("t1", "test", f"PESEL {{PESEL}} and {'0O1l' * 8}")
+    doc = render(t, seed=42)
     rng1 = random.Random(123)
     rng2 = random.Random(123)
+    rng3 = random.Random(456)
 
     res1 = augment(doc, rng1, transforms=None)
     res2 = augment(doc, rng2, transforms=None)
+    res3 = augment(doc, rng3, transforms=None)
 
     assert res1.text == res2.text
     assert res1.spans == res2.spans
+    assert res1.text != res3.text
 
 
 # ---------------------------------------------------------------------------

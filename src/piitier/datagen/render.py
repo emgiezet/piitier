@@ -216,7 +216,8 @@ def render(template: Template, seed: int) -> Document:
                 elif is_doctor_linked:
                     if eid not in doctor_records:
                         existing = frozenset(
-                            f"{r.first_name} {r.last_name}" for r, _ in doctor_records.values()
+                            [f"{r.first_name} {r.last_name}" for r in person_records.values()]
+                            + [f"{r.first_name} {r.last_name}" for r, _ in doctor_records.values()]
                         )
                         rec = people.make_person(rng, existing)
                         prefix = rng.choice(["dr", "lek. med."])

@@ -57,8 +57,9 @@ def test_uc48_npwz_format_and_evidence() -> None:
 
 
 def test_uc49_lek_list_length_40() -> None:
-    """UC-49: LEK list length is exactly 40 names."""
+    """UC-49: LEK list length is exactly 40 names, all unique."""
     assert len(values._LEK_LIST) == 40
+    assert len(set(values._LEK_LIST)) == 40
 
 
 def test_uc50_render_template_with_six_medical_labels() -> None:
@@ -103,15 +104,10 @@ def test_uc52_build_check_manifest_medical_templates(tmp_path: Path) -> None:
     assert stderr == ""
 
     manifest_data = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    records = manifest_data if isinstance(manifest_data, list) else [manifest_data]
+    span_counts = manifest_data.get("span_counts", {})
     medical_labels = {"ICD10", "LEK", "ROZPOZNANIE", "PLACOWKA", "LEKARZ", "NPWZ"}
-    found_any = False
-    for rec in records:
-        counts = rec.get("span_counts", {})
-        if any(lbl in counts for lbl in medical_labels):
-            found_any = True
-            break
-    assert found_any is True
+    for lbl in medical_labels:
+        assert lbl in span_counts, f"{lbl} missing from manifest span_counts"
 
 
 def test_uc53_prompt_label_list_27_labels() -> None:

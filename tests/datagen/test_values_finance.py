@@ -103,15 +103,10 @@ def test_uc43_build_check_manifest_with_new_templates(tmp_path: Path) -> None:
     assert stderr == ""
 
     manifest_data = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    records = manifest_data if isinstance(manifest_data, list) else [manifest_data]
+    span_counts = manifest_data.get("span_counts", {})
     new_labels = {"NR_UMOWY", "NR_POLISY", "NR_SZKODY", "NR_REJESTRACYJNY", "VIN", "NR_KW"}
-    found_any = False
-    for rec in records:
-        counts = rec.get("span_counts", {})
-        if any(lbl in counts for lbl in new_labels):
-            found_any = True
-            break
-    assert found_any is True
+    for lbl in new_labels:
+        assert lbl in span_counts, f"{lbl} missing from manifest span_counts"
 
 
 def test_uc44_llm_write_templates_accepts_new_labels(tmp_path: Path) -> None:

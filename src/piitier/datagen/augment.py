@@ -47,7 +47,7 @@ _NUMERIC_LABELS: frozenset[Label] = frozenset(
         Label.NR_DOWODU,
         Label.NR_KARTY,
         Label.TELEFON,
-        Label.WIEK,
+        Label.NPWZ,
     }
 )
 
@@ -67,8 +67,6 @@ def _apply_ocr_confusions(
                     chars.append("l")
                 elif c == "l":
                     chars.append("1")
-                else:
-                    chars.append(c)
             else:
                 chars.append(c)
         else:
@@ -165,7 +163,9 @@ def _apply_strip_diacritics(
 
 
 def _apply_uppercase(text: str, spans: list[SyntheticSpan]) -> tuple[str, list[SyntheticSpan]]:
+    # Precondition: str.upper() preserves string length (1:1 mapping in Python unicode).
     new_text = text.upper()
+    assert len(new_text) == len(text)
     new_spans = [
         SyntheticSpan(
             start=s.start,
@@ -194,7 +194,7 @@ def augment(
     else:
         unknown = transforms - valid_transforms
         if unknown:
-            raise ValueError(f"Unknown transform(s): {unknown}")
+            raise ValueError(f"Unknown transform(s): {sorted(unknown)}")
         active = [t for t in ALL_TRANSFORMS if t in transforms]
 
     text = doc.text

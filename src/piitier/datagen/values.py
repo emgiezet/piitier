@@ -362,7 +362,7 @@ _LEK_LIST: tuple[str, ...] = (
     "kwas foliowy",
     "witamina d3",
     "witamina c",
-    "salbutamol",
+    "claritromycyna",
 )
 
 _ROZPOZNANIE_LIST: tuple[str, ...] = (
@@ -393,6 +393,7 @@ _PLACOWKA_RE: re.Pattern[str] = re.compile(
 )
 
 # EVIDENCE: https://cez.gov.pl/HIS_API/site/pl/CodeSystem-pl-zle-practitioner-identifier-system.html
+# EVIDENCE: https://nil.org.pl/rejestry/centralny-rejestr-lekarzy/zasady-weryfikowania-nr-prawa-wykonywania-zawodu
 # NPWZ (Numer Prawa Wykonywania Zawodu) format for medical professionals consists of 7 digits,
 # where the first digit represents the profession code (1 for physicians / lekarz).
 _NPWZ_RE: re.Pattern[str] = re.compile(r"^1\d{6}$")

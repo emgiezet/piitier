@@ -1,10 +1,9 @@
 """Tests for PII-3-d — hard negatives, build augmentation, dataset card (UC-60..UC-65)."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,7 +18,7 @@ PACKAGED_TEMPLATES = WORKTREE / "src" / "piitier" / "datagen" / "templates"
 
 def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["python", "-m", "piitier.datagen", *args],
+        [sys.executable, "-m", "piitier.datagen", *args],
         capture_output=True,
         text=True,
         cwd=cwd or WORKTREE,
@@ -190,6 +189,18 @@ def test_uc64_integration_2000_docs(tmp_path: Path) -> None:
     assert manifest["n"] == 1800
     assert manifest["hard_negatives"] == 200
     assert manifest["augment"] is True
+    assert sum(manifest["split_counts"].values()) == 2000
+
+    agg_span_counts: dict[str, int] = {}
+    for filename in ("train.jsonl", "dev.jsonl"):
+        for line in (out / filename).read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            for s in rec["spans"]:
+                lbl = s["label"]
+                agg_span_counts[lbl] = agg_span_counts.get(lbl, 0) + 1
+    assert dict(sorted(agg_span_counts.items())) == manifest["span_counts"]
 
 
 # UC-65: dataset card exists, mentions CC BY 4.0 and both licences (Faker, Morfeusz)

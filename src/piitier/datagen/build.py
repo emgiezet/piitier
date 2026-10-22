@@ -16,6 +16,8 @@ Seeds: base_seed + i.
 Traversal: sorted(doc_types) then sorted(filenames) — stable across platforms.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import random
@@ -152,6 +154,10 @@ def build(
         Number of hard negative documents to append.
     """
     _check_output_guard(out)
+    if hard_negatives < 0:
+        raise BuildError(f"hard_negatives must be >= 0, got {hard_negatives}")
+    if n < 0:
+        raise BuildError(f"n must be >= 0, got {n}")
     templates = collect_templates(templates_dir)
     if not templates:
         raise ValueError(f"No .txt templates found in {templates_dir}")

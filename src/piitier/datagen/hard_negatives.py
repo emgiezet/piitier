@@ -56,12 +56,12 @@ def make_hard_negative_docs(seed: int, n: int) -> list[Document]:
                 text = "Nadchodząca mroźna zima zmusiła zarządcę do sprawdzenia ogrzewania."
             spans = []
         elif family == 2:
-            # (c) address line ul. {Faker last_name} {number}, {postcode} {town} -> ADRES span
-            last_name = faker.last_name()
+            # (c) address line ul. {Faker street_name} {number}, {postcode} {town} -> ADRES span
+            street = faker.street_name()
             number = rng.randint(1, 150)
             postcode = f"{rng.randint(10, 99):02d}-{rng.randint(0, 999):03d}"
             town = faker.city()
-            addr_str = f"ul. {last_name} {number}, {postcode} {town}"
+            addr_str = f"ul. {street} {number}, {postcode} {town}"
             text = addr_str
             spans = [
                 SyntheticSpan(
