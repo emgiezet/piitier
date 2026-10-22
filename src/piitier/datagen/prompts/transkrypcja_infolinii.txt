@@ -1,0 +1,36 @@
+Przeformułuj i przepisz wyłącznie tekst narracyjny poniższego wzorcowego dokumentu, zmieniając słownictwo i sformułowania w opisie, ale ZACHOWAJ KAŻDY ISTNIEJĄCY ZNACZNIK PII (placeholder w nawiasach klamrowych {{...}}) DOKŁADNIE BEZ ZMIAN (ta sama kolejność, te same nazwy, ta sama liczba znaczników). Nie dodawaj żadnych nowych znaczników ani pól.
+
+Informacyjna lista 15 obsługiwanych znaczników:
+- {{PESEL}}, {{NIP}}, {{REGON}}, {{IBAN}}, {{NR_DOWODU}}, {{NR_KARTY}}, {{OSOBA}}, {{IMIE}}, {{NAZWISKO}}, {{DATA_URODZENIA}}, {{ADRES}}, {{KOD_POCZTOWY}}, {{MIEJSCOWOSC}}, {{TELEFON}}, {{EMAIL}}
+
+W tej operacji używaj WYŁĄCZNIE znaczników, które znajdują się już we wzorcu poniżej. Nie wymyślaj żadnych nowych etykiet ani pól.
+
+Wzorcowy dokument:
+TRANSKRYPCJA ROZMOWY Z INFOLINIĄ
+
+Konsultant: Dzień dobry, słucham Państwa. W czym mogę pomóc?
+
+Klient: Dzień dobry. Chciałem zapytać o status mojej płatności.
+        Mój PESEL to {{PESEL}}.
+
+Konsultant: Proszę podać numer dowodu osobistego w celu weryfikacji tożsamości.
+
+Klient: {{NR_DOWODU}}
+
+Konsultant: Dziękuję za weryfikację. Jaki numer rachunku bankowego Państwa dotyczy?
+
+Klient: Numer IBAN: {{IBAN}}
+
+Konsultant: Rozumiem. Sprawdzam w systemie.
+            Proszę chwilę zaczekać.
+
+Klient: Oczywiście.
+
+Konsultant: Płatność została zaksięgowana prawidłowo.
+            Czy mogę jeszcze w czymś pomóc?
+
+Klient: Nie, dziękuję bardzo.
+
+Konsultant: Dziękuję za kontakt. Miłego dnia.
+
+Przypomnienie: Przepisz powyższy tekst, zmieniając prozę i styl, ale ZACHOWAJ WSZYSTKIE ISTNIEJĄCE ZNACZNIKI BEZ ZMIAN. Zwróć WYŁĄCZNIE surowy dokument wynikowy bez dodatkowych wyjaśnień, nagłówków i bez bloków kodu.

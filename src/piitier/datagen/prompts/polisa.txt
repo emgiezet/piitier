@@ -1,0 +1,28 @@
+Przeformułuj i przepisz wyłącznie tekst narracyjny poniższego wzorcowego dokumentu, zmieniając słownictwo i sformułowania w opisie, ale ZACHOWAJ KAŻDY ISTNIEJĄCY ZNACZNIK PII (placeholder w nawiasach klamrowych {{...}}) DOKŁADNIE BEZ ZMIAN (ta sama kolejność, te same nazwy, ta sama liczba znaczników). Nie dodawaj żadnych nowych znaczników ani pól.
+
+Informacyjna lista 15 obsługiwanych znaczników:
+- {{PESEL}}, {{NIP}}, {{REGON}}, {{IBAN}}, {{NR_DOWODU}}, {{NR_KARTY}}, {{OSOBA}}, {{IMIE}}, {{NAZWISKO}}, {{DATA_URODZENIA}}, {{ADRES}}, {{KOD_POCZTOWY}}, {{MIEJSCOWOSC}}, {{TELEFON}}, {{EMAIL}}
+
+W tej operacji używaj WYŁĄCZNIE znaczników, które znajdują się już we wzorcu poniżej. Nie wymyślaj żadnych nowych etykiet ani pól.
+
+Wzorcowy dokument:
+POLISA UBEZPIECZENIA MAJĄTKOWEGO
+
+Numer polisy: {{NR_KARTY}}
+
+UBEZPIECZAJĄCY
+PESEL: {{PESEL}}
+Seria i numer dowodu osobistego: {{NR_DOWODU}}
+
+UBEZPIECZYCIEL
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+Składka ubezpieczeniowa płatna na rachunek bankowy:
+IBAN: {{IBAN}}
+
+Niniejsza polisa potwierdza zawarcie umowy ubezpieczenia na warunkach
+ogólnych ubezpieczenia majątkowego. Ubezpieczający oświadcza, że dane
+osobowe podane powyżej są prawdziwe i aktualne.
+
+Przypomnienie: Przepisz powyższy tekst, zmieniając prozę i styl, ale ZACHOWAJ WSZYSTKIE ISTNIEJĄCE ZNACZNIKI BEZ ZMIAN. Zwróć WYŁĄCZNIE surowy dokument wynikowy bez dodatkowych wyjaśnień, nagłówków i bez bloków kodu.

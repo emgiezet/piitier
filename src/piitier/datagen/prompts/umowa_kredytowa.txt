@@ -1,0 +1,29 @@
+Przeformułuj i przepisz wyłącznie tekst narracyjny poniższego wzorcowego dokumentu, zmieniając słownictwo i sformułowania w opisie, ale ZACHOWAJ KAŻDY ISTNIEJĄCY ZNACZNIK PII (placeholder w nawiasach klamrowych {{...}}) DOKŁADNIE BEZ ZMIAN (ta sama kolejność, te same nazwy, ta sama liczba znaczników). Nie dodawaj żadnych nowych znaczników ani pól.
+
+Informacyjna lista 15 obsługiwanych znaczników:
+- {{PESEL}}, {{NIP}}, {{REGON}}, {{IBAN}}, {{NR_DOWODU}}, {{NR_KARTY}}, {{OSOBA}}, {{IMIE}}, {{NAZWISKO}}, {{DATA_URODZENIA}}, {{ADRES}}, {{KOD_POCZTOWY}}, {{MIEJSCOWOSC}}, {{TELEFON}}, {{EMAIL}}
+
+W tej operacji używaj WYŁĄCZNIE znaczników, które znajdują się już we wzorcu poniżej. Nie wymyślaj żadnych nowych etykiet ani pól.
+
+Wzorcowy dokument:
+UMOWA KREDYTOWA
+
+KREDYTOBIORCA
+PESEL: {{PESEL}}
+Numer dowodu osobistego: {{NR_DOWODU}}
+Karta debetowa: {{NR_KARTY}}
+
+BANK - KREDYTODAWCA
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+RACHUNEK DO WYPŁATY KREDYTU
+{{IBAN}}
+
+Niniejsza umowa kredytowa zostaje zawarta pomiędzy Kredytobiorcą
+a Bankiem na warunkach określonych w Ogólnych Warunkach Umowy Kredytowej.
+Kredytobiorca zobowiązuje się do spłaty kredytu wraz z należnymi odsetkami
+w terminach wskazanych w harmonogramie spłat stanowiącym załącznik do umowy.
+Kredytobiorca potwierdza otrzymanie egzemplarza niniejszej umowy.
+
+Przypomnienie: Przepisz powyższy tekst, zmieniając prozę i styl, ale ZACHOWAJ WSZYSTKIE ISTNIEJĄCE ZNACZNIKI BEZ ZMIAN. Zwróć WYŁĄCZNIE surowy dokument wynikowy bez dodatkowych wyjaśnień, nagłówków i bez bloków kodu.
