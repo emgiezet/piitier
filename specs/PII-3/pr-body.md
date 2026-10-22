@@ -1,6 +1,6 @@
 ## PR: PII-3 — Finance & Medical Generators, Augmentation & Hard Negatives
 
-**QA verdict: PASS (491/491 passed)** · **Code Review: Approved after addressing all review findings in commit `5c37ab2`** · UC coverage: 38/38 automated (UC-38..UC-66) · Tests: 463 → 491 (+28 tests) · Skipped: 0
+**QA verdict: PASS (491/491 passed)** · **Code Review: Approved after addressing all review findings in commit `5c37ab2`** · UC coverage: 29/29 automated (UC-38..UC-66) · Tests: 463 → 491 (+28 tests) · Skipped: 0
 
 ### Executive Summary & Integration Scope
 This PR merges the complete PII-3 batch of the synthetic data generation pipeline:
