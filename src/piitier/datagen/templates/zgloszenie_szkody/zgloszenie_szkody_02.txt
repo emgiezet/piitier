@@ -1,0 +1,17 @@
+ZGŁOSZENIE SZKODY KOMUNIKACYJNEJ
+
+Numer szkody: {{NR_SZKODY}}
+
+INFORMACJE O POJEŹDZIE
+Numer rejestracyjny: {{NR_REJESTRACYJNY}}
+Numer VIN pojazdu: {{VIN}}
+
+DANE ZGŁASZAJĄCEGO
+PESEL: {{PESEL}}
+
+ODSZKODOWANIE
+Wpłacić na rachunek bankowy: {{IBAN}}
+
+Opis zdarzenia drogowego:
+Zgłaszam szkodę powstałą w wyniku kolizji. Oświadczam, że dane są prawdziwe
+i wnoszę o rozpatrzenie szkody komunikacyjnej.

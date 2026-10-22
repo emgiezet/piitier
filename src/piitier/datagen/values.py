@@ -22,6 +22,48 @@ _ID_LETTER_VALUES = {chr(ord("A") + i): 10 + i for i in range(26)}
 _ID_WEIGHTS_LETTERS: tuple[int, ...] = (7, 3, 1)
 _ID_WEIGHTS_DIGITS: tuple[int, ...] = (7, 3, 1, 7, 3)
 
+_PLATE_LETTERS: str = "ABCDEFGHJKLMNPRSTUVWXYZ"
+_PLATE_LETTERS_SET: frozenset[str] = frozenset(_PLATE_LETTERS)
+_PLATE_CHARS_SET: frozenset[str] = _PLATE_LETTERS_SET | frozenset("0123456789")
+
+_VIN_CHARS: str = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"
+_VIN_TRANSLITERATION: dict[str, int] = {
+    "A": 1,
+    "B": 2,
+    "C": 3,
+    "D": 4,
+    "E": 5,
+    "F": 6,
+    "G": 7,
+    "H": 8,
+    "J": 1,
+    "K": 2,
+    "L": 3,
+    "M": 4,
+    "N": 5,
+    "P": 7,
+    "R": 9,
+    "S": 2,
+    "T": 3,
+    "U": 4,
+    "V": 5,
+    "W": 6,
+    "X": 7,
+    "Y": 8,
+    "Z": 9,
+}
+for _d in range(10):
+    _VIN_TRANSLITERATION[str(_d)] = _d
+
+_VIN_WEIGHTS: tuple[int, ...] = (8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2)
+
+_NR_UMOWY_RE: re.Pattern[str] = re.compile(r"^UM/(?:201[5-9]|202[0-6])/\d{7}$")
+_NR_POLISY_RE: re.Pattern[str] = re.compile(r"^(?:PL|UB)\d{10}$")
+_NR_SZKODY_RE: re.Pattern[str] = re.compile(r"^(?:SZK|CLM)\d{8}$")
+_NR_REJESTRACYJNY_RE: re.Pattern[str] = re.compile(r"^[A-Z]{2}[A-Z0-9]{3,5}$")
+_VIN_RE: re.Pattern[str] = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
+_NR_KW_RE: re.Pattern[str] = re.compile(r"^[A-Z]{2}\d/\d{6}/(?:201[5-9]|202[0-6])$")
+
 
 def generate_pesel(rng: random.Random) -> str:
     """Generate a valid 11-digit PESEL string with format variants."""
@@ -148,6 +190,103 @@ def generate_nr_karty(rng: random.Random) -> str:
     return full
 
 
+def generate_nr_umowy(rng: random.Random) -> str:
+    """Generate a valid NR_UMOWY string (UM/{YYYY}/{7 digits}, years 2015-2026)."""
+    year = rng.randint(2015, 2026)
+    serial = rng.randint(0, 9999999)
+    return f"UM/{year}/{serial:07d}"
+
+
+def validate_nr_umowy(v: str) -> bool:
+    return bool(_NR_UMOWY_RE.fullmatch(v))
+
+
+def generate_nr_polisy(rng: random.Random) -> str:
+    """Generate a valid NR_POLISY string ({PL|UB}{10 digits})."""
+    prefix = rng.choice(["PL", "UB"])
+    digits = "".join(rng.choice("0123456789") for _ in range(10))
+    return f"{prefix}{digits}"
+
+
+def validate_nr_polisy(v: str) -> bool:
+    return bool(_NR_POLISY_RE.fullmatch(v))
+
+
+def generate_nr_szkody(rng: random.Random) -> str:
+    """Generate a valid NR_SZKODY string ({SZK|CLM}{8 digits})."""
+    prefix = rng.choice(["SZK", "CLM"])
+    digits = "".join(rng.choice("0123456789") for _ in range(8))
+    return f"{prefix}{digits}"
+
+
+def validate_nr_szkody(v: str) -> bool:
+    return bool(_NR_SZKODY_RE.fullmatch(v))
+
+
+def generate_nr_rejestracyjny(rng: random.Random) -> str:
+    """Generate a valid NR_REJESTRACYJNY plate (^[A-Z]{2}[A-Z0-9]{3,5}$, >=2 digits, no I/O/Q)."""
+    while True:
+        l1 = rng.choice(_PLATE_LETTERS)
+        l2 = rng.choice(_PLATE_LETTERS)
+        body_len = rng.choice([3, 4, 5])
+        body = "".join(rng.choice("ABCDEFGHJKLMNPRSTUVWXYZ0123456789") for _ in range(body_len))
+        plate = f"{l1}{l2}{body}"
+        if sum(1 for c in plate if c.isdigit()) >= 2:
+            return plate
+
+
+def validate_nr_rejestracyjny(v: str) -> bool:
+    if not _NR_REJESTRACYJNY_RE.fullmatch(v):
+        return False
+    if v[0] not in _PLATE_LETTERS_SET or v[1] not in _PLATE_LETTERS_SET:
+        return False
+    for c in v[2:]:
+        if c not in _PLATE_CHARS_SET:
+            return False
+    if sum(1 for c in v if c.isdigit()) < 2:
+        return False
+    return True
+
+
+def generate_vin(rng: random.Random) -> str:
+    """Generate a valid 17-char VIN with WMI starting with ZZ and ISO 3779 check digit."""
+    wmi = "ZZ" + rng.choice("ABCDEFGHJKLMNPRSTUVWXYZ0123456789")
+    vds_prefix = "".join(rng.choice(_VIN_CHARS) for _ in range(5))
+    vis = "".join(rng.choice(_VIN_CHARS) for _ in range(8))
+    partial = wmi + vds_prefix + "0" + vis
+    total = sum(_VIN_TRANSLITERATION[c] * w for c, w in zip(partial, _VIN_WEIGHTS))
+    rem = total % 11
+    check = "X" if rem == 10 else str(rem)
+    return wmi + vds_prefix + check + vis
+
+
+def validate_vin(v: str) -> bool:
+    if not _VIN_RE.fullmatch(v):
+        return False
+    if not v.startswith("ZZ"):
+        return False
+    try:
+        total = sum(_VIN_TRANSLITERATION[c] * w for c, w in zip(v, _VIN_WEIGHTS))
+    except KeyError:
+        return False
+    rem = total % 11
+    expected_check = "X" if rem == 10 else str(rem)
+    return v[8] == expected_check
+
+
+def generate_nr_kw(rng: random.Random) -> str:
+    """Generate a valid NR_KW string ({2 letters}{1 digit}/{6 digits}/{YYYY})."""
+    letters = "".join(rng.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ") for _ in range(2))
+    digit = rng.choice("0123456789")
+    serial = f"{rng.randint(0, 999999):06d}"
+    year = rng.randint(2015, 2026)
+    return f"{letters}{digit}/{serial}/{year}"
+
+
+def validate_nr_kw(v: str) -> bool:
+    return bool(_NR_KW_RE.fullmatch(v))
+
+
 _GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.PESEL: generate_pesel,
     Label.NIP: generate_nip,
@@ -157,6 +296,12 @@ _GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.NR_KARTY: generate_nr_karty,
     Label.TELEFON: generate_telefon,
     Label.EMAIL: generate_email,
+    Label.NR_UMOWY: generate_nr_umowy,
+    Label.NR_POLISY: generate_nr_polisy,
+    Label.NR_SZKODY: generate_nr_szkody,
+    Label.NR_REJESTRACYJNY: generate_nr_rejestracyjny,
+    Label.VIN: generate_vin,
+    Label.NR_KW: generate_nr_kw,
 }
 
 _VALIDATORS: dict[Label, Callable[[str], bool]] = {
@@ -168,6 +313,12 @@ _VALIDATORS: dict[Label, Callable[[str], bool]] = {
     Label.NR_KARTY: payment_card.is_valid,
     Label.TELEFON: lambda v: bool(_TELEFON_RE.fullmatch(v)),
     Label.EMAIL: lambda v: bool(_EMAIL_RE.fullmatch(v)),
+    Label.NR_UMOWY: validate_nr_umowy,
+    Label.NR_POLISY: validate_nr_polisy,
+    Label.NR_SZKODY: validate_nr_szkody,
+    Label.NR_REJESTRACYJNY: validate_nr_rejestracyjny,
+    Label.VIN: validate_vin,
+    Label.NR_KW: validate_nr_kw,
 }
 
 

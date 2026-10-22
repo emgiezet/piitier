@@ -1,0 +1,17 @@
+POLISA UBEZPIECZENIA KOMUNIKACYJNEGO
+
+Numer polisy ubezpieczeniowej: {{NR_POLISY}}
+
+DANE UBEZPIECZAJĄCEGO
+PESEL: {{PESEL}}
+Dokument tożsamości: {{NR_DOWODU}}
+
+TOWARZYSTWO UBEZPIECZEŃ
+NIP ubezpieczyciela: {{NIP}}
+
+RACHUNEK ROZLICZENIOWY
+IBAN: {{IBAN}}
+
+Niniejsza polisa potwierdza zawarcie umowy ubezpieczenia komunikacyjnego.
+Warunki ogólne zostały doręczone ubezpieczającemu przed podpisaniem dokumentu.
+Dane osobowe podane w polisy są przetwarzane zgodnie z przepisami prawa.

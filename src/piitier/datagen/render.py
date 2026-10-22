@@ -70,6 +70,13 @@ def render(template: Template, seed: int) -> Document:
         Label.MIEJSCOWOSC,
         Label.TELEFON,
         Label.EMAIL,
+        # PII-3-a finance / insurance labels
+        Label.NR_UMOWY,
+        Label.NR_POLISY,
+        Label.NR_SZKODY,
+        Label.NR_REJESTRACYJNY,
+        Label.VIN,
+        Label.NR_KW,
     }
     for item in parsed:
         if isinstance(item, Placeholder) and item.label not in supported_labels:
