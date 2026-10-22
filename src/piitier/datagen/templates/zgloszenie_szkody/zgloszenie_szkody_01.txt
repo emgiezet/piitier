@@ -1,0 +1,19 @@
+ZGŁOSZENIE SZKODY
+
+DANE ZGŁASZAJĄCEGO
+PESEL: {{PESEL}}
+Dowód osobisty: {{NR_DOWODU}}
+Karta płatnicza: {{NR_KARTY}}
+
+DANE SPRAWCY / FIRMY
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+WYPŁATA ODSZKODOWANIA
+Proszę o przelew odszkodowania na rachunek bankowy:
+{{IBAN}}
+
+Opis zdarzenia:
+Zgłaszam szkodę powstałą w wyniku zdarzenia. Wszystkie dane podane
+w formularzu są zgodne z prawdą. Wyrażam zgodę na przetwarzanie
+danych osobowych w celu rozpatrzenia niniejszego zgłoszenia.

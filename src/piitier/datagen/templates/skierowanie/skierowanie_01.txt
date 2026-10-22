@@ -1,0 +1,18 @@
+SKIEROWANIE DO SPECJALISTY
+
+DANE PACJENTA
+PESEL: {{PESEL}}
+Numer dowodu osobistego: {{NR_DOWODU}}
+
+WYSTAWIAJĄCY LEKARZ / PLACÓWKA
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+RACHUNEK DO ROZLICZEŃ NFZ
+{{IBAN}}
+
+Niniejsze skierowanie uprawnia pacjenta do skorzystania ze świadczeń
+specjalistycznych w ramach umowy z Narodowym Funduszem Zdrowia.
+Skierowanie jest ważne do odwołania. Pacjent jest zobowiązany
+do rejestracji w placówce docelowej nie później niż w ciągu 30 dni
+od daty wystawienia niniejszego dokumentu.

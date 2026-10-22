@@ -1,0 +1,18 @@
+POLISA UBEZPIECZENIA MAJĄTKOWEGO
+
+Numer polisy: {{NR_KARTY}}
+
+UBEZPIECZAJĄCY
+PESEL: {{PESEL}}
+Seria i numer dowodu osobistego: {{NR_DOWODU}}
+
+UBEZPIECZYCIEL
+NIP: {{NIP}}
+REGON: {{REGON}}
+
+Składka ubezpieczeniowa płatna na rachunek bankowy:
+IBAN: {{IBAN}}
+
+Niniejsza polisa potwierdza zawarcie umowy ubezpieczenia na warunkach
+ogólnych ubezpieczenia majątkowego. Ubezpieczający oświadcza, że dane
+osobowe podane powyżej są prawdziwe i aktualne.

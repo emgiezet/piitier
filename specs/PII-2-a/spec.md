@@ -46,7 +46,9 @@ Change budget: 350 added lines, 6 files, 2 modules
 - `src/piitier/labels.py` (`Label`), `src/piitier/spans.py` (`Span`), `src/piitier/rules/*.py`
   (validators) and `piitier.detect()`, from PII-1-a…e.
 - New: `src/piitier/datagen/__init__.py`, `src/piitier/datagen/template.py`, `src/piitier/datagen/values.py`,
-  `src/piitier/datagen/render.py`, `tests/datagen/test_template.py`, `tests/datagen/test_render.py`.
+  `src/piitier/datagen/render.py`, `tests/datagen/__init__.py` (package marker — prevents namespace
+  collision with the root-level `tests/test_render.py` under pytest's default import mode),
+  `tests/datagen/test_template.py`, `tests/datagen/test_render.py`.
 
 ## Acceptance criteria
 
