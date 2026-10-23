@@ -1,0 +1,12 @@
+run: pii-4-smoke
+base_checkpoint: hf-internal-testing/tiny-random-BertForTokenClassification
+base_revision: main
+train_file: tests/training/fixtures/smoke_docs.jsonl
+eval_file: tests/training/fixtures/smoke_docs.jsonl
+seed: 42
+max_steps: 1
+per_device_batch_size: 2
+learning_rate: 5e-5
+max_length: 128
+output_dir: training/out/pii-4-smoke
+threshold: null
