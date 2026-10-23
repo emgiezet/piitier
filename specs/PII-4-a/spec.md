@@ -19,18 +19,19 @@ dla długich dokumentów. To jedyny moduł PII-4, który ląduje w `src/piitier`
 ```python
 BIO_O: str = "O"
 
+
 def bio_tag_names() -> list[str]:
     """['O'] + dla każdego Label w kolejności definicji enuma: 'B-<name>', 'I-<name>'.
     1 + 39*2 = 79 nazw; deterministyczna kolejność (kolejność członków enuma)."""
 
-def spans_to_token_labels(
-    spans: list[Span], offset_mapping: list[tuple[int, int]]
-) -> list[int]:
+
+def spans_to_token_labels(spans: list[Span], offset_mapping: list[tuple[int, int]]) -> list[int]:
     """Identyfikatory tagów BIO dla tokenów. Token (offsety w oryginalnym tekście)
     dostaje B-<label> jeśli jest pierwszym tokenem w spanie, I-<label> dla kolejnych;
     warunek: token MUSI być w całości wewnątrz spana (tok_start >= span.start and
     tok_end <= span.end); tokeny częściowo nachodzące lub poza spanami → O.
     Offsety (0, 0) → O. Identyfikatory wg bio_tag_names() — indeks nazwy na liście."""
+
 
 def decode_spans(
     text: str,
@@ -49,6 +50,7 @@ def decode_spans(
       (nazwa bez prefiksu B-/I-).
     - Span(source='model:ner', status='valid'); start/end z offsetów pierwszego/ostatniego
       tokenu encji. Sortowanie po (start, end)."""
+
 
 class NerPredictor:
     def __init__(
