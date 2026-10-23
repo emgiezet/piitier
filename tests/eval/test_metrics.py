@@ -12,16 +12,17 @@ from pathlib import Path
 
 import pytest
 
-from piitier.labels import Label  # noqa: E402
-from piitier.render import mask as render_mask  # noqa: E402
-from piitier.spans import Span  # noqa: E402
+from piitier.labels import Label
+from piitier.render import mask as render_mask
+from piitier.spans import Span
 
 # Dynamically load eval/metrics.py to avoid test runner path resolution issues
 _metrics_path = Path(__file__).resolve().parents[2] / "eval" / "metrics.py"
 _spec = importlib.util.spec_from_file_location("eval.metrics", _metrics_path)
 _metrics_mod = importlib.util.module_from_spec(_spec)
 sys.modules["eval.metrics"] = _metrics_mod
-_spec.loader.exec_module(_metrics_mod)  # type: ignore[union-attr]
+assert _spec is not None and _spec.loader is not None
+_spec.loader.exec_module(_metrics_mod)
 
 DIRECT_IDENTIFIERS = _metrics_mod.DIRECT_IDENTIFIERS
 GROUP_WEIGHTS = _metrics_mod.GROUP_WEIGHTS
@@ -228,6 +229,27 @@ def test_uc83_numbering_consistency() -> None:
     assert stats2.same_entity_consistent == 1
     assert stats2.different_entity_total == 2
     assert stats2.different_entity_distinct == 2
+
+
+def test_adjacent_spans_fidelity_and_numbering() -> None:
+    """Test fidelity and numbering consistency with adjacent spans (Finding 8)."""
+    text = "JanJan"
+    spans = [
+        Span(0, 3, Label.OSOBA, "rule", 1.0, "valid"),
+        Span(3, 6, Label.OSOBA, "rule", 1.0, "valid"),
+    ]
+    masked = render_mask(text, spans)
+    assert masked == "[OSOBA_n][OSOBA_n]"
+    assert fidelity(text, masked, spans) == 0
+
+    stats = numbering_consistency(
+        masked,
+        spans,
+        {Label.OSOBA},
+        original=text,
+    )
+    assert stats.same_entity_total == 1
+    assert stats.same_entity_consistent == 1
 
 
 def test_uc84_throughput_stats_and_ram() -> None:

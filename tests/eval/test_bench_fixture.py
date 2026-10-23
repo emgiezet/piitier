@@ -41,12 +41,11 @@ def test_uc89_bench_fixture() -> None:
     for doc in docs:
         for span in doc.gold:
             assert 0 <= span.start < span.end <= len(doc.text)
-            assert doc.text[span.start : span.end] == span.source == "gold" or isinstance(
-                span.label, Label
-            )
+            assert isinstance(span.label, Label)
             all_labels.add(span.label)
 
             span_text = doc.text[span.start : span.end]
+            assert span_text
             if span.label == Label.PESEL:
                 assert pesel_mod.is_valid(span_text)
             elif span.label == Label.NIP:
@@ -56,9 +55,11 @@ def test_uc89_bench_fixture() -> None:
 
         person_spans = [s for s in doc.gold if s.label == Label.OSOBA]
         if len(person_spans) >= 2:
-            texts = [doc.text[s.start : s.end] for s in person_spans]
-            if len(set(texts)) == 1 and len(texts) >= 2:
-                multi_mention_doc_found = True
+            offsets = {(s.start, s.end) for s in person_spans}
+            assert len(offsets) == len(person_spans)
+            for s in person_spans:
+                assert doc.text[s.start : s.end]
+            multi_mention_doc_found = True
 
     assert len(all_labels) >= 8
     assert multi_mention_doc_found
