@@ -55,9 +55,7 @@ class TrainingConfig:
     output_dir: Path
     threshold: float | None
 
-
 class ConfigError(Exception): ...
-
 
 def load_config(path: Path) -> TrainingConfig:
     """PyYAML safe_load; brakujący klucz / klucz nieznany → ConfigError z nazwą klucza;
@@ -66,21 +64,17 @@ def load_config(path: Path) -> TrainingConfig:
     wartości: max_steps>0, per_device_batch_size>0, learning_rate>0, 0<max_length<=8192,
     threshold is None or 0<=threshold<=1."""
 
-
 # training/train.py
 def read_jsonl(path: Path) -> list[dict[str, object]]: ...
-
 
 def build_dataset(records, tokenizer, max_length, label2id) -> torch.utils.data.Dataset:
     """Tokenizuje z return_offsets_mapping=True, truncation=max_length; etykiety z
     piitier.ner.spans_to_token_labels (B-/I- poza zakresem → -100); przechowuje
     input_ids, attention_mask, labels."""
 
-
 def compute_metrics_factory(label_names: list[str]) -> Callable[[EvalPrediction], dict]:
     """seqeval: precision/recall/f1 na poziomie encji, tryb strict; klucze:
     'precision','recall','f1' (zaokrąglone 4 miejsca)."""
-
 
 def main(argv: list[str] | None = None) -> int:
     """argv = [config_path] (dokładnie 1; inaczej → exit 2). Ładuje config, ustawia
