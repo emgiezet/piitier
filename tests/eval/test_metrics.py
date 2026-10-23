@@ -27,6 +27,7 @@ _spec.loader.exec_module(_metrics_mod)
 DIRECT_IDENTIFIERS = _metrics_mod.DIRECT_IDENTIFIERS
 GROUP_WEIGHTS = _metrics_mod.GROUP_WEIGHTS
 EntityPRF = _metrics_mod.EntityPRF
+NumberingStats = _metrics_mod.NumberingStats
 ThroughputStats = _metrics_mod.ThroughputStats
 entity_metrics = _metrics_mod.entity_metrics
 entity_metrics_by_label = _metrics_mod.entity_metrics_by_label
@@ -212,6 +213,7 @@ def test_uc83_numbering_consistency() -> None:
         spans,
         labels_numbered,
         original=text,
+        masked_spans=spans,
     )
     assert stats1.same_entity_total == 1
     assert stats1.same_entity_consistent == 1
@@ -224,6 +226,7 @@ def test_uc83_numbering_consistency() -> None:
         spans,
         labels_numbered,
         original=text,
+        masked_spans=spans,
     )
     assert stats2.same_entity_total == 1
     assert stats2.same_entity_consistent == 1
@@ -247,9 +250,74 @@ def test_adjacent_spans_fidelity_and_numbering() -> None:
         spans,
         {Label.OSOBA},
         original=text,
+        masked_spans=spans,
     )
     assert stats.same_entity_total == 1
     assert stats.same_entity_consistent == 1
+
+
+def test_numbering_consistency_polisa_scenario() -> None:
+    """Regression test for polisa scenario (doc_polisa_01):
+    Two identical gold OSOBA mentions, only PESEL masked -> NumberingStats(0, 0, 0, 0).
+    """
+    text = "Jan Kowalski i Jan Kowalski oraz PESEL 44051401359."
+    gold = [
+        Span(0, 12, Label.OSOBA, "gold", 1.0, "valid"),
+        Span(17, 29, Label.OSOBA, "gold", 1.0, "valid"),
+        Span(35, 47, Label.PESEL, "gold", 1.0, "valid"),
+    ]
+    masked_spans = [Span(35, 47, Label.PESEL, "model", 1.0, "valid")]
+    rendered = "Jan Kowalski i Jan Kowalski oraz [PESEL]."
+
+    stats = numbering_consistency(
+        rendered,
+        gold,
+        {Label.OSOBA},
+        original=text,
+        masked_spans=masked_spans,
+    )
+    assert stats == NumberingStats(0, 0, 0, 0)
+
+
+def test_numbering_consistency_partial_masking_variants() -> None:
+    """Test same-entity/different-entity numbering consistency edge cases:
+    (b) same-entity pair both masked -> consistent 1/1.
+    (c) one mention masked, its identical partner unmasked -> pair skipped (0/0).
+    """
+    text = "Anna Nowak i Anna Nowak oraz Katarzyna Wiśniewska."
+    gold = [
+        Span(0, 10, Label.OSOBA, "gold", 1.0, "valid"),
+        Span(13, 23, Label.OSOBA, "gold", 1.0, "valid"),
+        Span(29, 49, Label.OSOBA, "gold", 1.0, "valid"),
+    ]
+
+    masked_spans_b = [
+        Span(0, 10, Label.OSOBA, "model", 1.0, "valid"),
+        Span(13, 23, Label.OSOBA, "model", 1.0, "valid"),
+    ]
+    rendered_b = render_mask(text, masked_spans_b)
+    stats_b = numbering_consistency(
+        rendered_b,
+        gold,
+        {Label.OSOBA},
+        original=text,
+        masked_spans=masked_spans_b,
+    )
+    assert stats_b.same_entity_total == 1
+    assert stats_b.same_entity_consistent == 1
+    assert stats_b.different_entity_total == 0
+    assert stats_b.different_entity_distinct == 0
+
+    masked_spans_c = [Span(0, 10, Label.OSOBA, "model", 1.0, "valid")]
+    rendered_c = render_mask(text, masked_spans_c)
+    stats_c = numbering_consistency(
+        rendered_c,
+        gold,
+        {Label.OSOBA},
+        original=text,
+        masked_spans=masked_spans_c,
+    )
+    assert stats_c == NumberingStats(0, 0, 0, 0)
 
 
 def test_uc84_throughput_stats_and_ram() -> None:

@@ -330,42 +330,41 @@ def numbering_consistency(
     rendered: str,
     spans: list[Span],
     labels_numbered: set[Label],
-    original: str | None = None,
+    original: str,
+    masked_spans: list[Span],
 ) -> NumberingStats:
     """Compute numbering consistency stats for numbered entity labels."""
     target_spans = [s for s in spans if s.label in labels_numbered]
-    sorted_spans = sorted(target_spans, key=lambda s: s.start)
 
-    placeholders: list[str] = []
-    values: list[str] = []
+    _, span_phs = _walk_alignment(original, rendered, masked_spans)
+    masked_span_to_ph = {s: ph for s, ph in span_phs}
+    sorted_masked = sorted(masked_spans, key=lambda s: s.start)
 
-    if original is not None:
-        _, span_phs = _walk_alignment(original, rendered, target_spans)
-        for s, ph in span_phs:
-            placeholders.append(ph)
-            values.append(original[s.start : s.end])
-    else:
-        for s in sorted_spans:
-            placeholders.append(s.label.placeholder)
-            values.append(f"value_{s.start}_{s.end}")
+    records: list[tuple[Label, str, str]] = []
+
+    for g in target_spans:
+        matched_ph: str | None = None
+        for m in sorted_masked:
+            if max(g.start, m.start) < min(g.end, m.end):
+                if m in masked_span_to_ph:
+                    matched_ph = masked_span_to_ph[m]
+                    break
+        if matched_ph is not None:
+            val = original[g.start : g.end]
+            records.append((g.label, val, matched_ph))
 
     same_entity_consistent = 0
     same_entity_total = 0
     different_entity_distinct = 0
     different_entity_total = 0
 
-    n = len(sorted_spans)
+    n = len(records)
     for i in range(n):
         for j in range(i + 1, n):
-            s_i = sorted_spans[i]
-            s_j = sorted_spans[j]
-            if s_i.label != s_j.label:
+            lbl_i, v_i, p_i = records[i]
+            lbl_j, v_j, p_j = records[j]
+            if lbl_i != lbl_j:
                 continue
-
-            v_i = values[i]
-            v_j = values[j]
-            p_i = placeholders[i]
-            p_j = placeholders[j]
 
             if v_i == v_j:
                 same_entity_total += 1

@@ -212,8 +212,12 @@ def main(argv: list[str] | None = None) -> int:
 
     numbered_labels = {lbl for lbl in Label if lbl.numbered}
     total_numbering = NumberingStats(0, 0, 0, 0)
-    for orig, rend, spans in zip(result.originals, result.rendered, result.gold_spans_per_doc):
-        ns = numbering_consistency(rend, spans, numbered_labels, original=orig)
+    for orig, rend, spans, pred_spans in zip(
+        result.originals, result.rendered, result.gold_spans_per_doc, result.pred_spans_per_doc
+    ):
+        ns = numbering_consistency(
+            rend, spans, numbered_labels, original=orig, masked_spans=pred_spans
+        )
         total_numbering = NumberingStats(
             same_entity_consistent=(
                 total_numbering.same_entity_consistent + ns.same_entity_consistent
