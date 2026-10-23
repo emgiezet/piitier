@@ -25,6 +25,7 @@ dev = [
     "hypothesis==6.170.5",
     "mypy==2.4.0",
     "onnxruntime==1.31.0",
+    "onnxscript==0.7.2",
     "optimum==2.3.0",
     "presidio-analyzer==2.2.364",
     "pytest==9.1.1",
