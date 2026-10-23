@@ -21,6 +21,7 @@ packages = ["src/piitier"]
 
 [dependency-groups]
 dev = [
+    "accelerate==1.15.0",
     "hypothesis==6.170.5",
     "mypy==2.4.0",
     "onnxruntime==1.31.0",
