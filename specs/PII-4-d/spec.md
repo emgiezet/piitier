@@ -47,29 +47,42 @@ class EntityPRF:
     recall: float
     f1: float
 
+
 def entity_metrics(
-    gold: list[Span], pred: list[Span], match: Literal["strict", "partial"] = "strict",
+    gold: list[Span],
+    pred: list[Span],
+    match: Literal["strict", "partial"] = "strict",
 ) -> EntityPRF:
     """strict: ta sama etykieta i identyczne [start,end). partial: ta sama etykieta i
     dowolna niepusta nakładka [start,end). Micro. Zero-gold i zero-pred → P/R/F1 = 0.0
     (bez ZeroDivision; zero-gold & zero-pred → 0.0)."""
 
+
 def entity_metrics_by_label(
-    gold: list[Span], pred: list[Span], match: ... = "strict",
+    gold: list[Span],
+    pred: list[Span],
+    match: ... = "strict",
 ) -> dict[Label, EntityPRF]:
     """Per etykieta; tylko etykiety występujące w gold LUB pred."""
 
+
 GROUP_WEIGHTS: dict[str, float]  # nazwa grupy -> waga (klucz: nazwa kolumny Grupa)
 
-def group_for_label(label: Label) -> str: ...   # mapa Label -> nazwa grupy z TAXONOMY.md
+
+def group_for_label(label: Label) -> str: ...  # mapa Label -> nazwa grupy z TAXONOMY.md
+
 
 def risk_weighted_recall(gold: list[Span], pred: list[Span]) -> float:
     """strict match; Σ w(label)*[gold złapany] / Σ w(label); zero-gold → 0.0."""
 
+
 DIRECT_IDENTIFIERS: frozenset[Label]  # patrz lista niżej
 
+
 def leak_rate(
-    originals: list[str], gold_spans: list[list[Span]], rendered: list[str],
+    originals: list[str],
+    gold_spans: list[list[Span]],
+    rendered: list[str],
 ) -> LeakRate:
     """LeakRate(docs_leaked, docs_total, values_leaked, values_total, leaked_doc_ids).
     - values: wartość spana gold (oryginalny substring) występuje w rendered (find).
@@ -79,6 +92,7 @@ def leak_rate(
     - doc_ids przekazywane w `originals`? NIE — osobny parametr `doc_ids: list[str]`
       (kolejność zgodna)."""
 
+
 def fidelity(original: str, rendered: str, spans: list[Span]) -> int:
     """Liczba znaków zmienionych POZA zakresami spanów. Implementacja: porównanie
     znak po znaku w regionach spoza spanów (offsety w oryginale); przed porównaniem
@@ -87,8 +101,11 @@ def fidelity(original: str, rendered: str, spans: list[Span]) -> int:
     rendered; region poza spanem musi być identyczny co do bajta. Zwraca liczbę
     niedopasowań (0 = wierność zachowana)."""
 
+
 def numbering_consistency(
-    rendered: str, spans: list[Span], labels_numbered: set[Label],
+    rendered: str,
+    spans: list[Span],
+    labels_numbered: set[Label],
 ) -> NumberingStats:
     """Placeholder wstawiony za i-ty span ekstrahowany z rendered (alignacja:
     iteruj oryginał+rendered jak w fidelity, zapisz string placeholdera per span).
@@ -100,14 +117,17 @@ def numbering_consistency(
     - pary tej samej etykiety o różnej wartości → para różne encje: distinct gdy
       placeholder różny."""
 
+
 @dataclass(frozen=True)
 class ThroughputStats:
     docs_per_second: float
     p95_latency_seconds: float
 
+
 def throughput_stats(latencies_seconds: list[float]) -> ThroughputStats:
     """docs/s = len/sum; p95 = metoda: nearest-rank (ceil(0.95*n)-ty element sorted);
     pusta lista → docs_per_second=0.0, p95=0.0."""
+
 
 def peak_ram_bytes() -> int:
     """resource.getrusage(RUSAGE_SELF).ru_maxrss * 1024 (linux)."""

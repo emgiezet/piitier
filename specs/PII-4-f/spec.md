@@ -36,13 +36,18 @@ def read_bench(bench_dir: Path) -> list[BenchDoc]:
     Czyta wszystkie *.jsonl w katalogu; walidacja offsetów: text[start:end] ==
     span['text'], etykieta w enumie — błąd → ValueError z id dokumentu."""
 
+
 def run_benchmark(
-    system: System, docs: list[BenchDoc], *, threshold: float | None,
+    system: System,
+    docs: list[BenchDoc],
+    *,
+    threshold: float | None,
 ) -> BenchResult:
     """Per dokument: pred = system.predict(text); rendered = piitier.render.mask(text, pred).
     Latencje: time.perf_counter per predict. BenchResult zawiera: wszystkie listy
     dla metryk eval.metrics (gold łączone, pred łączone, originals, rendered,
     doc_ids), latencies, threshold."""
+
 
 def main(argv: list[str] | None = None) -> int:
     """argparse: --system (wymagane), --bench (domyślnie 'v1'), --split (domyślnie
@@ -54,10 +59,17 @@ def main(argv: list[str] | None = None) -> int:
     - Nazwa pliku raportu: <YYYY-MM-DD>-<system>-bench<v>-<split>.md.
     - exit 0."""
 
+
 # eval/report.py
 def write_report(
-    path: Path, *, system_name: str, system_version: str, bench_version: str,
-    split: str, threshold: float | None, result: BenchResult,
+    path: Path,
+    *,
+    system_name: str,
+    system_version: str,
+    bench_version: str,
+    split: str,
+    threshold: float | None,
+    result: BenchResult,
     metrics: dict[str, object],  # z eval.metrics — sekcje poniżej
 ) -> Path:
     """Sekcje raportu (kolejność obowiązkowa):
