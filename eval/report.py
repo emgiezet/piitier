@@ -7,8 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import torch
-
 from eval.metrics import EntityPRF, LeakRate, NumberingStats, ThroughputStats
 from piitier.labels import Label
 
@@ -28,6 +26,7 @@ def write_report(
     threshold: float | None,
     result: BenchResult,
     metrics: dict[str, object],
+    is_final: bool = False,
 ) -> Path:
     """Generate Markdown evaluation report with required sections in mandatory order."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -37,10 +36,14 @@ def write_report(
     doc_count = len(result.doc_ids)
     gold_count = len(result.gold_spans)
 
-    if torch.cuda.is_available():
-        gpu_name = torch.cuda.get_device_name(0)
-    else:
-        gpu_name = "CPU"
+    gpu_name = "CPU"
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+    except ImportError:
+        pass
 
     peak_ram = cast(int, metrics.get("peak_ram", 0))
     strict_micro = cast(EntityPRF, metrics.get("strict_micro", EntityPRF(0.0, 0.0, 0.0)))
@@ -57,6 +60,7 @@ def write_report(
     throughput = cast(ThroughputStats, metrics.get("throughput", ThroughputStats(0.0, 0.0)))
 
     leaked_ids_str = ", ".join(leak.leaked_doc_ids) if leak.leaked_doc_ids else "brak"
+    split_str = f"{split} (final numbers)" if is_final else split
 
     lines = [
         f"# Raport: {system_name} na bench/{bench_version}/{split}",
@@ -69,7 +73,7 @@ def write_report(
         "",
         "## Benchmark",
         f"- Wersja: {bench_version}",
-        f"- Split: {split}",
+        f"- Split: {split_str}",
         f"- Liczba dokumentów: {doc_count}",
         f"- Liczba spanów gold: {gold_count}",
         "",

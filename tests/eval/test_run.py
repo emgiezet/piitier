@@ -125,3 +125,72 @@ def test_uc91_e2e_subprocess(tmp_path: Path) -> None:
     assert "IBAN" in report_content
     assert "NIP" in report_content
     assert "1.0000" in report_content
+
+
+def test_test_split_stdout_and_final_numbers(tmp_path: Path) -> None:
+    test_dir = _root / "bench" / "v1" / "test"
+    test_dir.mkdir(parents=True, exist_ok=True)
+    dummy_jsonl = test_dir / "test.jsonl"
+    dummy_jsonl.write_text(
+        '{"id": "doc_test_1", "doc_type": "polisa", '
+        '"text": "Jan 12345678901", "spans": ['
+        '{"start": 0, "end": 3, "label": "OSOBA", "text": "Jan"}, '
+        '{"start": 4, "end": 15, "label": "PESEL", "text": "12345678901"}]}\n',
+        encoding="utf-8",
+    )
+
+    try:
+        out_dir = tmp_path / "reports"
+        cmd = [
+            sys.executable,
+            "-m",
+            "eval.run",
+            "--system",
+            "rules",
+            "--bench",
+            "v1",
+            "--split",
+            "test",
+            "--out-dir",
+            str(out_dir),
+        ]
+        env = {**os.environ, "PYTHONPATH": str(_root)}
+        res = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        assert res.returncode == 0, f"Subprocess failed: {res.stderr}"
+        assert "WARNING: Running on test split (final numbers)." in res.stdout
+
+        reports = list(out_dir.glob("*.md"))
+        assert len(reports) == 1
+        report_content = reports[0].read_text(encoding="utf-8")
+        assert "test (final numbers)" in report_content
+    finally:
+        if dummy_jsonl.exists():
+            dummy_jsonl.unlink()
+        if test_dir.exists() and not list(test_dir.iterdir()):
+            test_dir.rmdir()
+
+    res_obj = BenchResult(
+        gold_spans=[],
+        pred_spans=[],
+        gold_spans_per_doc=[],
+        pred_spans_per_doc=[],
+        originals=["Test."],
+        rendered=["Test."],
+        doc_ids=["d1"],
+        latencies=[0.1],
+        threshold=None,
+    )
+    report_file = tmp_path / "final_report.md"
+    write_report(
+        report_file,
+        system_name="rules",
+        system_version="0.1.0",
+        bench_version="v1",
+        split="test",
+        threshold=None,
+        result=res_obj,
+        metrics={},
+        is_final=True,
+    )
+    content = report_file.read_text(encoding="utf-8")
+    assert "test (final numbers)" in content

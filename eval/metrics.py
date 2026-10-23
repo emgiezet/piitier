@@ -295,8 +295,8 @@ def _walk_alignment(
                 ph = span.label.placeholder
                 res_pos += len(ph)
         else:
-            ph = rendered[res_pos:]
-            res_pos = len(rendered)
+            ph = span.label.placeholder
+            res_pos += len(ph)
 
         span_placeholders.append((span, ph))
 

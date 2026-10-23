@@ -164,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.split == "test":
-        print("WARNING: Running on test split (final numbers).", file=sys.stderr)
+        print("WARNING: Running on test split (final numbers).")
 
     bench_dir = Path("bench") / args.bench / args.split
     if not bench_dir.exists():
@@ -260,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         threshold=args.threshold,
         result=result,
         metrics=metrics,
+        is_final=(args.split == "test"),
     )
 
     print(f"Report written to {report_path}")
