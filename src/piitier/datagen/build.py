@@ -20,9 +20,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 from pathlib import Path
 
 import piitier
+from piitier.datagen.augment import augment as augment_doc
+from piitier.datagen.hard_negatives import make_hard_negative_docs
 from piitier.datagen.render import render
 from piitier.datagen.template import Template
 
@@ -121,7 +124,15 @@ def collect_templates(templates_dir: Path) -> list[Template]:
 # ---------------------------------------------------------------------------
 
 
-def build(templates_dir: Path, n: int, seed: int, out: Path) -> None:
+def build(
+    templates_dir: Path,
+    n: int,
+    seed: int,
+    out: Path,
+    *,
+    augment: bool = False,
+    hard_negatives: int = 0,
+) -> None:
     """Render *n* synthetic documents and write ``train.jsonl``, ``dev.jsonl``,
     and ``manifest.json`` into *out*.
 
@@ -130,15 +141,23 @@ def build(templates_dir: Path, n: int, seed: int, out: Path) -> None:
     templates_dir:
         Directory tree of ``.txt`` template files (``<dir>/<doc_type>/<id>.txt``).
     n:
-        Total number of documents to generate.
+        Total number of template documents to generate.
     seed:
         Base RNG seed.  Document *i* is rendered with seed ``seed + i``.
     out:
         Output directory.  Created if it does not exist; must be empty if it does,
         and must not resolve to a path containing a ``bench`` component.
         Raises :exc:`BuildError` before any writes if either guard is violated.
+    augment:
+        Whether to apply OCR and diacritic augmentation to every document.
+    hard_negatives:
+        Number of hard negative documents to append.
     """
     _check_output_guard(out)
+    if hard_negatives < 0:
+        raise BuildError(f"hard_negatives must be >= 0, got {hard_negatives}")
+    if n < 0:
+        raise BuildError(f"n must be >= 0, got {n}")
     templates = collect_templates(templates_dir)
     if not templates:
         raise ValueError(f"No .txt templates found in {templates_dir}")
@@ -148,12 +167,16 @@ def build(templates_dir: Path, n: int, seed: int, out: Path) -> None:
     span_counts: dict[str, int] = {}
     split_counts: dict[str, int] = {"train": 0, "dev": 0}
     total_fallbacks: int = 0
+
+    # 1. Template documents
     for i in range(n):
         tmpl = templates[i % len(templates)]
         doc_seed = seed + i
         doc_id = f"doc_{i:07d}"
 
         doc = render(tmpl, doc_seed)
+        if augment:
+            doc = augment_doc(doc, random.Random(doc_seed))
         total_fallbacks += doc.inflection_fallbacks
         spans_data = [
             {
@@ -190,6 +213,51 @@ def build(templates_dir: Path, n: int, seed: int, out: Path) -> None:
             lbl = s.label.name
             span_counts[lbl] = span_counts.get(lbl, 0) + 1
 
+    # 2. Hard negative documents
+    if hard_negatives > 0:
+        hn_docs = make_hard_negative_docs(seed + n, hard_negatives)
+        for j, doc in enumerate(hn_docs):
+            doc_seed = doc.seed
+            doc_id = doc.template_id  # hn_{j:07d}
+
+            if augment:
+                doc = augment_doc(doc, random.Random(doc_seed))
+
+            spans_data = [
+                {
+                    "start": s.start,
+                    "end": s.end,
+                    "label": s.label.name,
+                    "entity": s.entity,
+                    "text": s.text,
+                }
+                for s in doc.spans
+            ]
+
+            record = json.dumps(
+                {
+                    "id": doc_id,
+                    "doc_type": doc.doc_type,
+                    "template_id": doc.template_id,
+                    "seed": doc_seed,
+                    "text": doc.text,
+                    "spans": spans_data,
+                },
+                ensure_ascii=False,
+            )
+
+            split = _split_for(doc_id)
+            if split == "dev":
+                dev_lines.append(record)
+                split_counts["dev"] += 1
+            else:
+                train_lines.append(record)
+                split_counts["train"] += 1
+
+            for s in doc.spans:
+                lbl = s.label.name
+                span_counts[lbl] = span_counts.get(lbl, 0) + 1
+
     # Template counts per doc_type (sorted for deterministic manifest JSON)
     template_counts: dict[str, int] = {}
     for t in templates:
@@ -214,6 +282,8 @@ def build(templates_dir: Path, n: int, seed: int, out: Path) -> None:
         "split_counts": split_counts,
         "version": piitier.__version__,
         "inflection_fallbacks": total_fallbacks,
+        "augment": augment,
+        "hard_negatives": hard_negatives,
     }
     (out / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2),

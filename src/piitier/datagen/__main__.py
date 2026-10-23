@@ -60,6 +60,18 @@ def main() -> None:
         metavar="DIR",
         help="Output directory (must not exist or must be empty; must not be inside bench/).",
     )
+    build_p.add_argument(
+        "--augment",
+        action="store_true",
+        help="Apply OCR and diacritic augmentation to documents.",
+    )
+    build_p.add_argument(
+        "--hard-negatives",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of hard negative documents to add.",
+    )
 
     # -- check ---------------------------------------------------------------
     check_p = sub.add_parser("check", help="Verify span offsets in a built dataset.")
@@ -83,11 +95,17 @@ def main() -> None:
 
     if args.command == "build":
         try:
-            build(args.templates, args.n, args.seed, args.out)
+            build(
+                args.templates,
+                args.n,
+                args.seed,
+                args.out,
+                augment=args.augment,
+                hard_negatives=args.hard_negatives,
+            )
         except BuildError as exc:
             print(str(exc), file=sys.stderr)
             sys.exit(2)
-
     elif args.command == "check":
         code, msg = check(args.data_dir)
         if msg:

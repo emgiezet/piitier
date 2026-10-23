@@ -1,0 +1,17 @@
+UMOWA KREDYTU GOTÓWKOWEGO
+
+Numer umowy: {{NR_UMOWY}}
+
+STRONY UMOWY
+Kredytobiorca PESEL: {{PESEL}}
+Bank NIP: {{NIP}}
+
+RACHUNEK DO WYPŁATY
+IBAN: {{IBAN}}
+
+ZABEZPIECZENIE HIPOTECZNE
+Księga wieczysta: {{NR_KW}}
+
+Warunki umowy:
+Kredytobiorca zobowiązuje się do terminowej spłaty zobowiązania.
+Umowa wchodzi w życie z dniem podpisania i akceptacji przez obie strony.

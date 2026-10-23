@@ -1,7 +1,7 @@
 Przeformułuj i przepisz wyłącznie tekst narracyjny poniższego wzorcowego dokumentu, zmieniając słownictwo i sformułowania w opisie, ale ZACHOWAJ KAŻDY ISTNIEJĄCY ZNACZNIK PII (placeholder w nawiasach klamrowych {{...}}) DOKŁADNIE BEZ ZMIAN (ta sama kolejność, te same nazwy, ta sama liczba znaczników). Nie dodawaj żadnych nowych znaczników ani pól.
 
-Informacyjna lista 15 obsługiwanych znaczników:
-- {{PESEL}}, {{NIP}}, {{REGON}}, {{IBAN}}, {{NR_DOWODU}}, {{NR_KARTY}}, {{OSOBA}}, {{IMIE}}, {{NAZWISKO}}, {{DATA_URODZENIA}}, {{ADRES}}, {{KOD_POCZTOWY}}, {{MIEJSCOWOSC}}, {{TELEFON}}, {{EMAIL}}
+Informacyjna lista 27 obsługiwanych znaczników:
+- {{PESEL}}, {{NIP}}, {{REGON}}, {{IBAN}}, {{NR_DOWODU}}, {{NR_KARTY}}, {{OSOBA}}, {{IMIE}}, {{NAZWISKO}}, {{DATA_URODZENIA}}, {{ADRES}}, {{KOD_POCZTOWY}}, {{MIEJSCOWOSC}}, {{TELEFON}}, {{EMAIL}}, {{NR_UMOWY}}, {{NR_POLISY}}, {{NR_SZKODY}}, {{NR_REJESTRACYJNY}}, {{VIN}}, {{NR_KW}}, {{ICD10}}, {{LEK}}, {{ROZPOZNANIE}}, {{PLACOWKA}}, {{LEKARZ}}, {{NPWZ}}
 
 W tej operacji używaj WYŁĄCZNIE znaczników, które znajdują się już we wzorcu poniżej. Nie wymyślaj żadnych nowych etykiet ani pól.
 

@@ -170,11 +170,11 @@ def test_uc5_unknown_label_error() -> None:
 
 
 def test_uc6_no_generator_error() -> None:
-    """UC-6: {{LEK}} raises TemplateError mentioning LEK."""
+    """UC-6: {{WIEK}} raises TemplateError mentioning WIEK."""
     from piitier.datagen import TemplateError
 
-    with pytest.raises(TemplateError, match="LEK"):
-        _render("{{LEK}}", seed=0)
+    with pytest.raises(TemplateError, match="WIEK"):
+        _render("{{WIEK}}", seed=0)
 
 
 def test_uc7_malformed_errors() -> None:
