@@ -82,8 +82,7 @@ def test_uc73_build_dataset_unit() -> None:
     tokenizer = TokenizerStub()
     from piitier.ner.inference import bio_tag_names
 
-    all_labels = bio_tag_names()
-    label2id = {name: i for i, name in enumerate(all_labels)}
+    bio_tag_names()
 
     records = [
         {
@@ -94,7 +93,7 @@ def test_uc73_build_dataset_unit() -> None:
         }
     ]
 
-    dataset = build_dataset(records, tokenizer, max_length=16, label2id=label2id)
+    dataset = build_dataset(records, tokenizer, max_length=16)
     assert len(dataset) == 1
     sample = dataset[0]
     assert "input_ids" in sample

@@ -152,7 +152,7 @@ def merge_windows(spans: list[Span]) -> list[Span]:
             merged_same.append(s)
         else:
             last = merged_same[-1]
-            if last.label == s.label and s.start <= last.end:
+            if last.label == s.label and s.start < last.end:
                 new_start = min(last.start, s.start)
                 new_end = max(last.end, s.end)
                 new_score = max(last.score, s.score)

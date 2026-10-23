@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 if "eval.metrics" not in sys.modules:
     _metrics_path = Path(__file__).resolve().parent.parent / "eval" / "metrics.py"
     _spec_m = importlib.util.spec_from_file_location("eval.metrics", _metrics_path)
@@ -17,6 +15,7 @@ if "eval.metrics" not in sys.modules:
         _spec_m.loader.exec_module(_metrics_mod)
 
 from eval.metrics import entity_metrics
+from piitier.labels import Label
 from piitier.ner.inference import NerPredictor, bio_tag_names, decode_spans, merge_windows
 from piitier.spans import Span
 from training.config import ConfigError, load_config
@@ -173,7 +172,7 @@ def score_checkpoint(
             Span(
                 s["start"],
                 s["end"],
-                s["label"],
+                Label[s["label"]] if isinstance(s["label"], str) else s["label"],
                 s.get("source", "gold"),
                 s.get("score"),
                 s.get("status", "valid"),
@@ -249,9 +248,7 @@ def main(argv: list[str] | None = None) -> int:
     report_path = config.output_dir / "export_report.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
-    config_text = config_path.read_text(encoding="utf-8")
-    raw_cfg = yaml.safe_load(config_text) or {}
-    tolerance = float(raw_cfg.get("int8_recall_tolerance", 0.01))
+    tolerance = config.int8_recall_tolerance
 
     if exceeds_tolerance(report, tolerance):
         print(
