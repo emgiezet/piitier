@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -160,6 +161,16 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f"Error loading config: {e}", file=sys.stderr)
         return 1
+
+    # Pin to a single GPU when several are visible: multi-GPU DataParallel
+    # synchronises to the smallest card and mixes unlike GPUs in one job,
+    # which the hardware playbook forbids. Must run before any CUDA call.
+    if (
+        torch.cuda.is_available()
+        and torch.cuda.device_count() > 1
+        and "CUDA_VISIBLE_DEVICES" not in os.environ
+    ):
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     random.seed(config.seed)
     np.random.seed(config.seed)

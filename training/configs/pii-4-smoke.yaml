@@ -8,5 +8,5 @@ max_steps: 1
 per_device_batch_size: 2
 learning_rate: 5e-5
 max_length: 128
-output_dir: training/out/pii-4-smoke
+output_dir: ../out/pii-4-smoke
 threshold: null

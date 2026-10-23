@@ -127,7 +127,7 @@ def export_onnx(checkpoint: str | Path, output_dir: Path) -> Path:
                 "attention_mask": {0: "batch", 1: "seq"},
                 "logits": {0: "batch", 1: "seq"},
             },
-            opset_version=14,
+            opset_version=18,
         )
     return onnx_path
 
