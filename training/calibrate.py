@@ -18,10 +18,23 @@ if "eval.metrics" not in sys.modules:
         _spec_m.loader.exec_module(_metrics_mod)
 
 from eval.metrics import entity_metrics
+from piitier.labels import Label
 from piitier.ner.inference import NerPredictor
 from piitier.spans import Span
 from training.config import load_config
 from training.train import read_jsonl
+
+
+def to_label(val: str | Label) -> Label:
+    if isinstance(val, Label):
+        return val
+    try:
+        return Label[val]
+    except KeyError:
+        for member in Label:
+            if member.value == val or member.name == val:
+                return member
+        raise KeyError(f"Unknown label: {val}")
 
 
 @dataclass(frozen=True)
@@ -67,31 +80,25 @@ def calibrate_threshold(
             p_list = doc["pred"] if isinstance(doc, dict) else doc.pred
 
             gold_spans = [
-                item
-                if isinstance(item, Span)
-                else Span(
-                    start=item["start"],
-                    end=item["end"],
-                    label=item["label"],
-                    source=item.get("source", "gold"),
-                    score=item.get("score"),
-                    status=item.get("status", "valid"),
+                Span(
+                    start=item.start if isinstance(item, Span) else item["start"],
+                    end=item.end if isinstance(item, Span) else item["end"],
+                    label=to_label(item.label if isinstance(item, Span) else item["label"]),
+                    source=item.source if isinstance(item, Span) else item.get("source", "gold"),
+                    score=item.score if isinstance(item, Span) else item.get("score"),
+                    status=item.status if isinstance(item, Span) else item.get("status", "valid"),
                 )
                 for item in g
             ]
             pred_spans = []
             for item in p_list:
-                span_obj = (
-                    item
-                    if isinstance(item, Span)
-                    else Span(
-                        start=item["start"],
-                        end=item["end"],
-                        label=item["label"],
-                        source=item.get("source", "pred"),
-                        score=item.get("score", 1.0),
-                        status=item.get("status", "valid"),
-                    )
+                span_obj = Span(
+                    start=item.start if isinstance(item, Span) else item["start"],
+                    end=item.end if isinstance(item, Span) else item["end"],
+                    label=to_label(item.label if isinstance(item, Span) else item["label"]),
+                    source=item.source if isinstance(item, Span) else item.get("source", "pred"),
+                    score=item.score if isinstance(item, Span) else item.get("score", 1.0),
+                    status=item.status if isinstance(item, Span) else item.get("status", "valid"),
                 )
                 score = span_obj.score if span_obj.score is not None else 1.0
                 if score >= t:
@@ -139,7 +146,10 @@ def write_threshold(
     data["threshold"] = result.threshold
     config_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
-    output_dir = Path(data.get("output_dir", "training/out"))
+    out_val = data.get("output_dir", "training/out")
+    output_dir = Path(out_val)
+    if not output_dir.is_absolute():
+        output_dir = (config_path.parent / output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     model_card_path = output_dir / "MODEL_CARD.md"
 
@@ -199,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
                 Span(
                     s["start"],
                     s["end"],
-                    s["label"],
+                    to_label(s["label"]),
                     s.get("source", "gold"),
                     s.get("score"),
                     s.get("status", "valid"),
@@ -210,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
                 Span(
                     p["start"],
                     p["end"],
-                    p["label"],
+                    to_label(p["label"]),
                     p.get("source", "pred"),
                     p.get("score", 1.0),
                     p.get("status", "valid"),
@@ -239,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
                 Span(
                     s["start"],
                     s["end"],
-                    s["label"],
+                    to_label(s["label"]),
                     s.get("source", "gold"),
                     s.get("score"),
                     s.get("status", "valid"),
@@ -249,19 +259,28 @@ def main(argv: list[str] | None = None) -> int:
             pred_spans = predictor.predict(r["text"])
             docs.append(DocPrediction(gold=gold_spans, pred=pred_spans))
 
-            predictions_output.append(
-                {
-                    "id": r.get("id"),
-                    "text": r["text"],
-                    "gold": [
-                        {"start": s.start, "end": s.end, "label": s.label} for s in gold_spans
-                    ],
-                    "pred": [
-                        {"start": s.start, "end": s.end, "label": s.label, "score": s.score}
-                        for s in pred_spans
-                    ],
-                }
-            )
+            pred_item = {
+                "gold": [
+                    {
+                        "start": s.start,
+                        "end": s.end,
+                        "label": s.label.name if isinstance(s.label, Label) else s.label,
+                    }
+                    for s in gold_spans
+                ],
+                "pred": [
+                    {
+                        "start": s.start,
+                        "end": s.end,
+                        "label": s.label.name if isinstance(s.label, Label) else s.label,
+                        "score": s.score,
+                    }
+                    for s in pred_spans
+                ],
+            }
+            if r.get("id") is not None:
+                pred_item["id"] = r.get("id")
+            predictions_output.append(pred_item)
 
         config.output_dir.mkdir(parents=True, exist_ok=True)
         predictions_path.write_text(

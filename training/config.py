@@ -19,14 +19,16 @@ class TrainingConfig:
     learning_rate: float
     max_length: int
     output_dir: Path
-    threshold: float | None
+    threshold: float | None = None
+    predict_checkpoint: str | None = None
+    int8_recall_tolerance: float = 0.01
 
 
 class ConfigError(Exception):
     """Raised when configuration loading or validation fails."""
 
 
-_EXPECTED_KEYS = {
+_REQUIRED_KEYS = {
     "run",
     "base_checkpoint",
     "base_revision",
@@ -38,7 +40,12 @@ _EXPECTED_KEYS = {
     "learning_rate",
     "max_length",
     "output_dir",
+}
+
+_OPTIONAL_KEYS = {
     "threshold",
+    "predict_checkpoint",
+    "int8_recall_tolerance",
 }
 
 
@@ -64,14 +71,13 @@ def load_config(path: Path) -> TrainingConfig:
     if not isinstance(data, dict):
         raise ConfigError("Config must be a YAML mapping")
 
-    for k in _EXPECTED_KEYS:
+    for k in _REQUIRED_KEYS:
         if k not in data:
             raise ConfigError(f"Missing required config key: {k}")
 
     for k in data:
-        if k not in _EXPECTED_KEYS:
+        if k not in _REQUIRED_KEYS and k not in _OPTIONAL_KEYS:
             raise ConfigError(f"Unknown config key: {k}")
-
     run = str(data["run"])
     base_checkpoint = str(data["base_checkpoint"])
     base_revision = str(data["base_revision"])
@@ -80,10 +86,16 @@ def load_config(path: Path) -> TrainingConfig:
     per_device_batch_size = int(data["per_device_batch_size"])
     learning_rate = float(data["learning_rate"])
     max_length = int(data["max_length"])
-    threshold = data["threshold"]
+    threshold = data["threshold"] if data.get("threshold") is not None else None
     if threshold is not None:
         threshold = float(threshold)
 
+    predict_checkpoint = (
+        str(data["predict_checkpoint"]) if data.get("predict_checkpoint") is not None else None
+    )
+    int8_recall_tolerance = (
+        float(data["int8_recall_tolerance"]) if "int8_recall_tolerance" in data else 0.01
+    )
     config_dir = path.parent
 
     def resolve_file_path(val: str | Path) -> Path:
@@ -136,4 +148,6 @@ def load_config(path: Path) -> TrainingConfig:
         max_length=max_length,
         output_dir=output_dir,
         threshold=threshold,
+        predict_checkpoint=predict_checkpoint,
+        int8_recall_tolerance=int8_recall_tolerance,
     )

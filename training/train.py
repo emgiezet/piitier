@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
+import seqeval.scheme
 import torch
 from seqeval.metrics import f1_score, precision_score, recall_score
 from torch.utils.data import Dataset
@@ -60,7 +61,6 @@ def build_dataset(
     records: list[dict[str, Any]],
     tokenizer: Any,
     max_length: int,
-    label2id: dict[str, int],
 ) -> Dataset[dict[str, torch.Tensor]]:
     texts = [str(r["text"]) for r in records]
     encodings = tokenizer(
@@ -131,9 +131,11 @@ def compute_metrics_factory(
             for prediction, label in zip(preds, labels)
         ]
 
-        prec = precision_score(true_labels, true_predictions)
-        rec = recall_score(true_labels, true_predictions)
-        f1 = f1_score(true_labels, true_predictions)
+        prec = precision_score(
+            true_labels, true_predictions, mode="strict", scheme=seqeval.scheme.IOB2
+        )
+        rec = recall_score(true_labels, true_predictions, mode="strict", scheme=seqeval.scheme.IOB2)
+        f1 = f1_score(true_labels, true_predictions, mode="strict", scheme=seqeval.scheme.IOB2)
 
         return {
             "precision": round(float(prec), 4),
@@ -182,8 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     train_records = read_jsonl(config.train_file)
     eval_records = read_jsonl(config.eval_file)
 
-    train_dataset = build_dataset(train_records, tokenizer, config.max_length, label2id)
-    eval_dataset = build_dataset(eval_records, tokenizer, config.max_length, label2id)
+    train_dataset = build_dataset(train_records, tokenizer, config.max_length)
+    eval_dataset = build_dataset(eval_records, tokenizer, config.max_length)
 
     use_cpu = not torch.cuda.is_available()
 
