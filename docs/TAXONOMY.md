@@ -73,3 +73,18 @@ Pojawią się w przyszłych iteracjach.
 - Pracodawca / nazwa instytucji
 - Rzadkie zdarzenia życiowe powiązane z osobą
 - Daty zdarzeń (inne niż DATA_URODZENIA)
+
+## Wagi ryzyka
+
+Wagi grup do recall ważonego ryzykiem (eval/metrics.py — test synchronizacji
+`test_uc80` wymaga zgodności z tą tabelą):
+
+| Grupa | Waga |
+|-------|------|
+| Identyfikatory państwowe | 1.0 |
+| Finanse | 1.0 |
+| Ubezpieczenia | 0.9 |
+| Kontakt i lokalizacja | 0.8 |
+| Zdrowie — art. 9 RODO | 0.8 |
+| Identyfikacja osoby | 0.6 |
+
