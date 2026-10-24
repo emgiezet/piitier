@@ -79,10 +79,16 @@ _DATE_RE = re.compile(
 # identyfikacyjny") are not a taxonomy entity — the NIP detector excludes KRS on purpose —
 # so they stay literal and are blanked out before the digit-run check.
 # Pattern is tight (#10): keyword + optional "nr" + exactly 9–11 digits, no freeform gap.
+# Extended (M1): Latvian / other EU register phrases "wpisana do Rejestru Przedsiębiorstw
+# … pod nr NNNNNNNNN" are also company-register identifiers, not PII.
 _KRS_NUMBER_RE = re.compile(
     r"\bKRS\b[ \t:.]*(?:(?:pod[ \t]+)?nr[ \t:.]*)?(?:\d{10}(?!\d))"
     r"|\bEIK\b[ \t:.]*\d{9,11}(?!\d)"
-    r"|(?:ujednolicony )?kod identyfikacyjny[ \t:]*\d{9,11}(?!\d)",
+    r"|(?:ujednolicony )?kod identyfikacyjny[ \t:]*\d{9,11}(?!\d)"
+    # Latvian / other EU registries: "wpisana do Rejestru Przedsiębiorstw Republiki
+    # Łotewskiej pod nr 40103424710" and equivalent phrases.
+    r"|wpisan[ay]\s+do\s+rejestru\b[^\n.]{0,80}pod\s+nr\s*\d{9,11}(?!\d)"
+    r"|Rejestru?\s+Przedsiębiorstw\b[^\n.]{0,80}pod\s+nr\s*\d{9,11}(?!\d)",
     re.IGNORECASE,
 )
 # Code-side rules run after LLM marking: values whose shape and context are unambiguous are
@@ -130,6 +136,19 @@ _PLATE_KEYWORD_RE = re.compile(
 # Leak: a plate keyword followed by an unredacted plate string.
 _PLATE_LEAK_RE = re.compile(
     r"(?i)(?:numer|nr)[ \t]+rejestracyjny[: \t]*\n?[ \t]*[A-Z]{2,3}[ ]?\d[A-Z0-9]{3,5}\b"
+)
+# B1: plate immediately before {{VIN}} — code rule in _rule_redact replaces it, and the
+# gate catches any survivor.  Shape: 2–3 uppercase letters + digit + 3–5 alphanumerics,
+# not preceded by another alphanumeric (prevents matching the middle of a product code).
+_PLATE_BEFORE_VIN_RE = re.compile(
+    r"(?<![A-Za-z0-9])([A-Z]{2,3}\s?\d[A-Z0-9]{3,5})(?=\s+"
+    + re.escape("{{VIN}}")
+    + r")",
+)
+# Gate: plate-shaped token directly before {{VIN}} that the rule missed.
+_PLATE_BEFORE_VIN_GATE_RE = re.compile(
+    r"(?<![A-Za-z0-9])[A-Z]{2,3}\s?\d[A-Z0-9]{3,5}\s+"
+    + re.escape("{{VIN}}")
 )
 # Leak: street prefix still present in a literal — the street was not redacted.
 _STREET_LEAK_RE = re.compile(
@@ -238,6 +257,7 @@ _CHUNK_REJECTS = (
     "unknown_label",
     "too_few_placeholders",
     "leaked_value",
+    "llm_bad_label",
     "llm_error",
 )
 
@@ -267,6 +287,20 @@ _AGENT_NIP_RE = re.compile(
 # (c) "Policy no" / "Policy no)" before {{PESEL}} → {{NR_POLISY}}
 _POLICY_NO_PESEL_RE = re.compile(
     r"(?i)(Policy no\)?[ \t,]*)" + re.escape("{{" + Label.PESEL.name + "}}"),
+)
+# Gate (M1/M2): a PESEL or NR_POLISY placeholder directly after a company-register
+# keyword is a misidentified public register number, not PII.
+_REGISTER_PLACEHOLDER_GATE_RE = re.compile(
+    r"(?:Rejestru?\s+Przedsiębiorstw|Republiki\s+Łotewskiej"
+    r"|wpisan[ay]\s+do\s+rejestru"
+    r"|\bEIK\b|(?:ujednolicony\s+)?kod\s+identyfikacyjny"
+    r")[^\n]{0,80}\{\{(?:PESEL|NR_POLISY)\}\}",
+    re.IGNORECASE,
+)
+# Gate (m1): a lowercase word immediately followed by digits after an ADRES placeholder
+# is a junk token that slipped through normalisation (e.g. ``{{ADRES#1}} city2111``).
+_ADRES_JUNK_SUFFIX_RE = re.compile(
+    r"\{\{ADRES(?:#\d+)?\}\}\s+[a-z]+\d+"
 )
 
 
@@ -341,16 +375,18 @@ def _segment(text: str) -> list[str]:
 def _redact_literal(literal: str) -> str:
     # A structured ID glued to letters (``PL23-P44051401359``) is a fragment of a longer
     # identifier that passed a checksum by chance: leave it, so the gate rejects the chunk.
+    _reg_spans = [(m.start(), m.end()) for m in _KRS_NUMBER_RE.finditer(literal)]
     found: list[tuple[int, int, str]] = [
         (s.start, s.end, s.label.name)
         for s in piitier.detect(literal)
-        if s.start == 0 or not literal[s.start - 1].isalnum()
+        if (s.start == 0 or not literal[s.start - 1].isalnum())
+        and not any(rs <= s.start and s.end <= re for rs, re in _reg_spans)
     ]
-    found += [(m.start(), m.end(), Label.KWOTA.name) for m in _AMOUNT_RE.finditer(literal)]
     found += [
         (m.start(), m.end(), Label.KOD_POCZTOWY.name) for m in _POSTCODE_RULE_RE.finditer(literal)
     ]
     found += [(m.start(), m.end(), Label.EMAIL.name) for m in _EMAIL_RULE_RE.finditer(literal)]
+    found += [(m.start(), m.end(), Label.KWOTA.name) for m in _AMOUNT_RE.finditer(literal)]
     found += [(m.start(), m.end(), Label.ADRES.name) for m in _STREET_RE.finditer(literal)]
     found += [(m.start(), m.end(), Label.VIN.name) for m in _VIN_RULE_RE.finditer(literal)]
     for m in _PHONE_RE.finditer(literal):
@@ -360,7 +396,6 @@ def _redact_literal(literal: str) -> str:
     # Registration plate detected by keyword context (TA #5).
     for m in _PLATE_KEYWORD_RE.finditer(literal):
         found.append((m.start(1), m.end(1), Label.NR_REJESTRACYJNY.name))
-    # When spans overlap, keep the longest; if tied, keep the earlier (#8).
     sorted_by_len = sorted(found, key=lambda f: -(f[1] - f[0]))
     kept: list[tuple[int, int, str]] = []
     for start, end, label in sorted_by_len:
@@ -369,7 +404,6 @@ def _redact_literal(literal: str) -> str:
     for start, end, label in sorted(kept, reverse=True):
         literal = literal[:start] + "{{" + label + "}}" + literal[end:]
     return literal
-
 
 def _rule_redact(chunk: str) -> str:
     """Replace every rule-detected span outside existing placeholders with ``{{LABEL}}``.
@@ -390,6 +424,12 @@ def _rule_redact(chunk: str) -> str:
     # (c) "Policy no" precedes a policy number written in English, not a PESEL.
     chunk = _POLICY_NO_PESEL_RE.sub(
         lambda m: m.group(1) + "{{" + Label.NR_POLISY.name + "}}", chunk
+    )
+    # (d) Plate immediately before {{VIN}} → NR_REJESTRACYJNY (B1).
+    #     _redact_literal only sees the literal segment; after assembly this step
+    #     catches a plate that precedes an already-placed {{VIN}} placeholder.
+    chunk = _PLATE_BEFORE_VIN_RE.sub(
+        "{{" + Label.NR_REJESTRACYJNY.name + "}}", chunk
     )
     return chunk
 
@@ -567,6 +607,17 @@ def _apply_llm_spans(chunk: str, spans: list[Any]) -> tuple[str, bool, int]:
         if label in _LLM_LABEL_NAMES and not _has_label_shape(label, text, chunk):
             bad_label = True
             continue
+        # Company-register context (M1/M2): if every verbatim occurrence of this span in
+        # the chunk sits inside a _KRS_NUMBER_RE match (KRS, EIK, Latvian registry …),
+        # keep it literal — it is a public corporate identifier, not personal data.
+        _reg_spans = [(m.start(), m.end()) for m in _KRS_NUMBER_RE.finditer(chunk)]
+        if _reg_spans:
+            _occ = [(m.start(), m.end()) for m in re.finditer(re.escape(text), chunk)]
+            if _occ and all(
+                any(rs <= o_s and o_e <= r_e for rs, r_e in _reg_spans)
+                for o_s, o_e in _occ
+            ):
+                continue  # keep literal — it is a company register number
         if label in _ENTITY_LABELS:
             entity_id = text_to_entity.get((label, text.strip()), 1)
             placeholder = "{{" + label + "#" + str(entity_id) + "}}"
@@ -623,9 +674,10 @@ def _link_entities(chunk: str) -> str:
 
 def _leaks(literal: str) -> bool:
     """True when *literal* still carries a value-like string."""
-    if piitier.detect(literal):
+    cleaned = _KRS_NUMBER_RE.sub(" ", _DATE_RE.sub(" ", literal))
+    if piitier.detect(cleaned):
         return True
-    undated = _KRS_NUMBER_RE.sub(" ", _DATE_RE.sub(" ", literal))
+    undated = cleaned
     if _DIGIT_RUN_RE.search(undated) or _POSTCODE_RE.search(undated):
         return True
     if _FOREIGN_POSTCODE_RE.search(undated):  # TA #3: foreign 4–5 digit postcodes
@@ -682,6 +734,18 @@ def _gate(chunk: str, doc_type: str) -> str | None:
             if any(re.search(r"(?i)Miejsco\w+\s*\(", cl) for cl in adj):
                 return "leaked_value"
     if any(_leaks(lit) for lit in parts if isinstance(lit, str)):
+        return "leaked_value"
+    # B1: plate-shaped token directly before {{VIN}} — the code rule should have caught it,
+    # but guard against any path where a plate sneaks through to the finished template.
+    if _PLATE_BEFORE_VIN_GATE_RE.search(chunk):
+        return "leaked_value"
+    # M1/M2: a PESEL or NR_POLISY placeholder inside a company-register phrase means the
+    # LLM mislabelled a public register number as personal data.
+    if _REGISTER_PLACEHOLDER_GATE_RE.search(chunk):
+        return "llm_bad_label"
+    # m1: a lowercase word immediately followed by digits after an ADRES placeholder is a
+    # junk token that was not stripped during normalisation (e.g. ``{{ADRES#1}} city2111``).
+    if _ADRES_JUNK_SUFFIX_RE.search(chunk):
         return "leaked_value"
     return None
 

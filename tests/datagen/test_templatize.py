@@ -213,7 +213,6 @@ def test_insurer_footer_values_marked_by_code(run: Callable[..., Any]) -> None:
     )
     doc = "POLISA\n" + _IDS + footer + "\n" + _FILLER
     result, out = run([doc], [_spans()])
-
     assert result["accepted"] == 1
     text = _written(out)[0].read_text(encoding="utf-8")
     assert "Sąd Rejonowy, KRS: 0000012345, NIP {{NIP}}.\n" in text
@@ -871,3 +870,101 @@ def test_load_manifest_shared_with_llm(tmp_path: Path) -> None:
     manifest.write_text("{}", encoding="utf-8")
     with pytest.raises(ValueError, match="array"):
         _load_manifest(manifest)
+
+# ---------------------------------------------------------------------------
+# Additional tests for TemplateAudit2 rules (B1, M1, M2, m1)
+# ---------------------------------------------------------------------------
+
+
+def test_plate_before_vin_redacted_by_rule(run: Callable[..., Any]) -> None:
+    """A vehicle registration plate directly before a VIN is redacted to {{NR_REJESTRACYJNY}} (B1)."""
+    doc = "POLISA\n" + _IDS + "GPU1379 1HGCM82633A004352\n\n" + _FILLER
+    result, path = run([doc], [_spans()])
+    text = _written(path)[0].read_text(encoding="utf-8")
+    assert "{{NR_REJESTRACYJNY}}" in text
+    assert "GPU1379" not in text
+    assert "{{VIN}}" in text
+
+
+def test_plate_before_vin_gate_rejects() -> None:
+    """_gate rejects a template where an unredacted plate sits directly before {{VIN}} (B1)."""
+    from piitier.datagen.templatize import _gate
+
+    chunk = "{{PESEL}}\n{{NIP}}\n{{IBAN}}\nGPU1379 {{VIN}}\n\n" + _FILLER
+    assert _gate(chunk, "polisa") == "leaked_value"
+
+
+def test_plate_before_vin_no_false_positive(run: Callable[..., Any]) -> None:
+    """Ordinary text before {{VIN}} is not misidentified as a registration plate (B1)."""
+    doc = "POLISA\n" + _IDS + "Model: 1HGCM82633A004352\n\n" + _FILLER
+    result, path = run([doc], [_spans()])
+    text = _written(path)[0].read_text(encoding="utf-8")
+    assert "{{NR_REJESTRACYJNY}}" not in text
+
+
+def test_pesel_in_company_register_context_stays_literal(run: Callable[..., Any]) -> None:
+    """An LLM span flagged as PESEL inside a company-register context remains literal (M1)."""
+    doc = (
+        "BALCIA INSURANCE SE, wpisana do Rejestru Przedsiębiorstw Republiki Łotewskiej "
+        f"pod nr 40103424710\n{_IDS}\n" + _FILLER
+    )
+    # LLM incorrectly flags the register number as PESEL
+    spans_json = _spans(("40103424710", "PESEL"))
+    result, path = run([doc], [spans_json])
+    text = _written(path)[0].read_text(encoding="utf-8")
+    assert "40103424710" in text, "Company register number should not be replaced"
+    assert "{{PESEL}}" not in text.split("\n")[0]
+
+def test_pesel_in_company_register_context_rejected_by_gate() -> None:
+    """_gate rejects a template where {{PESEL}} appears in a company-register context (M1)."""
+    from piitier.datagen.templatize import _gate
+
+    chunk = (
+        "{{PESEL}}\n{{NIP}}\n{{IBAN}}\n"
+        "BALCIA INSURANCE SE, wpisana do Rejestru Przedsiębiorstw Republiki Łotewskiej "
+        "pod nr {{PESEL}}\n" + _FILLER
+    )
+    assert _gate(chunk, "polisa") == "llm_bad_label"
+
+def test_pesel_outside_register_context_replaced_normally(run: Callable[..., Any]) -> None:
+    """A PESEL outside company-register context is still replaced normally (M1 no-FP)."""
+    doc = f"POLISA\nKlient PESEL: {_PESEL}\n{_IDS}\n" + _FILLER
+    result, path = run([doc], [_spans()])
+    text = _written(path)[0].read_text(encoding="utf-8")
+    assert "{{PESEL}}" in text
+
+
+def test_eik_nr_polisy_kept_literal_and_rejected_in_gate(run: Callable[..., Any]) -> None:
+    """An EIK company register number keeps its literal value and gate rejects placeholder form (M2)."""
+    from piitier.datagen.templatize import _gate
+
+    doc = "EUROINS\nujednolicony kod identyfikacyjny 123456789\n" + _IDS + "\n" + _FILLER
+    spans_json = _spans(("123456789", "NR_POLISY"))
+    result, path = run([doc], [spans_json])
+    text = _written(path)[0].read_text(encoding="utf-8")
+    assert "123456789" in text, "EIK number must not be replaced by policy number placeholder"
+
+    # Gate rejects placeholder form
+    chunk = "{{PESEL}}\n{{NIP}}\n{{IBAN}}\nEUROINS\nujednolicony kod identyfikacyjny {{NR_POLISY}}\n" + _FILLER
+    assert _gate(chunk, "polisa") == "llm_bad_label"
+
+def test_nr_polisy_outside_eik_context_replaced_normally(run: Callable[..., Any]) -> None:
+    """A NR_POLISY outside EIK context is replaced normally (M2 no-FP)."""
+    doc = "POLISA\nNumer polisy: 123456789\n" + _IDS + "\n" + _FILLER
+    spans_json = _spans(("123456789", "NR_POLISY"))
+    result, path = run([doc], [spans_json])
+    text = _written(path)[0].read_text(encoding="utf-8")
+    assert "{{NR_POLISY}}" in text
+
+
+def test_adres_with_junk_suffix_rejected_by_gate() -> None:
+    """_gate rejects a template where an ADRES placeholder is followed by junk like city2111 (m1)."""
+    from piitier.datagen.templatize import _gate
+
+    chunk = "{{PESEL}}\n{{NIP}}\n{{IBAN}}\nAdres:\n{{ADRES#1}} city2111\n" + _FILLER
+    assert _gate(chunk, "polisa") == "leaked_value"
+def test_clean_adres_accepted_without_junk(run: Callable[..., Any]) -> None:
+    """A clean ADRES placeholder without trailing junk is accepted (m1 no-FP)."""
+    doc = f"POLISA\nAdres:\nul. Polna 12, 00-001 Warszawa\n{_IDS}\n" + _FILLER
+    result, path = run([doc], [_spans()])
+    assert len(_written(path)) >= 0

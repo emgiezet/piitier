@@ -49,6 +49,8 @@ Wyjściowy syntetyczny dataset (pliki `train.jsonl` / `dev.jsonl`) jest udostęp
 ## Reprodukowalność
 Zbiór jest w pełni deterministyczny. Użycie tego samego ziarna (`seed`), wersji biblioteki `piitier` oraz zestawu szablonów gwarantuje uzyskanie identycznych plików wynikowych (bajt w bajt, potwierdzone sumą kontrolną SHA-256). Polecenie `build` przydziela szablony metodą round-robin po typach dokumentów (posortowanych leksykograficznie): iteracja `i` wybiera typ `doc_types[i % len(doc_types)]`, a w obrębie typu szablony cyklicznie.
 
+Reguła podziału: `sha256(template_id) % 10 == 0 → dev`, pozostałe → `train`. Dodatkowa gwarancja: jeśli wszystkie szablony danego typu dokumentu trafiłyby do `dev`, cały ten typ jest przymusowo kierowany do `train` (gwarancja pokrycia treningu). Typy, dla których zastosowano tę korektę, są zapisywane w `manifest.json` pod kluczem `split_forced_train`. Mechanizm jest deterministyczny i niezależny od parametrów `n` oraz `seed`.
+
 ## Pełny Bieg (Instrukcja dla Orchestratora)
 Aby wykonać pełny bieg produkcyjny (20 000 dokumentów szablonowych + 2 000 twardych negatywów, z augmentacją), należy uruchomić następujące polecenie:
 

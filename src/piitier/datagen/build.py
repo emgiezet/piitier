@@ -11,6 +11,10 @@ BuildError                        — raised by build() for guarded write condit
 The CLI (``python -m piitier.datagen build|check``) is in ``__main__.py``.
 
 Split rule: sha256(template_id, encoding='utf-8') % 10 == 0  →  dev,  else  train.
+Train-coverage guard: if every template of a doc type would be assigned to dev, all
+                      templates of that type are forced to train instead.  The guard is
+                      deterministic and independent of n/seed.  Forced types are recorded
+                      in ``manifest.json`` under the key ``split_forced_train``.
 IDs: ``doc_{i:07d}`` where i is the global document index [0, n).
 Seeds: base_seed + i.
 Traversal: round-robin over sorted(doc_types), then sorted(filenames) within each type
@@ -91,6 +95,25 @@ def _split_for(template_id: str) -> str:
     """
     digest = int(hashlib.sha256(template_id.encode()).hexdigest(), 16)
     return "dev" if digest % 10 == 0 else "train"
+
+
+# ---------------------------------------------------------------------------
+# Train-coverage guard
+# ---------------------------------------------------------------------------
+
+
+def _forced_train_types(type_templates: dict[str, list[Template]]) -> frozenset[str]:
+    """Return the set of doc types where *every* template would be assigned to dev.
+
+    For these types the caller must override the split to ``'train'`` so that every
+    doc type is always represented in the training set.  Types with at least one
+    train-assigned template are returned unchanged (empty intersection with result).
+    """
+    forced: set[str] = set()
+    for doc_type, tmpls in type_templates.items():
+        if all(_split_for(t.template_id) == "dev" for t in tmpls):
+            forced.add(doc_type)
+    return frozenset(forced)
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +199,7 @@ def build(
         _type_templates.setdefault(t.doc_type, []).append(t)
     _types: list[str] = sorted(_type_templates)
     _type_counters: dict[str, int] = dict.fromkeys(_types, 0)
+    _forced: frozenset[str] = _forced_train_types(_type_templates)
 
     # 1. Template documents
     for i in range(n):
@@ -213,7 +237,7 @@ def build(
             ensure_ascii=False,
         )
 
-        split = _split_for(tmpl.template_id)
+        split = _split_for(tmpl.template_id) if tmpl.doc_type not in _forced else "train"
         if split == "dev":
             dev_lines.append(record)
             split_counts["dev"] += 1
@@ -292,6 +316,7 @@ def build(
         "template_counts": dict(sorted(template_counts.items())),
         "span_counts": dict(sorted(span_counts.items())),
         "split_counts": split_counts,
+        "split_forced_train": sorted(_forced),
         "version": piitier.__version__,
         "inflection_fallbacks": total_fallbacks,
         "augment": augment,

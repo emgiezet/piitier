@@ -189,8 +189,9 @@ def main(argv: list[str] | None = None) -> int:
 
     use_cpu = not torch.cuda.is_available()
 
-    # Single-GPU requirement: launch with CUDA_VISIBLE_DEVICES=1 to restrict to the
-    # RTX 3090 Ti and prevent HF Trainer from pulling the RTX 3080 into a DataParallel job.
+    # Single-GPU requirement: launch with CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1
+    # to restrict to the RTX 3090 Ti (CUDA's default fastest-first order makes index 1 the
+    # RTX 3080) and keep HF Trainer from pulling both cards into a DataParallel job.
     training_args = TrainingArguments(
         output_dir=str(config.output_dir),
         max_steps=config.max_steps,
