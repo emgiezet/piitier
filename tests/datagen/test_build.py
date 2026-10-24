@@ -31,6 +31,7 @@ DOC_TYPES = frozenset(
         "transkrypcja_infolinii",
         "wypis_szpitalny",
         "skierowanie",
+        "zestawienie_prowizyjne",
     }
 )
 

@@ -1,0 +1,48 @@
+# Run: pii-5-v1 — first real fine-tune on bardsai/eu-pii-anonimization-multilang-v2
+#
+# GPU: RTX 3090 Ti (GPU index 1, 24 GB, bf16).
+# Launch command (single-GPU, prevents DataParallel imbalance with the RTX 3080):
+#   CUDA_VISIBLE_DEVICES=1 uv run python -m training.train training/configs/pii-5-v1.yaml
+#
+# Token-length analysis (bardsai tokenizer, 2000-doc sample, 9 doc types):
+#   doc_type                 p50   p90   p99   max
+#   mail_klienta             192   198   199   199
+#   polisa                   617   800   881   922
+#   skierowanie              247   272   277   287
+#   transkrypcja_infolinii   292   297   297   297
+#   umowa_kredytowa          239   280   284   287
+#   wyciag                   334   340   340   340
+#   wypis_szpitalny          277   342   348   350
+#   zestawienie_prowizyjne   604  1118  1384  1389
+#   zgloszenie_szkody        222   251   256   257
+#   OVERALL                  281   632  1129  1389
+#
+# Truncation loss at max_length=1024:
+#   docs beyond 1024: 2.5%   spans cut at 1024: 1.9%
+# 1.9% of spans cut is ≤ 2% threshold → overlapping windows NOT implemented;
+# max_length set to 1024 and loss accepted at < 2%.
+#
+# bench/v1/dev/docs.jsonl (5 docs) is evaluated separately after training,
+# not used as eval_file here (too small for meaningful mid-run eval).
+#
+# Hyperparameters:
+#   train docs: 20 252  |  per_device_batch_size: 16
+#   steps/epoch: ceil(20252/16) = 1266  |  3 epochs → 3798 → max_steps: 3800
+#   learning_rate: 2e-5 (standard for BERT-family fine-tune on token classification)
+
+run: pii-5-v1
+base_checkpoint: bardsai/eu-pii-anonimization-multilang-v2
+base_revision: "5e61416e77675881185767fc0c67759d48b35592"
+base_license: Apache-2.0
+
+train_file: data/synthetic/v0.1/train.jsonl
+eval_file: data/synthetic/v0.1/dev.jsonl
+
+seed: 42
+max_steps: 3800
+per_device_batch_size: 16
+learning_rate: 2.0e-5
+max_length: 1024
+bf16: true
+
+output_dir: ../out/pii-5-v1

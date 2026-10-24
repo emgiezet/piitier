@@ -323,5 +323,42 @@ def test_uc18_krs_exclusion_also_applies_after_nip_keyword() -> None:
     assert find("KRS NIP 0000123456") == []
 
 
+@pytest.mark.parametrize(
+    ("text", "nip"),
+    [
+        ("KRS: 0000012345, NIP 123-45-67-890", "123-45-67-890"),
+        ("pod nr KRS 0000012345, NIP 526 000 12 46", "526 000 12 46"),
+        ("KRS 0000012345 NIP: 5260001246", "5260001246"),
+        ("XII Wydział Gospodarczy KRS), NIP: 526-000-12-46.", "526-000-12-46"),
+    ],
+)
+def test_uc18_nip_after_complete_krs_number_is_detected(text: str, nip: str) -> None:
+    spans = find(text)
+    assert [text[s.start : s.end] for s in spans] == [nip]
+
+
 def test_uc14_does_not_extract_suffix_from_longer_separated_run() -> None:
     assert find("9 5260001246") == []
+
+
+# ---------------------------------------------------------------------------
+# _LATER_NIP_RE fixes (#16): DOTALL + . and ) punctuation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "nip"),
+    [
+        # KRS followed by NIP across a newline (#16 DOTALL)
+        ("KRS,\nNIP: 5260001246", "5260001246"),
+        # KRS with '.' punctuation before NIP (#16 '.' added to [,;)])
+        ("KRS: brak. NIP: 5260001246", "5260001246"),
+        # KRS with ')' then NIP still works
+        ("Wpisany do KRS). NIP: 5260001246", "5260001246"),
+    ],
+)
+def test_later_nip_re_dotall_and_punctuation(text: str, nip: str) -> None:
+    """_LATER_NIP_RE with DOTALL and '.' allows NIP after KRS with various separators (#16)."""
+    spans = find(text)
+    found = [text[s.start : s.end] for s in spans]
+    assert nip in found, f"expected {nip!r} in {found!r}"

@@ -27,8 +27,24 @@ def write_report(
     result: BenchResult,
     metrics: dict[str, object],
     is_final: bool = False,
+    comparable_labels: frozenset[Label] | None = None,
+    by_doc_type: dict[str, dict[str, object]] | None = None,
 ) -> Path:
-    """Generate Markdown evaluation report with required sections in mandatory order."""
+    """Generate Markdown evaluation report with required sections in mandatory order.
+
+    Args:
+        path: Destination ``.md`` file (parent dirs are created automatically).
+        system_name: Short system identifier (e.g. ``"bardsai-v2"``).
+        system_version: Version string for the system.
+        bench_version: Benchmark version tag (e.g. ``"v1"``).
+        split: Dataset split name (``"dev"``, ``"test"``, or JSONL stem).
+        threshold: Detection threshold or ``None`` if the system has none.
+        result: ``BenchResult`` from ``run_benchmark``.
+        metrics: Metrics dict as built by ``main()`` in ``eval.run``.
+        is_final: When ``True`` the split label is annotated as final.
+        comparable_labels: Optional subset of labels for the comparable-subset block.
+        by_doc_type: Optional per-doc_type metric dicts from ``_by_doc_type_metrics``.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
 
     threshold_str = str(threshold) if threshold is not None else "brak — system bez progu"
@@ -111,6 +127,36 @@ def write_report(
     for lbl, prf in sorted(partial_by_label.items(), key=lambda x: x[0].name):
         lines.append(f"| {lbl.name} | {prf.precision:.4f} | {prf.recall:.4f} | {prf.f1:.4f} |")
 
+    # ------------------------------------------------------------------
+    # Comparable subset block
+    # ------------------------------------------------------------------
+    _comparable_labels = comparable_labels or cast(
+        frozenset[Label] | None, metrics.get("comparable_labels")
+    )
+    _comparable_strict = cast(EntityPRF | None, metrics.get("comparable_strict_micro"))
+    _comparable_partial = cast(EntityPRF | None, metrics.get("comparable_partial_micro"))
+
+    if _comparable_labels and _comparable_strict is not None:
+        label_names = ", ".join(sorted(lbl.name for lbl in _comparable_labels))
+        lines.extend(
+            [
+                "",
+                "## Porównywalna podtaksonomia (bardsai_v2)",
+                f"- Etykiety: {label_names}",
+                f"- Strict Micro Precision: {_comparable_strict.precision:.4f}",
+                f"- Strict Micro Recall: {_comparable_strict.recall:.4f}",
+                f"- Strict Micro F1: {_comparable_strict.f1:.4f}",
+            ]
+        )
+        if _comparable_partial is not None:
+            lines.extend(
+                [
+                    f"- Partial Micro Precision: {_comparable_partial.precision:.4f}",
+                    f"- Partial Micro Recall: {_comparable_partial.recall:.4f}",
+                    f"- Partial Micro F1: {_comparable_partial.f1:.4f}",
+                ]
+            )
+
     lines.extend(
         [
             "",
@@ -138,6 +184,35 @@ def write_report(
             "",
         ]
     )
+
+    # ------------------------------------------------------------------
+    # Per-doc_type breakdown
+    # ------------------------------------------------------------------
+    _by_dt = by_doc_type or cast(dict[str, dict[str, object]] | None, metrics.get("by_doc_type"))
+
+    if _by_dt:
+        lines.append("## Podział wg doc_type")
+        lines.append("")
+        for dt in sorted(_by_dt):
+            dt_v = _by_dt[dt]
+            sm = cast(EntityPRF, dt_v["strict_micro"])
+            sbl = cast(dict[Label, EntityPRF], dt_v["strict_by_label"])
+            lines.extend(
+                [
+                    f"### {dt}",
+                    f"- Strict Micro Precision: {sm.precision:.4f}",
+                    f"- Strict Micro Recall: {sm.recall:.4f}",
+                    f"- Strict Micro F1: {sm.f1:.4f}",
+                    "",
+                    "| Etykieta | Precision | Recall | F1 |",
+                    "|---|---|---|---|",
+                ]
+            )
+            for lbl, prf in sorted(sbl.items(), key=lambda x: x[0].name):
+                lines.append(
+                    f"| {lbl.name} | {prf.precision:.4f} | {prf.recall:.4f} | {prf.f1:.4f} |"
+                )
+            lines.append("")
 
     path.write_text("\n".join(lines), encoding="utf-8")
     return path

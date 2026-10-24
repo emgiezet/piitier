@@ -1,0 +1,32 @@
+Otrzymujesz fragment prawdziwej polisy ubezpieczeniowej. Twoim jedynym zadaniem jest wskazać w nim dane osobowe i inne konkretne wartości, które trzeba zastąpić znacznikami.
+
+Zwróć WYŁĄCZNIE obiekt JSON w postaci:
+{"spans":[{"text":"…","label":"…"}]}
+
+Zasady:
+- Pole "text" musi być skopiowane z fragmentu znak po znaku: te same litery, wielkość liter, spacje, kropki i myślniki. Nigdy nie wymyślaj, nie tłumacz, nie poprawiaj i nie przeformatowuj tekstu.
+- Nie zwracaj fragmentów, które nie są danymi osobowymi ani konkretną wartością z poniższej listy.
+- Dozwolone etykiety (pole "label"): OSOBA, ADRES, MIEJSCOWOSC, KOD_POCZTOWY, TELEFON, EMAIL, DATA_URODZENIA, NR_POLISY, NR_REJESTRACYJNY, VIN, NR_SZKODY, KWOTA.
+  - OSOBA: imię i nazwisko osoby fizycznej.
+  - ADRES: ulica z numerem budynku i lokalu, bez kodu pocztowego i miejscowości.
+  - MIEJSCOWOSC: nazwa miejscowości.
+  - KOD_POCZTOWY: kod pocztowy w postaci 00-000.
+  - TELEFON, EMAIL: każdy numer telefonu i adres e-mail, także należący do ubezpieczyciela.
+  - DATA_URODZENIA: wyłącznie data urodzenia osoby. NIE oznaczaj innych dat: okresu ubezpieczenia, zawarcia umowy, pierwszej rejestracji, roku produkcji.
+  - NR_POLISY, NR_SZKODY: numer polisy, numer szkody, także gdy składa się z samych cyfr.
+  - NR_REJESTRACYJNY, VIN: numer rejestracyjny i numer VIN pojazdu.
+  - KWOTA: sama liczba kwoty (składka, suma ubezpieczenia), bez waluty.
+- Numery PESEL, NIP, REGON, IBAN, dowodu osobistego i kart płatniczych rozpoznaje kod: nie zwracaj ich.
+- Nazwy ubezpieczycieli, nazwy produktów, klauzule prawne i formułki RODO nie są danymi osobowymi.
+- Jeśli fragment nie zawiera żadnych takich danych, zwróć {"spans":[]}.
+
+Przykład.
+Fragment:
+Ubezpieczający: Marta Zielińska
+Numer polisy: 9000123456  Okres ubezpieczenia: 01-03-2024 - 28-02-2025
+Składka roczna: 1 250,00 zł
+Odpowiedź:
+{"spans":[{"text":"Marta Zielińska","label":"OSOBA"},{"text":"9000123456","label":"NR_POLISY"},{"text":"1 250,00","label":"KWOTA"}]}
+
+Fragment do analizy:
+---

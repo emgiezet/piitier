@@ -94,10 +94,18 @@ def test_uc51_lekarz_inflection_and_fallback() -> None:
 
 def test_uc52_build_check_manifest_medical_templates(tmp_path: Path) -> None:
     """UC-52: build passes, check returns 0, span_counts include medical labels."""
-    from piitier.datagen.build import _PACKAGED_TEMPLATES_DIR, build, check
+    from piitier.datagen.build import _PACKAGED_TEMPLATES_DIR, build, check, collect_templates
 
     out_dir = tmp_path / "dataset"
-    build(_PACKAGED_TEMPLATES_DIR, out=out_dir, n=30, seed=123)
+    # Round-robin selects one doc_type per iteration, cycling through all types.
+    # n_types × max_per_type guarantees every template in the largest doc_type
+    # renders at least once, so every label-bearing template is covered.
+    _templates = collect_templates(_PACKAGED_TEMPLATES_DIR)
+    _by_type: dict[str, list] = {}
+    for _t in _templates:
+        _by_type.setdefault(_t.doc_type, []).append(_t)
+    n = len(_by_type) * max(len(v) for v in _by_type.values())
+    build(_PACKAGED_TEMPLATES_DIR, out=out_dir, n=n, seed=123)
 
     exit_code, stderr = check(out_dir)
     assert exit_code == 0
@@ -110,13 +118,14 @@ def test_uc52_build_check_manifest_medical_templates(tmp_path: Path) -> None:
         assert lbl in span_counts, f"{lbl} missing from manifest span_counts"
 
 
-def test_uc53_prompt_label_list_27_labels() -> None:
-    """UC-53: prompt for each doc_type lists all 27 labels from _SUPPORTED_LABELS."""
+def test_uc53_prompt_label_list_28_labels() -> None:
+    """UC-53: prompt for each doc_type lists all 28 labels from _SUPPORTED_LABELS."""
+    from piitier.datagen.build import DOC_TYPES
     from piitier.datagen.llm import _SUPPORTED_LABELS
 
     prompts_dir = Path(__file__).parent.parent.parent / "src" / "piitier" / "datagen" / "prompts"
-    for prompt_file in prompts_dir.glob("*.txt"):
-        content = prompt_file.read_text(encoding="utf-8")
-        assert "27 obsługiwanych znaczników" in content
+    for doc_type in sorted(DOC_TYPES):
+        content = (prompts_dir / f"{doc_type}.txt").read_text(encoding="utf-8")
+        assert "28 obsługiwanych znaczników" in content
         for lbl in _SUPPORTED_LABELS:
             assert f"{{{{{lbl.name}}}}}" in content

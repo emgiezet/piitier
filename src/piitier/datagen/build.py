@@ -13,7 +13,8 @@ The CLI (``python -m piitier.datagen build|check``) is in ``__main__.py``.
 Split rule: sha256(template_id, encoding='utf-8') % 10 == 0  →  dev,  else  train.
 IDs: ``doc_{i:07d}`` where i is the global document index [0, n).
 Seeds: base_seed + i.
-Traversal: sorted(doc_types) then sorted(filenames) — stable across platforms.
+Traversal: round-robin over sorted(doc_types), then sorted(filenames) within each type
+           — equal shares per type, stable across platforms.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from piitier.datagen.hard_negatives import make_hard_negative_docs
 from piitier.datagen.render import render
 from piitier.datagen.template import Template
 
-# The eight supported document types, sorted for deterministic traversal.
+# The nine supported document types, sorted for deterministic traversal.
 DOC_TYPES: frozenset[str] = frozenset(
     {
         "mail_klienta",
@@ -39,6 +40,7 @@ DOC_TYPES: frozenset[str] = frozenset(
         "umowa_kredytowa",
         "wypis_szpitalny",
         "wyciag",
+        "zestawienie_prowizyjne",
         "zgloszenie_szkody",
     }
 )
@@ -168,9 +170,19 @@ def build(
     split_counts: dict[str, int] = {"train": 0, "dev": 0}
     total_fallbacks: int = 0
 
+    # Group templates by doc_type (collect_templates already sorts within each type).
+    _type_templates: dict[str, list[Template]] = {}
+    for t in templates:
+        _type_templates.setdefault(t.doc_type, []).append(t)
+    _types: list[str] = sorted(_type_templates)
+    _type_counters: dict[str, int] = dict.fromkeys(_types, 0)
+
     # 1. Template documents
     for i in range(n):
-        tmpl = templates[i % len(templates)]
+        dt = _types[i % len(_types)]
+        k = _type_counters[dt]
+        _type_counters[dt] += 1
+        tmpl = _type_templates[dt][k % len(_type_templates[dt])]
         doc_seed = seed + i
         doc_id = f"doc_{i:07d}"
 

@@ -11,7 +11,7 @@ destroys that.
 
 1. **Templates carry placeholders, never values.** Document types: policy, claim report,
    credit agreement, bank statement, customer email, call-centre transcript, hospital
-   discharge, referral. Templates live in `src/piitier/datagen/templates/`.
+   discharge, referral, commission statement. Templates live in `src/piitier/datagen/templates/`.
 2. **A local LLM (Bielik, PLLuM, Qwen) may write template text** with placeholders in place
    of PII. It never writes a value and never assigns a label. Discard any LLM output that
    contains a value where a placeholder belongs.

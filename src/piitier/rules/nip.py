@@ -21,7 +21,12 @@ With keyword:
 
 KRS exclusion
 -------------
-A 10-digit run preceded by the keyword ``KRS`` within 40 characters is not a NIP candidate.
+A 10-digit run is not a NIP candidate when the keyword ``KRS`` occurs within the 40
+preceding characters with no digit between it and the run (the KRS refers to this run),
+unless a ``NIP`` keyword follows the KRS after punctuation (``…Gospodarczy KRS), NIP: …``
+or across a newline ``KRS,\nNIP: …``).  The punctuation set is ``[,;.)]`` and the match
+uses ``re.DOTALL`` so that a newline between the punctuation and the NIP keyword is allowed.
+A NIP that follows a complete KRS number (``KRS 0000012345, NIP …``) is still detected.
 """
 
 from __future__ import annotations
@@ -84,6 +89,22 @@ def is_valid(value: str) -> bool:
     return _checksum_ok(value)
 
 
+_KRS_RE = re.compile(r"\bKRS\b", re.IGNORECASE)
+_LATER_NIP_RE = re.compile(r"[,;.)].*\b(?:NIP|VAT[ \t]+ID)\b", re.IGNORECASE | re.DOTALL)
+
+
+def _krs_refers_to(text: str, start: int) -> bool:
+    """True when the last ``KRS`` keyword before *start* (within 40 chars) names this run."""
+    preceding = text[max(0, start - 40) : start]
+    last = None
+    for last in _KRS_RE.finditer(preceding):
+        pass
+    if last is None:
+        return False
+    between = preceding[last.end() :]
+    return not any(ch.isdigit() for ch in between) and not _LATER_NIP_RE.search(between)
+
+
 def find(text: str) -> list[Span]:
     """Return every NIP candidate span found in *text*.
 
@@ -105,8 +126,7 @@ def find(text: str) -> list[Span]:
             continue
 
         match_start = match.start(1)
-        preceding_text = text[max(0, match_start - 40) : match_start]
-        if re.search(r"\bKRS\b", preceding_text, re.IGNORECASE):
+        if _krs_refers_to(text, match_start):
             continue
 
         checksum_valid = _checksum_ok(digits)
@@ -137,11 +157,8 @@ def find(text: str) -> list[Span]:
         if len(digits) != 10 or not digits.isdigit():
             continue
 
-        # KRS exclusion: if preceded by KRS keyword within 40 characters, skip
-        match_start = match.start()
-        search_start = max(0, match_start - 40)
-        preceding_text = text[search_start:match_start]
-        if re.search(r"\bKRS\b", preceding_text, re.IGNORECASE):
+        # KRS exclusion: the nearest preceding KRS keyword names this digit run
+        if _krs_refers_to(text, match.start()):
             continue
 
         checksum_valid = _checksum_ok(digits)

@@ -189,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
 
     use_cpu = not torch.cuda.is_available()
 
+    # Single-GPU requirement: launch with CUDA_VISIBLE_DEVICES=1 to restrict to the
+    # RTX 3090 Ti and prevent HF Trainer from pulling the RTX 3080 into a DataParallel job.
     training_args = TrainingArguments(
         output_dir=str(config.output_dir),
         max_steps=config.max_steps,
@@ -196,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         per_device_eval_batch_size=config.per_device_batch_size,
         learning_rate=config.learning_rate,
         seed=config.seed,
+        bf16=config.bf16,
         save_strategy="no",
         eval_strategy="no" if config.max_steps == 1 else "steps",
         use_cpu=use_cpu,

@@ -1,5 +1,6 @@
 .aisdlc/
 data/
+raw_data/
 training/out/
 __pycache__/
 *.egg-info/

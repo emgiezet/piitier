@@ -6,7 +6,7 @@ Zbiór danych służy do treningu i ewaluacji modeli rozpoznawania nazw własnyc
 ## Schemat JSONL
 Każdy rekord w plikach `train.jsonl` oraz `dev.jsonl` jest obiektem JSON o następujących polach:
 - `id` (string): Unikalny identyfikator dokumentu (np. `doc_0000000` dla szablonów, `hn_0000000` dla twardych negatywów).
-- `doc_type` (string): Typ dokumentu (np. `polisa`, `umowa_kredytowa`, `wypis_szpitalny`, `mail_klienta`, `wyciag`, `skierowanie`, `zgloszenie_szkody`, `transkrypcja_infolinii`).
+- `doc_type` (string): Typ dokumentu (np. `polisa`, `umowa_kredytowa`, `wypis_szpitalny`, `mail_klienta`, `wyciag`, `skierowanie`, `zgloszenie_szkody`, `transkrypcja_infolinii`, `zestawienie_prowizyjne`).
 - `template_id` (string): Identyfikator szablonu bazowego lub unikalnego identyfikatora negatywu.
 - `seed` (int): Ziarno generatora losowego (`random.Random`) użyte do wyrenderowania dokumentu.
 - `text` (string): Pełna treść tekstu dokumentu.
@@ -27,15 +27,27 @@ Każdy rekord w plikach `train.jsonl` oraz `dev.jsonl` jest obiektem JSON o nast
 3. **Listy autorskie w repozytorium**:
    - Curated list of ICD-10 codes, medical drugs (INN), diagnosis terms, and identifiers.
    - Licencja: Twórczość własna (w ramach projektu piitier).
-4. **Lokalny model językowy (Bielik)**:
-   - Model `SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF` używany wyłącznie lokalnie (przez Ollama) jako generator czystego tekstu szablonów z placeholderami. Żadne dane osobowe ani PII nie są generowane przez LLM; wartości są wstrzykiwane programowo przez kod.
-   - Licencja modelu bazowego.
+4. **Lokalne modele językowe (Ollama, tylko na lokalnym sprzęcie)**:
+   - `SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF` (`write-templates`) pisał tekst szablonów 8 pierwotnych typów dokumentów z placeholderami w miejscu PII. Wyjście zawierające wartość zamiast placeholdera jest odrzucane.
+   - `qwen3-coder:30b` (`templatize`) służy wyłącznie jako detektor spanów w tekście polis PDF: zwraca w JSON listę dosłownych fragmentów z etykietą (`text`, `label`); kod sprawdza, że fragment występuje dosłownie, i sam podmienia go na placeholder.
+   - Żaden LLM nie generuje wartości PII ani nie nadaje etykiet spanom w korpusie; wartości wstrzykuje kod.
+5. **Pliki PDF polis ubezpieczeniowych (dawcy układu)**:
+   - Pochodzenie: wewnętrzny zbiór dokumentów (polisy wefox, PZU, Inter Partner Assistance/AXA) z **fikcyjnymi tożsamościami** (nie są to dane osobowe, ale łudząco je przypominają); zatwierdzony do treningu przez właściciela danych; nigdy nie jest redystrybuowany.
+   - Tekst jest ekstrahowany za pomocą `pypdf`, normalizowany (zamiana NBSP→spacja, ligatur fi/fl, wielokrotnych spacji) i przekazywany do lokalnego LLM (`qwen3-coder:30b` via Ollama), który **wyłącznie wskazuje spany** do zastąpienia; reguły kodu zamieniają każdą wartość na placeholder `{{LABEL}}`. Bramka akceptacji (`_gate`) odrzuca każdy fragment, w którego literałach pozostaje cokolwiek o kształcie wartości PII: sprawdza parsowanie, przecieki (cyfry 9+, daty poza kontekstem daty urodzenia, numery kart, IBAN, kody pocztowe) i kształt etykiet.
+   - Do repozytorium trafiają wyłącznie szablony z placeholderami (`templates/polisa/polisa_pdf_*.txt`), nigdy surowe PDF-y ani wyekstrahowany tekst pierwotny. Lokalna kopia robocza leży w `raw_data/poland-policy-parser/pdf/` (katalog w `.gitignore`).
+   - Licencja źródłowa: **zastrzeżona — nie jest redystrybuowana**. Szablony pochodne są zatwierdzone do treningu przez właściciela danych i stanowią wyłącznie odwzorowanie układu dokumentów bez oryginalnych wartości. Wyjściowy syntetyczny dataset jest publikowany na **CC BY 4.0** wyłącznie jako produkt generatorów kodu i modeli generatywnych, nie oryginalnych PDF-ów.
+
+6. **Zestawienia prowizyjne (dawcy układu)**:
+   - Pochodzenie: wewnętrzne zestawienia prowizyjne z **fikcyjnymi tożsamościami** (dane syntetyczne, zatwierdzone do treningu przez właściciela danych). Służą wyłącznie jako dawcy układu (layoutu) szablonów `zestawienie_prowizyjne`.
+   - Przetwarzanie: `python -m piitier.datagen templatize-tables` mapuje nagłówki kolumn na etykiety PII (mapowanie nagłówek→`{{LABEL}}`); kolumny identyfikatorów (loginy agentów, identyfikatory agentów i podobne) są pomijane i nie trafiają do szablonów; nie jest używany żaden LLM. Bramka akceptacji odrzuca każdy szablon zawierający w literałach wartości o kształcie PII.
+   - Do repozytorium trafiają wyłącznie szablony z placeholderami (`templates/zestawienie_prowizyjne/*.txt`), nigdy surowe pliki XLSX/CSV ani wyekstrahowane wartości. Lokalna kopia robocza leży w `raw_data/poland-commission-settlement/` (katalog w `.gitignore`).
+   - Licencja źródłowa: **zastrzeżona — nie jest redystrybuowana**. Szablony pochodne zatwierdzone do treningu przez właściciela danych.
 
 ## Licencja Wyjściowa
-Zbiór danych jest udostępniany na licencji **CC BY 4.0** (Creative Commons Attribution 4.0 International).
+Wyjściowy syntetyczny dataset (pliki `train.jsonl` / `dev.jsonl`) jest udostępniany na licencji **CC BY 4.0** (Creative Commons Attribution 4.0 International). Licencja ta odnosi się wyłącznie do syntetycznych danych wyjściowych generowanych przez kod i generatywne modele językowe. Szablony pochodne z polis PDF i zestawień prowizyjnych są zatwierdzone do treningu, lecz **nie są redystrybuowane** — do repozytorium trafiają tylko jako pliki `templates/polisa/polisa_pdf_*.txt` i `templates/zestawienie_prowizyjne/*.txt`, nigdy jako surowe dokumenty ani wyekstrahowany tekst pierwotny.
 
 ## Reprodukowalność
-Zbiór jest w pełni deterministyczny. Użycie tego samego ziarna (`seed`), wersji biblioteki `piitier` oraz zestawu szablonów gwarantuje uzyskanie identycznych plików wynikowych (bajt w bajt, potwierdzone sumą kontrolną SHA-256).
+Zbiór jest w pełni deterministyczny. Użycie tego samego ziarna (`seed`), wersji biblioteki `piitier` oraz zestawu szablonów gwarantuje uzyskanie identycznych plików wynikowych (bajt w bajt, potwierdzone sumą kontrolną SHA-256). Polecenie `build` przydziela szablony metodą round-robin po typach dokumentów (posortowanych leksykograficznie): iteracja `i` wybiera typ `doc_types[i % len(doc_types)]`, a w obrębie typu szablony cyklicznie.
 
 ## Pełny Bieg (Instrukcja dla Orchestratora)
 Aby wykonać pełny bieg produkcyjny (20 000 dokumentów szablonowych + 2 000 twardych negatywów, z augmentacją), należy uruchomić następujące polecenie:
@@ -50,7 +62,7 @@ python -m piitier.datagen build \
   --out data/synthetic/v0.1/
 ```
 
-## Statystyki Biegu (pełny bieg, 2026-10-23, piitier 0.1.0, seed 42)
-> - Dokumenty: 22 000 łącznie (20 000 szablonowych + 2 000 twardych negatywów), split: `train` 20 252, `dev` 1 748; `augment: true`; dwa niezależne biegi tego samego ziarna dały bajt identyczne pliki.
-> - `span_counts`: PESEL 20 000, IBAN 20 000, NIP 15 385, NR_DOWODU 15 386, REGON 10 769, NR_KARTY 6 153, ADRES 3 577, KOD_POCZTOWY 3 077, MIEJSCOWOSC 3 077, OSOBA 3 077, LEK 3 076, LEKARZ 3 077, NPWZ 3 077, PLACOWKA 3 077, DATA_URODZENIA 1 538, ICD10 1 538, ROZPOZNANIE 1 538, NR_POLISY 1 539, NR_SZKODY 1 538, NR_UMOWY 1 538, NR_REJESTRACYJNY 1 538, NR_KW 1 538, VIN 1 538.
-> - SHA-256: `train.jsonl` `7bbc8e6d7949d7453df9b58b852ca36e48761cfefee448ae5ad2d16063a69720`, `dev.jsonl` `cb71a37b4ba4db6c66b500d70aa42d972192d74de66a1f61fafd3271754ea3f3`; offsety zweryfikowane (`check` → 0).
+## Statystyki Biegu (pełny bieg, piitier 0.1.0, seed 42) <!-- STATS: filled after build -->
+> - Dokumenty: TBD łącznie (TBD szablonowych + TBD twardych negatywów), split: `train` TBD, `dev` TBD; `augment: true`. <!-- STATS: filled after build -->
+> - `span_counts`: TBD <!-- STATS: filled after build -->
+> - SHA-256: `train.jsonl` TBD, `dev.jsonl` TBD; offsety zweryfikowane (`check` → 0). <!-- STATS: filled after build -->

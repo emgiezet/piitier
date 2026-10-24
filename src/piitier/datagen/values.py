@@ -63,6 +63,7 @@ _NR_SZKODY_RE: re.Pattern[str] = re.compile(r"^(?:SZK|CLM)\d{8}$")
 _NR_REJESTRACYJNY_RE: re.Pattern[str] = re.compile(r"^[A-Z]{2}[A-Z0-9]{3,5}$")
 _VIN_RE: re.Pattern[str] = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 _NR_KW_RE: re.Pattern[str] = re.compile(r"^[A-Z]{2}\d/\d{6}/(?:201[5-9]|202[0-6])$")
+_KWOTA_RE: re.Pattern[str] = re.compile(r"^\d{1,3}(?: \d{3})*,\d{2}$")
 
 
 def generate_pesel(rng: random.Random) -> str:
@@ -199,6 +200,17 @@ def generate_nr_umowy(rng: random.Random) -> str:
 
 def validate_nr_umowy(v: str) -> bool:
     return bool(_NR_UMOWY_RE.fullmatch(v))
+
+
+def generate_kwota(rng: random.Random) -> str:
+    """Generate a PLN amount in Polish notation without currency, e.g. ``12 345,67``."""
+    zloty = rng.randint(1, 999_999)
+    grosze = rng.randint(0, 99)
+    return f"{zloty:,}".replace(",", " ") + f",{grosze:02d}"
+
+
+def validate_kwota(v: str) -> bool:
+    return bool(_KWOTA_RE.fullmatch(v))
 
 
 def generate_nr_polisy(rng: random.Random) -> str:
@@ -464,6 +476,7 @@ _GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.TELEFON: generate_telefon,
     Label.EMAIL: generate_email,
     Label.NR_UMOWY: generate_nr_umowy,
+    Label.KWOTA: generate_kwota,
     Label.NR_POLISY: generate_nr_polisy,
     Label.NR_SZKODY: generate_nr_szkody,
     Label.NR_REJESTRACYJNY: generate_nr_rejestracyjny,
@@ -486,6 +499,7 @@ _VALIDATORS: dict[Label, Callable[[str], bool]] = {
     Label.TELEFON: lambda v: bool(_TELEFON_RE.fullmatch(v)),
     Label.EMAIL: lambda v: bool(_EMAIL_RE.fullmatch(v)),
     Label.NR_UMOWY: validate_nr_umowy,
+    Label.KWOTA: validate_kwota,
     Label.NR_POLISY: validate_nr_polisy,
     Label.NR_SZKODY: validate_nr_szkody,
     Label.NR_REJESTRACYJNY: validate_nr_rejestracyjny,

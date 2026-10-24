@@ -74,6 +74,7 @@ def render(template: Template, seed: int) -> Document:
         Label.EMAIL,
         # PII-3-a finance / insurance labels
         Label.NR_UMOWY,
+        Label.KWOTA,
         Label.NR_POLISY,
         Label.NR_SZKODY,
         Label.NR_REJESTRACYJNY,
