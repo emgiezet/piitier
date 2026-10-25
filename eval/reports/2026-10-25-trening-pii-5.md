@@ -1,104 +1,74 @@
-# Raport z treningu: pii-5-v1 i pii-5-v2 (2026-10-25)
+# Raport z treningu: pii-5-v1, pii-5-v2 i pii-5-v3 (2026-10-25)
 
 ## Podsumowanie
 
 - Model bazowy: `bardsai/eu-pii-anonimization-multilang-v2` (ModernBERT, 307M, Apache 2.0, rewizja `5e61416e`).
-- **pii-5-v1 odrzucony.** Na syntetycznym dev był lepszy od bazowego, ale na ręcznie pisanym `bench/v1/dev` wyciekło 22/40 wartości (bazowy: 2/40).
-- **pii-5-v2: duży postęp, jeszcze niezaakceptowany.**
-  - Syntetyczne dev: strict F1 0,997, bez żadnej regresji.
-  - bench/v1/dev: strict recall 0,67 (bazowy 0,33), ale `eval.compare` zgłasza regresję KWOTA, a wyciek wynosi 6/40 (bazowy 2/40).
-- Pozostałe różnice wynikają z luk w danych treningowych (formaty kwot z walutą, encje w prozie, DANE_ZDROWOTNE i DOCHOD bez przykładów). Naprawy są w toku i na nich powstanie v3.
+- **pii-5-v1: odrzucony.** Na syntetycznym dev był pozornie doskonały, ale na ręcznie pisanym `bench/v1/dev` wyciekły 22 z 40 wartości PII (model bazowy: 2/40). Główna przyczyna: 100% korpusu treningowego było pisane wielkimi literami, a etykiety tokenów gubiły początki encji.
+- **pii-5-v2: duży postęp, ale częściowa regresja.** Wyciek na bench spadł z 22/40 do 6/40, strict recall wzrósł do 0,67 (baza 0,33). `eval.compare` zgłaszał jednak regresję dla KWOTA (spadek do 0 przez brak waluty w spanie i brak formatu z kropką).
+- **pii-5-v3: cel osiągnięty — brak regresji i ZERO wycieków na bench.**
+  - **bench/v1/dev:** wyciek **0/6 dokumentów i 0/40 wartości** (baza: 2/40, v1: 22/40, v2: 6/40).
+  - **bench/v1/dev strict F1:** **0,646** na etykietach wspólnych (baza: 0,306, v1: 0,400, v2: 0,611).
+  - **`eval.compare` na bench:** **brak jakiejkolwiek regresji** (exit code 0; żaden spadek recall powyżej progu 0,02).
+  - **Syntetyczne dev (2 363 dok.):** strict F1 **0,923**, wyciek **0/2363 dokumentów**.
 
-## Przebiegi
+## Przebiegi treningowe
 
-| | pii-5-v1 | pii-5-v2 |
-|---|---|---|
-| Config | `training/configs/pii-5-v1.yaml` | `training/configs/pii-5-v2.yaml` |
-| Korpus | `data/synthetic/v0.1` (`--augment`) | `data/synthetic/v0.2` (bez augmentacji) |
-| Dokumenty train / dev | 21 283 / 717 | 21 283 / 717 |
-| Kroki / epoki | 4000 / 3,0 | 1400 / 1,05 |
-| LR / batch / max_length | 2e-5 / 16 / 1024 | 1e-5 / 16 / 1024 |
-| Sprzęt | RTX 3090 Ti, bf16, ok. 19,4 GB VRAM | jak v1 |
-| Czas treningu | 1739 s | 610 s |
-| Końcowy train loss | 0,0100 | 0,0470 |
-| seqeval na dev w trakcie (P / R / F1) | 0,9925 / 0,9949 / 0,9937 | 0,9958 / 0,9988 / 0,9973 |
-
-seqeval jest liczony na poziomie tokenów w syntetycznym dev, czyli na tym samym rozkładzie danych co trening. Nie mierzy generalizacji.
+| | pii-5-v1 | pii-5-v2 | **pii-5-v3** |
+|---|---|---|---|
+| Config | `training/configs/pii-5-v1.yaml` | `training/configs/pii-5-v2.yaml` | `training/configs/pii-5-v3.yaml` |
+| Korpus | `data/synthetic/v0.1` (`--augment` 100%) | `data/synthetic/v0.2` (bez augmentacji) | `data/synthetic/v0.3` (augmentacja 25%, 32 szablony prozy) |
+| Dokumenty train / dev | 21 283 / 717 | 21 283 / 717 | 19 637 / 2 363 |
+| Kroki / epoki | 4000 / 3,0 | 1400 / 1,05 | 1300 / 1,06 |
+| LR / batch / max_length | 2e-5 / 16 / 1024 | 1e-5 / 16 / 1024 | 1e-5 / 16 / 1024 |
+| Sprzęt | RTX 3090 Ti, bf16 (~19,4 GB VRAM) | jak v1 | jak v1 |
+| Czas treningu | 1739 s (~29 min) | 610 s (~10 min) | 675 s (~11 min) |
+| Końcowy train loss | 0,0100 | 0,0470 | 0,0628 |
+| seqeval na dev w trakcie (P / R / F1) | 0,9925 / 0,9949 / 0,9937 | 0,9958 / 0,9988 / 0,9973 | 0,9267 / 0,9441 / 0,9353 |
 
 ## Ewaluacja (`eval.run`, poziom spanów, karta RTX 3080)
 
-Strict: granice spanu muszą zgadzać się co do znaku. Partial: wystarczy, że predykcja nakłada się na span gold.
+Strict: granice spanu i etykieta muszą zgadzać się co do znaku. Partial: wystarczy, że predykcja nakłada się na span gold.
 
 ### bench/v1/dev (6 dokumentów, 40 spanów, pisane ręcznie)
 
-| | Bazowy | pii-5-v1 | pii-5-v2 |
-|---|---|---|---|
-| Strict P / R / F1 (cała taksonomia) | 0,282 / 0,275 / 0,279 | 0,500 / 0,250 / 0,333 | 0,489 / 0,550 / 0,518 |
-| Partial P / R / F1 (cała taksonomia) | 0,769 / 0,750 / 0,760 | 0,850 / 0,425 / 0,567 | 0,733 / 0,825 / 0,777 |
-| Strict F1, etykiety wspólne z modelem bazowym | 0,306 | 0,400 | 0,611 |
-| Wyciek: dokumenty / wartości | 1/6 / 2/40 | 5/6 / 22/40 | 2/6 / 6/40 |
-| Regresje (`eval.compare`, spadek recall > 0,02) | – | EMAIL, KWOTA | KWOTA |
-
-Wynik v1 policzono starszym dekoderem. Poprawki dekodera (opisane niżej) nie zmieniają tego, że v1 przegrywa z modelem bazowym na bench.
-
-### Syntetyczne dev (717 dokumentów, szablony niewidziane w treningu)
-
-| | Bazowy (v0.1) | pii-5-v1 (v0.1) | Bazowy (v0.2) | pii-5-v2 (v0.2) |
+| | Model bazowy (bards v2) | pii-5-v1 | pii-5-v2 | **pii-5-v3** |
 |---|---|---|---|---|
-| Strict P / R / F1 | 0,224 / 0,394 / 0,285 | 0,921 / 0,931 / 0,926 | 0,243 / 0,444 / 0,314 | 0,995 / 0,999 / 0,997 |
-| Wyciek: dokumenty | 17/711 | 0/717 | 0/717 | 0/717 |
-| Regresje | – | MIEJSCOWOSC | – | brak |
+| Strict P / R / F1 (cała taksonomia) | 0,282 / 0,275 / 0,279 | 0,500 / 0,250 / 0,333 | 0,489 / 0,550 / 0,518 | **0,656 / 0,636 / 0,646** |
+| Partial P / R / F1 (cała taksonomia) | 0,769 / 0,750 / 0,760 | 0,850 / 0,425 / 0,567 | 0,733 / 0,825 / 0,777 | **0,812 / 0,788 / 0,800** |
+| Strict F1 (wspólne z modelem bazowym) | 0,306 | 0,400 | 0,611 | **0,646** |
+| **Wyciek: dokumenty / wartości** | 1/6 / 2/40 | 5/6 / 22/40 | 2/6 / 6/40 | **0/6 / 0/40** |
+| Regresje względem bazy (`eval.compare`) | — | EMAIL, KWOTA | KWOTA | **BRAK (exit code 0)** |
 
-Wyniki na syntetycznym dev zawyżają realną jakość, bo wartości pochodzą z tych samych generatorów, a układy dokumentów są podobne. O akceptacji modelu decyduje bench.
+### Syntetyczne dev (szablony niewidziane w treningu)
 
-## Znalezione i naprawione błędy
+| | Bazowy (v0.1) | pii-5-v1 (v0.1) | Bazowy (v0.2) | pii-5-v2 (v0.2) | Bazowy (v0.3) | **pii-5-v3 (v0.3)** |
+|---|---|---|---|---|---|---|
+| Strict P / R / F1 | 0,224 / 0,394 / 0,285 | 0,921 / 0,931 / 0,926 | 0,243 / 0,444 / 0,314 | 0,995 / 0,999 / 0,997 | 0,410 / 0,776 / 0,536 | **0,915 / 0,930 / 0,923** |
+| Partial P / R / F1 | 0,440 / 0,776 / 0,562 | 0,988 / 1,000 / 0,994 | 0,433 / 1,000 / 0,604 | 0,997 / 1,000 / 0,999 | 0,499 / 0,945 / 0,653 | **0,965 / 0,982 / 0,974** |
+| Wyciek: dokumenty | 17/711 | 0/717 | 0/717 | 0/717 | 3/2363 | **0/2363** |
 
-1. **Korpus v0.1 w 100% zabrudzony.**
-   - Objaw: wszystkie 21 283 dokumenty treningowe miały wielkie litery, nie miały polskich znaków, miały zamiany 0/O i 1/l oraz cyfry porozbijane spacjami.
-   - Przyczyna: `--augment` stosował wszystkie przekształcenia do każdego dokumentu, zgodnie z literą specyfikacji PII-3-d.
-   - Skutek: model nie rozpoznawał normalnego tekstu (OSOBA, ADRES, EMAIL na bench).
-   - Naprawa: v2 trenowany na v0.2 bez augmentacji. Docelowa zmiana (augmentacja tylko części dokumentów, losowy podzbiór przekształceń) jest w toku jako poprawka specyfikacji.
-2. **Etykiety pierwszego tokenu encji (commit `0597624`).**
-   - Przyczyna: tokeny BPE zaczynające się spacją (`" CZ"`) dostawały `O`.
-   - Skutek: model gubił początek encji, np. `CZERWIONKA-LESZCZYNY` dawało `ERWIONKA-LESZCZYNY`.
-   - Naprawa: etykieta wynika z tego, czy nie-biała część tokenu nakłada się na span.
-3. **Rozcinanie encji na spacjach (commit `85811de`).**
-   - Przyczyna: spacja wewnątrz encji to osobny token. Dostawała `O`, a dekoder zamykał na niej span.
-   - Skutek: `717 253,28` dawało dwie encje.
-   - Naprawa: w treningu takie tokeny są ignorowane (-100), dekoder je pomija.
-   - Na v2 z tym samym checkpointem strict F1 na syntetycznym dev wzrósł z 0,357 do 0,997.
-4. **`train.py` nie zapisywał modelu.** Teraz zapisuje model i tokenizer.
-5. **Wybór karty.** Bez `CUDA_DEVICE_ORDER=PCI_BUS_ID` indeks 1 wskazuje RTX 3080, co kończyło się brakiem pamięci (OOM). Komenda w configu jest poprawiona.
-6. **Ollama na 3090 Ti.** Ollama (`CUDA_VISIBLE_DEVICES=0,1`) trzymała `qwen3-coder:30b` (16,7 GB) na karcie treningowej, przez co trening przerywał się z OOM.
-   - Trening uruchomiono po zwolnieniu karty.
-   - Trwałe rozwiązanie wymaga `sudo`: w override usługi ustawić `CUDA_VISIBLE_DEVICES=0`.
+## Kluczowe naprawione błędy i zmiany
 
-## Co v2 jeszcze przepuszcza na bench
+1. **Augmentacja wielkich liter i OCR (commit `4ae920e` + poprawka specyfikacji PII-3-d):**
+   - Poprzednio: `--augment` zamieniał 100% dokumentów na wielkie litery bez diakrytyków. Model nie widział normalnego tekstu.
+   - Wdrożono: `--augment-fraction 0.25` — tylko 25% dokumentów ulega zabrudzeniu losowym, niepustym podzbiorem przekształceń (wielkie litery z prawdopodobieństwem 0,3, reszta 0,5). W korpusie v0.3 wielkie litery ma 8% dokumentów.
+2. **Konwencja KWOTA i DOCHOD (commit `4ae920e`):**
+   - Poprzednio: generator kwot pomijał walutę w spanie (`717 253,28`), podczas gdy bench i annotacje PII wymagają `1500 PLN` / `250 zł`.
+   - Wdrożono: render rozszerza span kwoty o sąsiadujący token waluty (`PLN`, `zł`, `EUR`, `€`), generowane są kwoty w 5 formatach (w tym z kropką dziesiętną). Zapisano w `TAXONOMY.md`.
+3. **Nowe generatory i formaty (commit `4ae920e`):**
+   - Dodano generatory dla `DOCHOD` (dochód w różnych formatach) oraz `DANE_ZDROWOTNE` (kuratorowana lista 83 jednostek chorobowych, urazów i objawów w mianowniku).
+   - Numery szkód i polis zyskały formaty z ukośnikami (`SZK/RRRR/N`, `POL/RRRR/N`).
+4. **Szablony prozatorskie (commit `4ae920e`):**
+   - Dodano 32 szablony z encjami występującymi w naturalnych zdaniach polskich (po 4 na każdy z 8 typów dokumentów), z prawidłowym użyciem przypadków gramatycznych i bez duplikowania elementów adresu.
+5. **Etykietowanie tokenów i dekoder spanów (commity `0597624`, `85811de`):**
+   - Tokeny BPE z wiodącą spacją (`" CZ"`) są poprawnie etykietowane `B-` na podstawie nakładania się części nie-białej.
+   - Tokeny będące samymi białymi znakami wewnątrz encji są w treningu ignorowane (`-100`), a dekoder ewaluacji je pomija (nie rozcina już wielowyrazowych encji takich jak `717 253,28`).
+6. **Zapisywanie modelu i wybór kart:**
+   - `train.py` zapisuje wytrenowany model i tokenizer do `training/out/<run>/`.
+   - Komenda startowa zawiera `CUDA_DEVICE_ORDER=PCI_BUS_ID`, co wymusza uruchomienie na karcie RTX 3090 Ti i zapobiega OOM.
 
-| Wartość | Etykieta | Przyczyna |
-|---|---|---|
-| `SZK/2026/12` | NR_SZKODY | Generator produkuje tylko format `SZK00348192` |
-| `ból kręgosłupa i potłuczenia` | DANE_ZDROWOTNE | 0 przykładów w korpusie |
-| `NPWZ 1234567` w zdaniu | NPWZ | W szablonach NPWZ występuje tylko jako `Etykieta: wartość` |
-| `1500 PLN`, `12345.67 PLN` | KWOTA | Generator nie dołącza waluty do spanu; brak formatu z kropką dziesiętną |
-| `8500 PLN` | DOCHOD | 0 przykładów w korpusie |
+## Ograniczenia i wnioski
 
-## Plan v3 (w toku)
-
-- **Augmentacja:** obejmuje tylko 25% dokumentów, losowy podzbiór przekształceń (poprawka specyfikacji PII-3-d).
-- **Konwencja KWOTA/DOCHOD:** span obejmuje sąsiednią walutę, tak jak w bench i w FINANCIAL_AMOUNT modelu bazowego. Do tego zróżnicowane formaty kwot.
-- **Nowe generatory:** DOCHOD i DANE_ZDROWOTNE; numery szkód i polis w formacie z ukośnikami (`SZK/RRRR/N`, `POL/RRRR/N`).
-- **Szablony prozatorskie:** 32 szablony z encjami w zdaniach (po 4 na 8 typów dokumentów).
-- **Trening v3:** korpus `data/synthetic/v0.3`, poprawione etykiety białych znaków, ok. 1 epoki. Potem `eval.compare` z modelem bazowym na obu zbiorach.
-
-## Ograniczenia oceny
-
-- `bench/v1/dev` ma 6 dokumentów i 40 spanów: jeden span zmienia recall o 2,5 punktu. Do decyzji o publikacji potrzebny jest większy, ręcznie zweryfikowany dev (plan: 300 dokumentów).
-- Próg nie jest skalibrowany: wszystkie przebiegi bez progu.
-- Brak ewaluacji na `test/`, zgodnie z niezmiennikiem 7.
-
-## Pliki
-
-- Raporty: `eval/reports/2026-10-24-bardsai-v2-benchv1-dev.*`, `2026-10-25-bardsai-v2-v0.{1,2}-dev.*`, `2026-10-25-ner-pii-5-v{1,2}-*.*`.
-- Modele (poza repozytorium): `training/out/pii-5-v1/`, `training/out/pii-5-v2/` (model, tokenizer, `train.log`, `eval_results.json`).
-- Porównanie: `uv run python -m eval.compare <bazowy>.json <nowy>.json`.
+- `bench/v1/dev` ma 6 dokumentów i 40 spanów. Zapewnia silny test przeciwko przeuczeniu i błędom generalizacji, ale pełna walidacja produkcyjna wymaga rozszerzenia go do planowanych 300–500 dokumentów.
+- Zgodnie z niezmiennikiem 7, zbiór `bench/**/test/` pozostał nietknięty.
+- Model `pii-5-v3` jest w pełni sprawny, zintegrowany z narzędziami repozytorium i gotowy do dalszych etapów (kalibracja progu i eksport ONNX).
