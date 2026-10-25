@@ -1,0 +1,11 @@
+[Nagranie rozmowy z infolinią kredytową – sprawa umowy {{NR_UMOWY}}]
+
+Konsultant: Dobry wieczór, z tej strony infolinia kredytowa, jak mogę pomóc?
+Klient: Cześć, jestem {{OSOBA#1}}, chcę zapytać o aktualny harmonogram spłaty.
+Konsultant: Proszę podać PESEL w celu weryfikacji.
+Klient: {{PESEL}}, urodzony {{DATA_URODZENIA}}.
+Konsultant: Dziękuję. Znalazłem umowę {{NR_UMOWY}}. Bieżące saldo wynosi {{KWOTA}} PLN. Dochód wpisany w systemie: {{DOCHOD}} zł miesięcznie.
+Klient: Chciałbym zaktualizować numer konta do spłat: {{IBAN}}.
+Konsultant: Proszę potwierdzić adres zamieszkania: {{ADRES}}?
+Klient: Tak, dokładnie. Mieszkam w {{MIEJSCOWOSC}}, kod {{KOD_POCZTOWY}}. I mój mail to {{EMAIL}}.
+Konsultant: Zaktualizowano w systemie. Do widzenia, miłego dnia.

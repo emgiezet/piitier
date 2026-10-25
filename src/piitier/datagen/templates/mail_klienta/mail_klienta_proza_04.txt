@@ -1,0 +1,6 @@
+Witam,
+
+piszę jako ustanowiony pełnomocnik {{OSOBA#1:gen}} (PESEL {{PESEL}}, adres zameldowania: {{ADRES}}) w sprawie pilnej zmiany numeru IBAN do wypłaty odszkodowania ze szkody o numerze ewidencyjnym {{NR_SZKODY}}. Poprzedni rachunek bankowy klienta został zamknięty, aktualny numer konta to {{IBAN}}. Numer obowiązującej polisy: {{NR_POLISY}}. Proszę o jak najszybszą aktualizację danych w systemie – klient oczekuje na kwotę {{KWOTA}} PLN od kilku tygodni, co zaczyna powodować problemy finansowe. Kontakt do mnie: {{EMAIL}}, telefon {{TELEFON}}, adres biura: {{ADRES}}. Biuro mieści się w {{MIEJSCOWOSC}}, {{KOD_POCZTOWY}}.
+
+Pozdrowienia,
+{{IMIE#1}} {{NAZWISKO#1}}

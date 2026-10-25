@@ -52,6 +52,16 @@ miejsce encji; **Metoda** — sposób detekcji na MVP.
 | Zdrowie — art. 9 RODO | LEKARZ | [LEKARZ_n] | NER |
 | Zdrowie — art. 9 RODO | NPWZ | [NPWZ] | reguła |
 
+## Uwagi dotyczące formatu
+
+| Encja | Uwaga |
+|-------|-------|
+| KWOTA | Span obejmuje przylegający token waluty gdy jest obecny w tekście: `1500 PLN`, `1 234,56 zł`. Generowane formaty: `1 234,56` (spacja+przecinek), `1234,56`, `1234.56`, `1.234,56`, `1500` (liczba całkowita) — każdy opcjonalnie z walutą (`PLN`, `zł`, `EUR`, `€`). |
+| DOCHOD | Takie same formaty i konwencja waluty jak KWOTA (dochód miesięczny lub roczny). |
+| NR_POLISY | Przyjmuje legacy (`PL0123456789`, `UB0123456789`) oraz slash-formaty: `POL/RRRR/N{1,6}`, `PL/RRRR/NNNNNNN` (lata 2015–2026). |
+| NR_SZKODY | Przyjmuje legacy (`SZK12345678`, `CLM12345678`) oraz slash-formaty: `SZK/RRRR/N{1,6}`, `CLM/RRRR/NNNNNN` (lata 2015–2026). |
+
+
 Łączna liczba typów: **39** w 6 grupach.
 
 ## Roadmap — kategorie poza zakresem MVP

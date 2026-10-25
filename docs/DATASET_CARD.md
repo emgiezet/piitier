@@ -46,13 +46,27 @@ Każdy rekord w plikach `train.jsonl` oraz `dev.jsonl` jest obiektem JSON o nast
 ## Licencja Wyjściowa
 Wyjściowy syntetyczny dataset (pliki `train.jsonl` / `dev.jsonl`) jest udostępniany na licencji **CC BY 4.0** (Creative Commons Attribution 4.0 International). Licencja ta odnosi się wyłącznie do syntetycznych danych wyjściowych generowanych przez kod i generatywne modele językowe. Szablony pochodne z polis PDF i zestawień prowizyjnych są zatwierdzone do treningu, lecz **nie są redystrybuowane** — do repozytorium trafiają tylko jako pliki `templates/polisa/polisa_pdf_*.txt` i `templates/zestawienie_prowizyjne/*.txt`, nigdy jako surowe dokumenty ani wyekstrahowany tekst pierwotny.
 
+## Augmentacja
+Kiedy `--augment` jest aktywny, każdy dokument jest augmentowany niezależnie z zadanym prawdopodobieństwem (`augment_fraction`, domyślnie 0,25). Dla dokumentów wybranych do augmentacji stosowany jest losowy **niepusty** podzbiór transformacji:
+
+| Transformacja | Prawdopodobieństwo włączenia |
+|---|---|
+| `ocr_confusions` (zamiana 0↔O, 1↔l) | 0,5 |
+| `space_digit_groups` (spacje w cyfrach) | 0,5 |
+| `strip_diacritics` (usunięcie polskich znaków diakrytycznych) | 0,5 |
+| `uppercase` (zamiana na wielkie litery) | 0,3 |
+
+Jeśli losowanie nie wybrałoby żadnej transformacji, wybierana jest jedna losowa (gwarancja niepustości). Zarówno decyzja o augmentacji danego dokumentu, jak i wybór transformacji są w pełni deterministyczne — ziarno na poziomie dokumentu pochodzi z `seed + i`. Manifest zapisuje: `augment_fraction`, `augmented_doc_count` (liczba dokumentów faktycznie zaugmentowanych) oraz `transform_doc_counts` (liczba dokumentów, do których zastosowano każdą transformację).
+
+**Uzasadnienie:** korpus v0.1 był augmentowany w 100% (każdy dokument, wszystkie transformacje), co spowodowało wyciek stylu (model nauczył się identyfikować wersje wieloliterowe jako PII nawet bez kontekstu). Augmentacja ułamkowa z losowym podzbiorem transformacji redukuje ten efekt, zachowując różnorodność danych.
+
 ## Reprodukowalność
 Zbiór jest w pełni deterministyczny. Użycie tego samego ziarna (`seed`), wersji biblioteki `piitier` oraz zestawu szablonów gwarantuje uzyskanie identycznych plików wynikowych (bajt w bajt, potwierdzone sumą kontrolną SHA-256). Polecenie `build` przydziela szablony metodą round-robin po typach dokumentów (posortowanych leksykograficznie): iteracja `i` wybiera typ `doc_types[i % len(doc_types)]`, a w obrębie typu szablony cyklicznie.
 
 Reguła podziału: `sha256(template_id) % 10 == 0 → dev`, pozostałe → `train`. Dodatkowa gwarancja: jeśli wszystkie szablony danego typu dokumentu trafiłyby do `dev`, cały ten typ jest przymusowo kierowany do `train` (gwarancja pokrycia treningu). Typy, dla których zastosowano tę korektę, są zapisywane w `manifest.json` pod kluczem `split_forced_train`. Mechanizm jest deterministyczny i niezależny od parametrów `n` oraz `seed`.
 
 ## Pełny Bieg (Instrukcja dla Orchestratora)
-Aby wykonać pełny bieg produkcyjny (20 000 dokumentów szablonowych + 2 000 twardych negatywów, z augmentacją), należy uruchomić następujące polecenie:
+Aby wykonać pełny bieg produkcyjny (20 000 dokumentów szablonowych + 2 000 twardych negatywów, z augmentacją ułamkową), należy uruchomić następujące polecenie:
 
 ```bash
 python -m piitier.datagen build \
@@ -60,8 +74,9 @@ python -m piitier.datagen build \
   --n 20000 \
   --seed 42 \
   --augment \
+  --augment-fraction 0.25 \
   --hard-negatives 2000 \
-  --out data/synthetic/v0.1/
+  --out data/synthetic/v0.3/
 ```
 
 ## Statystyki Biegu (pełny bieg, piitier 0.1.0, seed 42)

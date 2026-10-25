@@ -1,0 +1,3 @@
+Do Działu Likwidacji Szkód,
+
+w imieniu {{OSOBA#1:gen}} (PESEL {{PESEL}}, adres: {{ADRES}}) zgłaszam kolizję drogową, w której uczestniczył samochód osobowy o numerze rejestracyjnym {{NR_REJESTRACYJNY}}, numer VIN {{VIN}}. Numer polisy OC sprawcy: {{NR_POLISY}}, przydzielony przez system numer zgłoszenia szkody: {{NR_SZKODY}}. Wartość uszkodzeń pojazdu oszacowano przez niezależnego rzeczoznawcę na kwotę {{KWOTA}} PLN – kosztorys dołączono jako załącznik do niniejszego pisma. Przelew tytułem wypłaty odszkodowania prosimy kierować na konto {{IBAN}}. Kontakt do pełnomocnika: {{TELEFON}}, {{EMAIL}}. Zdarzenie miało miejsce w {{MIEJSCOWOSC}}, kod pocztowy {{KOD_POCZTOWY}}.

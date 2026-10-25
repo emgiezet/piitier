@@ -1,0 +1,11 @@
+Konsultant: Dzień dobry, tu linia pacjenta {{PLACOWKA}}, przy telefonie {{LEKARZ#1}}. W czym mogę pomóc?
+Klient: Dzień dobry, nazywam się {{IMIE#1}} {{NAZWISKO#1}}, PESEL {{PESEL}}, dzwonię w sprawie wyników badań i skierowania.
+Konsultant: Proszę potwierdzić aktualny adres zameldowania.
+Klient: {{ADRES}}.
+Konsultant: Dziękuję za weryfikację. W jakiej sprawie dzwoni Pani/Pan?
+Klient: Chcę potwierdzić rozpoznanie {{ROZPOZNANIE}} i zapytać o lek {{LEK}} – czy mam go nadal brać?
+Konsultant: Tak, zgodnie z zaleceniem {{LEKARZ#1:gen}}. Numer NPWZ lekarza to {{NPWZ}}. Dane zdrowotne w karcie: {{DANE_ZDROWOTNE}}.
+Klient: Dziękuję. Moje IBAN to {{IBAN}}, w razie refundacji.
+Konsultant: Zanotowałam. Czy adres e-mail {{EMAIL}} jest aktualny?
+Klient: Tak, proszę pisać tam lub oddzwaniać pod {{TELEFON}}. Mieszkam w {{MIEJSCOWOSC}}, {{KOD_POCZTOWY}}.
+Konsultant: Dziękuję. Do widzenia.

@@ -29,6 +29,7 @@ import random
 from pathlib import Path
 
 import piitier
+from piitier.datagen.augment import ALL_TRANSFORMS
 from piitier.datagen.augment import augment as augment_doc
 from piitier.datagen.hard_negatives import make_hard_negative_docs
 from piitier.datagen.render import render
@@ -145,6 +146,33 @@ def collect_templates(templates_dir: Path) -> list[Template]:
 
 
 # ---------------------------------------------------------------------------
+# Augmentation helpers
+# ---------------------------------------------------------------------------
+
+# Per-transform inclusion probability when a document is selected for augmentation.
+_TRANSFORM_PROBS: dict[str, float] = {
+    "ocr_confusions": 0.5,
+    "space_digit_groups": 0.5,
+    "strip_diacritics": 0.5,
+    "uppercase": 0.3,
+}
+
+
+def _select_transforms(rng: random.Random) -> frozenset[str]:
+    """Return a random non-empty subset of augmentation transforms.
+
+    Each transform in :data:`ALL_TRANSFORMS` is included independently with the
+    probability given by :data:`_TRANSFORM_PROBS`.  If all draws miss the threshold
+    (probability ≈ 0.5³ × 0.7 ≈ 0.09), a single transform is chosen uniformly at
+    random to guarantee the returned set is non-empty.
+    """
+    selected: set[str] = {t for t in ALL_TRANSFORMS if rng.random() < _TRANSFORM_PROBS.get(t, 0.5)}
+    if not selected:
+        selected = {ALL_TRANSFORMS[rng.randrange(len(ALL_TRANSFORMS))]}
+    return frozenset(selected)
+
+
+# ---------------------------------------------------------------------------
 # Builder
 # ---------------------------------------------------------------------------
 
@@ -156,6 +184,7 @@ def build(
     out: Path,
     *,
     augment: bool = False,
+    augment_fraction: float = 0.25,
     hard_negatives: int = 0,
 ) -> None:
     """Render *n* synthetic documents and write ``train.jsonl``, ``dev.jsonl``,
@@ -174,7 +203,12 @@ def build(
         and must not resolve to a path containing a ``bench`` component.
         Raises :exc:`BuildError` before any writes if either guard is violated.
     augment:
-        Whether to apply OCR and diacritic augmentation to every document.
+        Whether to apply OCR and diacritic augmentation to a fraction of documents.
+    augment_fraction:
+        Fraction of documents to augment when *augment* is ``True``.  Each document
+        is independently augmented with probability *augment_fraction* using a random
+        non-empty subset of transforms (uppercase: P=0.3, others: P=0.5).
+        Must satisfy ``0 < augment_fraction <= 1``.  Ignored when *augment* is False.
     hard_negatives:
         Number of hard negative documents to append.
     """
@@ -183,6 +217,8 @@ def build(
         raise BuildError(f"hard_negatives must be >= 0, got {hard_negatives}")
     if n < 0:
         raise BuildError(f"n must be >= 0, got {n}")
+    if augment and not (0 < augment_fraction <= 1):
+        raise BuildError(f"augment_fraction must be in (0, 1], got {augment_fraction}")
     templates = collect_templates(templates_dir)
     if not templates:
         raise ValueError(f"No .txt templates found in {templates_dir}")
@@ -192,6 +228,8 @@ def build(
     span_counts: dict[str, int] = {}
     split_counts: dict[str, int] = {"train": 0, "dev": 0}
     total_fallbacks: int = 0
+    transform_doc_counts: dict[str, int] = {}
+    augmented_doc_count: int = 0
 
     # Group templates by doc_type (collect_templates already sorts within each type).
     _type_templates: dict[str, list[Template]] = {}
@@ -212,7 +250,15 @@ def build(
 
         doc = render(tmpl, doc_seed)
         if augment:
-            doc = augment_doc(doc, random.Random(doc_seed))
+            doc_rng = random.Random(doc_seed)
+            if doc_rng.random() < augment_fraction:
+                transforms = _select_transforms(doc_rng)
+                doc = augment_doc(doc, doc_rng, transforms=transforms)
+                augmented_doc_count += 1
+                for transform_name in transforms:
+                    transform_doc_counts[transform_name] = (
+                        transform_doc_counts.get(transform_name, 0) + 1
+                    )
         total_fallbacks += doc.inflection_fallbacks
         spans_data = [
             {
@@ -257,7 +303,15 @@ def build(
             doc_id = doc.template_id  # hn_{j:07d}
 
             if augment:
-                doc = augment_doc(doc, random.Random(doc_seed))
+                hn_rng = random.Random(doc_seed)
+                if hn_rng.random() < augment_fraction:
+                    transforms = _select_transforms(hn_rng)
+                    doc = augment_doc(doc, hn_rng, transforms=transforms)
+                    augmented_doc_count += 1
+                    for transform_name in transforms:
+                        transform_doc_counts[transform_name] = (
+                            transform_doc_counts.get(transform_name, 0) + 1
+                        )
 
             spans_data = [
                 {
@@ -320,6 +374,9 @@ def build(
         "version": piitier.__version__,
         "inflection_fallbacks": total_fallbacks,
         "augment": augment,
+        "augment_fraction": augment_fraction if augment else None,
+        "augmented_doc_count": augmented_doc_count,
+        "transform_doc_counts": dict(sorted(transform_doc_counts.items())),
         "hard_negatives": hard_negatives,
     }
     (out / "manifest.json").write_text(

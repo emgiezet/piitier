@@ -1,0 +1,6 @@
+Cześć,
+
+piszę w sprawie szkody {{NR_SZKODY}} – minął już ponad miesiąc i ciągle nie widzę przelewu odszkodowania na koncie. Byłem osobiście w waszym biurze pod adresem {{ADRES}}, ale pani z okienka powiedziała, że wniosek ciągle czeka na akceptację menedżera. Trudno mi zrozumieć, co tak długo trwa. Prosiłbym o pilne wyjaśnienie sytuacji. Mój numer kontaktowy to {{TELEFON}}, możecie oddzwonić w dowolnej chwili. Polisa to {{NR_POLISY}}, a odszkodowanie według oficjalnej wyceny powinno wynieść {{KWOTA}} PLN. Rachunek do przelewu to {{IBAN}}. Biuro mieści się w {{MIEJSCOWOSC}}, {{KOD_POCZTOWY}}. Wiadomość wysyłam z adresu {{EMAIL}}, tam też proszę o odpowiedź.
+
+Dzięki,
+{{IMIE#1}}

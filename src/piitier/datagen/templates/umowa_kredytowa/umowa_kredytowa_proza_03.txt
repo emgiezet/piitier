@@ -1,0 +1,6 @@
+Szanowna Pani {{IMIE#1}} {{NAZWISKO#1}},
+
+potwierdzamy zawarcie umowy kredytowej o numerze {{NR_UMOWY}} na kwotę {{KWOTA}} złotych. Weryfikacja zdolności kredytowej wykazała, że miesięczny dochód {{IMIE#1:gen}} {{NAZWISKO#1:gen}} wynosi {{DOCHOD}} PLN, co spełnia wymagania regulaminowe. Wypłata środków nastąpi na rachunek {{IBAN}} w ciągu 3 dni roboczych od spełnienia warunków zawieszających. Prosimy o kontakt pod adresem e-mail {{EMAIL}} lub pod numerem {{TELEFON}} w przypadku jakichkolwiek pytań dotyczących umowy lub harmonogramu spłat. Siedziba banku: {{ADRES}}, NIP {{NIP}}. Umowa zawarta w {{MIEJSCOWOSC}}, kod pocztowy {{KOD_POCZTOWY}}.
+
+Z poważaniem,
+Dział Kredytów Detalicznych

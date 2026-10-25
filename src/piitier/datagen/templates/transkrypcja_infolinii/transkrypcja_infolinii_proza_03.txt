@@ -1,0 +1,9 @@
+– Linia pacjenta {{PLACOWKA}}, słucham.
+– Dzień dobry, mówi {{IMIE#1}} {{NAZWISKO#1}}, PESEL {{PESEL}}, urodzony {{DATA_URODZENIA}}. Chciałem zapytać o wyniki badań i dalsze leczenie.
+– Proszę podać numer rejestracyjny dokumentacji lub nazwisko lekarza.
+– Nie wiem numeru, ale mój lekarz prowadzący to {{LEKARZ#1}}, numer NPWZ {{NPWZ}}.
+– Znalazłam wizytę. Rozpoznanie: {{ROZPOZNANIE}}, kod ICD-10: {{ICD10}}. Dane zdrowotne odnotowane w karcie: {{DANE_ZDROWOTNE}}.
+– Czy mam nadal brać {{LEK}}?
+– Tak, zgodnie z zaleceniem {{LEKARZ#1:gen}} proszę kontynuować leczenie. Czy mogę przesłać podsumowanie na adres {{EMAIL}}?
+– Proszę, albo proszę zadzwonić pod {{TELEFON}}. Mieszkam w {{MIEJSCOWOSC}}, kod {{KOD_POCZTOWY}}.
+– Doskonale. Do widzenia.

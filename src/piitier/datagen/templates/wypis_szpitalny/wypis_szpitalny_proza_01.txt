@@ -1,0 +1,6 @@
+Informacja dla pacjenta – {{OSOBA#1:gen}},
+
+uprzejmie informujemy, że zakończyła/zakończył hospitalizację w {{PLACOWKA}} pod adresem {{ADRES}}. Leczenie prowadził {{LEKARZ#1}}, numer prawa wykonywania zawodu {{NPWZ}}. Rozpoznanie zasadnicze brzmiało: {{ROZPOZNANIE}} (kod ICD-10: {{ICD10}}). W trakcie pobytu stwierdzono ponadto następujące dane zdrowotne pacjenta: {{DANE_ZDROWOTNE}}. Zastosowane leczenie obejmowało podawanie leku {{LEK}} w dawce zaleconej przez prowadzącego specjalistę. Koszty leczenia w wysokości {{KWOTA}} PLN zostaną przekazane na rachunek bankowy {{IBAN}} wskazany przez pacjenta. W razie pytań lub wątpliwości związanych z dalszym leczeniem prosimy o kontakt pod numerem telefonu {{TELEFON}} lub drogą e-mailową: {{EMAIL}}. Placówka działa w {{MIEJSCOWOSC}}, kod pocztowy {{KOD_POCZTOWY}}. Zalecamy wizytę kontrolną w ciągu 14 dni od wypisu.
+
+Z wyrazami szacunku,
+Administracja {{PLACOWKA}}

@@ -212,6 +212,121 @@ def test_uc45_prompt_label_list_matches_supported_labels() -> None:
     prompts_dir = Path(__file__).parent.parent.parent / "src" / "piitier" / "datagen" / "prompts"
     for doc_type in sorted(DOC_TYPES):
         content = (prompts_dir / f"{doc_type}.txt").read_text(encoding="utf-8")
-        assert "28 obsługiwanych znaczników" in content
+        assert "30 obsługiwanych znaczników" in content
         for lbl in _SUPPORTED_LABELS:
             assert f"{{{{{lbl.name}}}}}" in content
+
+
+# ---------------------------------------------------------------------------
+# New tests: KWOTA/DOCHOD formats, currency conventions, NR_SZKODY/NR_POLISY
+# ---------------------------------------------------------------------------
+
+
+def test_kwota_formats_vary_across_seeds() -> None:
+    """KWOTA generator produces multiple distinct formats over 500 seeds."""
+    import re
+
+    fmt_space = re.compile(r"^\d{1,3}(?: \d{3})+[,.]")
+    fmt_dot_thou = re.compile(r"^\d{1,3}(?:\.\d{3})+,")
+    fmt_plain_dec = re.compile(r"^\d+[,.]")
+    fmt_integer = re.compile(r"^\d+$")
+    fmt_with_currency = re.compile(r" (?:PLN|zł|EUR|€)$")
+
+    seen_space = seen_dot = seen_plain = seen_integer = seen_ccy = False
+    rng = random.Random(0)
+    for _ in range(500):
+        v = values.generate_kwota(rng)
+        assert values.validate_kwota(v), f"invalid KWOTA: {v!r}"
+        seen_space = seen_space or bool(fmt_space.match(v))
+        seen_dot = seen_dot or bool(fmt_dot_thou.match(v))
+        seen_plain = seen_plain or bool(fmt_plain_dec.match(v))
+        seen_integer = seen_integer or bool(fmt_integer.match(v.split()[0]))
+        seen_ccy = seen_ccy or bool(fmt_with_currency.search(v))
+    assert seen_space, "space-thousands format never generated"
+    assert seen_dot, "dot-thousands format never generated"
+    assert seen_plain, "plain-decimal format never generated"
+    assert seen_integer, "integer format never generated"
+    assert seen_ccy, "embedded currency never generated"
+
+
+def test_dochod_500_seeds_pass_validator() -> None:
+    """DOCHOD generator passes validator over 500 seeds."""
+    rng = random.Random(7)
+    for _ in range(500):
+        v = values.generate_dochod(rng)
+        assert v != ""
+        assert values.validate_dochod(v), f"invalid DOCHOD: {v!r}"
+
+
+def test_kwota_no_embedded_currency_when_currency_follows() -> None:
+    """generate_kwota(rng, currency_follows=True) never embeds a currency token."""
+    import re
+
+    ccy_pat = re.compile(r"(?:PLN|zł|EUR|€)")
+    rng = random.Random(99)
+    for _ in range(500):
+        v = values.generate_kwota(rng, currency_follows=True)
+        assert not ccy_pat.search(v), (
+            f"embedded currency in value when currency_follows=True: {v!r}"
+        )
+        assert values.validate_kwota(v)
+
+
+def test_nr_polisy_slash_formats_valid() -> None:
+    """NR_POLISY: slash formats POL/YYYY/N and PL/YYYY/NNNNNNN pass validator."""
+    assert values.validate_nr_polisy("POL/2025/123")
+    assert values.validate_nr_polisy("POL/2015/1")
+    assert values.validate_nr_polisy("POL/2026/999999")
+    assert values.validate_nr_polisy("PL/2024/1234567")
+    # legacy formats still valid
+    assert values.validate_nr_polisy("PL0123456789")
+    assert values.validate_nr_polisy("UB9876543210")
+    # invalid
+    assert not values.validate_nr_polisy("POL/1999/123")
+    assert not values.validate_nr_polisy("PL/2026/123456")  # 6 digits, not 7
+
+
+def test_nr_szkody_slash_formats_valid() -> None:
+    """NR_SZKODY: slash formats SZK/YYYY/N{1,6} and CLM/YYYY/NNNNNN pass validator."""
+    assert values.validate_nr_szkody("SZK/2026/12")
+    assert values.validate_nr_szkody("SZK/2015/1")
+    assert values.validate_nr_szkody("SZK/2026/999999")
+    assert values.validate_nr_szkody("CLM/2024/123456")
+    # legacy formats still valid
+    assert values.validate_nr_szkody("SZK12345678")
+    assert values.validate_nr_szkody("CLM12345678")
+    # invalid
+    assert not values.validate_nr_szkody("CLM/1990/123456")
+    assert not values.validate_nr_szkody("SZK/2026/1234567")  # 7 digits, too many
+
+
+def test_nr_polisy_500_seeds_pass_validator() -> None:
+    """NR_POLISY over 500 seeds all pass validator."""
+    rng = random.Random(11)
+    for _ in range(500):
+        v = values.generate_nr_polisy(rng)
+        assert values.validate_nr_polisy(v), f"invalid NR_POLISY: {v!r}"
+
+
+def test_nr_szkody_500_seeds_pass_validator() -> None:
+    """NR_SZKODY over 500 seeds all pass validator."""
+    rng = random.Random(22)
+    for _ in range(500):
+        v = values.generate_nr_szkody(rng)
+        assert values.validate_nr_szkody(v), f"invalid NR_SZKODY: {v!r}"
+
+
+def test_kwota_500_seeds_pass_validator() -> None:
+    """KWOTA over 500 seeds (including embedded-currency forms) all pass validator."""
+    rng = random.Random(33)
+    for _ in range(500):
+        v = values.generate_kwota(rng)
+        assert values.validate_kwota(v), f"invalid KWOTA: {v!r}"
+
+
+def test_kwota_dochod_deterministic() -> None:
+    """KWOTA and DOCHOD generators are deterministic: same seed → same sequence."""
+    r1, r2 = random.Random(555), random.Random(555)
+    for _ in range(100):
+        assert values.generate_kwota(r1) == values.generate_kwota(r2)
+        assert values.generate_dochod(r1) == values.generate_dochod(r2)

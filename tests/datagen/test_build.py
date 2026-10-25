@@ -367,11 +367,30 @@ def test_uc28_manifest_counts_match_jsonl(tmp_path: Path) -> None:
         "split_counts",
         "version",
         "inflection_fallbacks",
+        "augment",
+        "augment_fraction",
+        "augmented_doc_count",
+        "transform_doc_counts",
+        "hard_negatives",
     }
     assert expected_fields <= set(manifest.keys()), (
         f"missing manifest fields: {expected_fields - set(manifest.keys())}"
     )
-    assert manifest["inflection_fallbacks"] == 0
+    # inflection_fallbacks must equal the sum over the written documents: re-render each
+    # record from its template and seed (fallbacks depend on which names Morfeusz lacks).
+    from piitier.datagen.build import _PACKAGED_TEMPLATES_DIR, collect_templates
+    from piitier.datagen.render import render
+
+    by_id = {t.template_id: t for t in collect_templates(_PACKAGED_TEMPLATES_DIR)}
+    expected_fallbacks = 0
+    for fname in ("train.jsonl", "dev.jsonl"):
+        for raw in (tmp_path / fname).read_text(encoding="utf-8").splitlines():
+            if raw.strip():
+                rec = json.loads(raw)
+                doc = render(by_id[rec["template_id"]], seed=rec["seed"])
+                assert doc.text == rec["text"]
+                expected_fallbacks += doc.inflection_fallbacks
+    assert manifest["inflection_fallbacks"] == expected_fallbacks
 
 
 def test_manifest_fallback_aggregation_sum(monkeypatch, tmp_path: Path) -> None:

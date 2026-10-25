@@ -58,12 +58,23 @@ for _d in range(10):
 _VIN_WEIGHTS: tuple[int, ...] = (8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2)
 
 _NR_UMOWY_RE: re.Pattern[str] = re.compile(r"^UM/(?:201[5-9]|202[0-6])/\d{7}$")
-_NR_POLISY_RE: re.Pattern[str] = re.compile(r"^(?:PL|UB)\d{10}$")
-_NR_SZKODY_RE: re.Pattern[str] = re.compile(r"^(?:SZK|CLM)\d{8}$")
+_NR_POLISY_RE: re.Pattern[str] = re.compile(
+    r"^(?:(?:PL|UB)\d{10}|POL/(?:201[5-9]|202[0-6])/\d{1,6}|PL/(?:201[5-9]|202[0-6])/\d{7})$"
+)
+_NR_SZKODY_RE: re.Pattern[str] = re.compile(
+    r"^(?:(?:SZK|CLM)\d{8}|SZK/(?:201[5-9]|202[0-6])/\d{1,6}|CLM/(?:201[5-9]|202[0-6])/\d{6})$"
+)
 _NR_REJESTRACYJNY_RE: re.Pattern[str] = re.compile(r"^[A-Z]{2}[A-Z0-9]{3,5}$")
 _VIN_RE: re.Pattern[str] = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 _NR_KW_RE: re.Pattern[str] = re.compile(r"^[A-Z]{2}\d/\d{6}/(?:201[5-9]|202[0-6])$")
-_KWOTA_RE: re.Pattern[str] = re.compile(r"^\d{1,3}(?: \d{3})*,\d{2}$")
+_KWOTA_RE: re.Pattern[str] = re.compile(
+    r"^(?:"
+    r"\d{1,3}(?: \d{3})+[,.]\d{2}"  # 1 234,56 / 1 234.56  (space-sep thousands)
+    r"|\d{1,3}(?:\.\d{3})+,\d{2}"  # 1.234,56              (dot-sep thousands)
+    r"|\d+[,.]\d{2}"  # 1234,56 / 1234.56     (plain decimal)
+    r"|\d+"  # 1500                  (integer)
+    r")(?:\s+(?:złotych|zł|PLN|EUR|euro|€))?$"
+)
 
 
 def generate_pesel(rng: random.Random) -> str:
@@ -202,22 +213,72 @@ def validate_nr_umowy(v: str) -> bool:
     return bool(_NR_UMOWY_RE.fullmatch(v))
 
 
-def generate_kwota(rng: random.Random) -> str:
-    """Generate a PLN amount in Polish notation without currency, e.g. ``12 345,67``."""
+_CURRENCY_TOKENS: tuple[str, ...] = ("PLN", "zł", "EUR", "€")
+
+
+def _generate_amount(rng: random.Random, *, currency_follows: bool = False) -> str:
+    """Shared core for KWOTA and DOCHOD: numeric amount with optional embedded currency."""
     zloty = rng.randint(1, 999_999)
     grosze = rng.randint(0, 99)
-    return f"{zloty:,}".replace(",", " ") + f",{grosze:02d}"
+    fmt = rng.randint(0, 4)
+    if fmt == 0:
+        # 1 234,56  (space thousands + comma decimal)
+        val = f"{zloty:,}".replace(",", " ") + f",{grosze:02d}"
+    elif fmt == 1:
+        # 1234,56  (plain comma decimal)
+        val = f"{zloty},{grosze:02d}"
+    elif fmt == 2:
+        # 1234.56  (plain dot decimal)
+        val = f"{zloty}.{grosze:02d}"
+    elif fmt == 3:
+        # 1.234,56  (dot thousands + comma decimal)
+        val = f"{zloty:,}".replace(",", ".") + f",{grosze:02d}"
+    else:
+        # 1500  (integer, no cents)
+        val = str(zloty)
+    if not currency_follows and rng.random() < 0.30:
+        val = val + " " + rng.choice(_CURRENCY_TOKENS)
+    return val
+
+
+def generate_kwota(rng: random.Random, *, currency_follows: bool = False) -> str:
+    """Generate a PLN amount with format variants and optional embedded currency.
+
+    Pass ``currency_follows=True`` when the template literal immediately after the
+    placeholder already contains a currency token; the generator will then never
+    embed one, preventing double-currency output.
+    """
+    return _generate_amount(rng, currency_follows=currency_follows)
 
 
 def validate_kwota(v: str) -> bool:
     return bool(_KWOTA_RE.fullmatch(v))
 
 
+def generate_dochod(rng: random.Random, *, currency_follows: bool = False) -> str:
+    """Generate a monthly/yearly income amount (same formats as KWOTA)."""
+    return _generate_amount(rng, currency_follows=currency_follows)
+
+
+def validate_dochod(v: str) -> bool:
+    return bool(_KWOTA_RE.fullmatch(v))
+
+
 def generate_nr_polisy(rng: random.Random) -> str:
-    """Generate a valid NR_POLISY string ({PL|UB}{10 digits})."""
-    prefix = rng.choice(["PL", "UB"])
-    digits = "".join(rng.choice("0123456789") for _ in range(10))
-    return f"{prefix}{digits}"
+    """Generate a NR_POLISY in legacy ({PL|UB}+10 digits) or slash format."""
+    fmt = rng.randint(0, 2)
+    if fmt == 0:
+        prefix = rng.choice(["PL", "UB"])
+        digits = "".join(rng.choice("0123456789") for _ in range(10))
+        return f"{prefix}{digits}"
+    elif fmt == 1:
+        year = rng.randint(2015, 2026)
+        n = rng.randint(1, 999_999)
+        return f"POL/{year}/{n}"
+    else:
+        year = rng.randint(2015, 2026)
+        n = rng.randint(1_000_000, 9_999_999)
+        return f"PL/{year}/{n}"
 
 
 def validate_nr_polisy(v: str) -> bool:
@@ -225,10 +286,20 @@ def validate_nr_polisy(v: str) -> bool:
 
 
 def generate_nr_szkody(rng: random.Random) -> str:
-    """Generate a valid NR_SZKODY string ({SZK|CLM}{8 digits})."""
-    prefix = rng.choice(["SZK", "CLM"])
-    digits = "".join(rng.choice("0123456789") for _ in range(8))
-    return f"{prefix}{digits}"
+    """Generate a NR_SZKODY in legacy ({SZK|CLM}+8 digits) or slash format."""
+    fmt = rng.randint(0, 2)
+    if fmt == 0:
+        prefix = rng.choice(["SZK", "CLM"])
+        digits = "".join(rng.choice("0123456789") for _ in range(8))
+        return f"{prefix}{digits}"
+    elif fmt == 1:
+        year = rng.randint(2015, 2026)
+        n = rng.randint(1, 999_999)
+        return f"SZK/{year}/{n}"
+    else:
+        year = rng.randint(2015, 2026)
+        n = rng.randint(100_000, 999_999)
+        return f"CLM/{year}/{n}"
 
 
 def validate_nr_szkody(v: str) -> bool:
@@ -400,6 +471,98 @@ _ROZPOZNANIE_LIST: tuple[str, ...] = (
     "zespół jelita drażliwego",
 )
 
+_DANE_ZDROWOTNE_LIST: tuple[str, ...] = (
+    # Objawy
+    "ból głowy",
+    "ból kręgosłupa",
+    "ból brzucha",
+    "gorączka",
+    "kaszel",
+    "duszność",
+    "nudności",
+    "wymioty",
+    "zawroty głowy",
+    "omdlenie",
+    "osłabienie ogólne",
+    "zmęczenie",
+    "bezsenność",
+    "biegunka",
+    "zaparcia",
+    "wysypka skórna",
+    "świąd skóry",
+    "obrzęk kończyn",
+    "kołatanie serca",
+    "ból w klatce piersiowej",
+    # Choroby przewlekłe
+    "nadciśnienie tętnicze",
+    "cukrzyca typ 2",
+    "astma",
+    "niedoczynność tarczycy",
+    "choroba wieńcowa",
+    "migotanie przedsionków",
+    "niewydolność nerek",
+    "marskość wątroby",
+    "wrzód żołądka",
+    "refluks żołądkowo-przełykowy",
+    "przewlekła obturacyjna choroba płuc",
+    "reumatoidalne zapalenie stawów",
+    "stwardnienie rozsiane",
+    "choroba Parkinsona",
+    "choroba Alzheimera",
+    "padaczka",
+    "kamica nerkowa",
+    "kamica żółciowa",
+    "łuszczyca",
+    "atopowe zapalenie skóry",
+    # Stany ostre i infekcje
+    "zapalenie płuc",
+    "zapalenie oskrzeli",
+    "ostre zapalenie wyrostka",
+    "zapalenie pęcherzyka żółciowego",
+    "zapalenie trzustki",
+    "zapalenie opon mózgowych",
+    "zawał serca",
+    "udar mózgu",
+    "zakrzepica żył głębokich",
+    "zatorowość płucna",
+    "borelioza",
+    "mononukleoza",
+    "gruźlica",
+    "niedokrwistość",
+    "alergia pokarmowa",
+    "alergiczny nieżyt nosa",
+    # Urazy
+    "złamanie kości udowej",
+    "złamanie nadgarstka",
+    "skręcenie kostki",
+    "zwichnięcie barku",
+    "uraz głowy",
+    "wstrząśnienie mózgu",
+    "rana cięta",
+    "oparzenie II stopnia",
+    "stłuczenie żeber",
+    "naderwanie mięśnia",
+    # Zdrowie psychiczne i inne
+    "depresja",
+    "zaburzenia lękowe",
+    "nerwica",
+    "schizofrenia",
+    "zaburzenia odżywiania",
+    "uzależnienie od alkoholu",
+    "uzależnienie od leków",
+    "ADHD",
+    "spektrum autyzmu",
+    "fobia społeczna",
+    "przewlekły ból",
+    "fibromialgia",
+    "WZW typ B",
+    "WZW typ C",
+    "trombofilia",
+    "zaćma",
+    "jaskra",
+)
+
+
 _PLACOWKA_RE: re.Pattern[str] = re.compile(
     r"^Szpital (?:Wojewódzki|Miejski|Kliniczny|Specjalistyczny) im\. .+ w .+$"
 )
@@ -466,6 +629,15 @@ def validate_npwz(v: str) -> bool:
     return bool(_NPWZ_RE.fullmatch(v))
 
 
+def generate_dane_zdrowotne(rng: random.Random) -> str:
+    """Generate a short Polish health-condition phrase (1–5 words, nominative case)."""
+    return rng.choice(_DANE_ZDROWOTNE_LIST)
+
+
+def validate_dane_zdrowotne(v: str) -> bool:
+    return v in _DANE_ZDROWOTNE_LIST
+
+
 _GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.PESEL: generate_pesel,
     Label.NIP: generate_nip,
@@ -477,6 +649,7 @@ _GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.EMAIL: generate_email,
     Label.NR_UMOWY: generate_nr_umowy,
     Label.KWOTA: generate_kwota,
+    Label.DOCHOD: generate_dochod,
     Label.NR_POLISY: generate_nr_polisy,
     Label.NR_SZKODY: generate_nr_szkody,
     Label.NR_REJESTRACYJNY: generate_nr_rejestracyjny,
@@ -487,6 +660,7 @@ _GENERATORS: dict[Label, Callable[[random.Random], str]] = {
     Label.ROZPOZNANIE: generate_rozpoznanie,
     Label.PLACOWKA: generate_placowka,
     Label.NPWZ: generate_npwz,
+    Label.DANE_ZDROWOTNE: generate_dane_zdrowotne,
 }
 
 _VALIDATORS: dict[Label, Callable[[str], bool]] = {
@@ -500,6 +674,7 @@ _VALIDATORS: dict[Label, Callable[[str], bool]] = {
     Label.EMAIL: lambda v: bool(_EMAIL_RE.fullmatch(v)),
     Label.NR_UMOWY: validate_nr_umowy,
     Label.KWOTA: validate_kwota,
+    Label.DOCHOD: validate_dochod,
     Label.NR_POLISY: validate_nr_polisy,
     Label.NR_SZKODY: validate_nr_szkody,
     Label.NR_REJESTRACYJNY: validate_nr_rejestracyjny,
@@ -510,6 +685,7 @@ _VALIDATORS: dict[Label, Callable[[str], bool]] = {
     Label.ROZPOZNANIE: validate_rozpoznanie,
     Label.PLACOWKA: validate_placowka,
     Label.NPWZ: validate_npwz,
+    Label.DANE_ZDROWOTNE: validate_dane_zdrowotne,
 }
 
 

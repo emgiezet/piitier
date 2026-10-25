@@ -119,13 +119,50 @@ def test_uc52_build_check_manifest_medical_templates(tmp_path: Path) -> None:
 
 
 def test_uc53_prompt_label_list_28_labels() -> None:
-    """UC-53: prompt for each doc_type lists all 28 labels from _SUPPORTED_LABELS."""
+    """UC-53: prompt for each doc_type lists all 30 labels from _SUPPORTED_LABELS."""
     from piitier.datagen.build import DOC_TYPES
     from piitier.datagen.llm import _SUPPORTED_LABELS
 
     prompts_dir = Path(__file__).parent.parent.parent / "src" / "piitier" / "datagen" / "prompts"
     for doc_type in sorted(DOC_TYPES):
         content = (prompts_dir / f"{doc_type}.txt").read_text(encoding="utf-8")
-        assert "28 obsługiwanych znaczników" in content
+        assert "30 obsługiwanych znaczników" in content
         for lbl in _SUPPORTED_LABELS:
             assert f"{{{{{lbl.name}}}}}" in content
+
+
+# ---------------------------------------------------------------------------
+# New tests: DANE_ZDROWOTNE
+# ---------------------------------------------------------------------------
+
+
+def test_dane_zdrowotne_list_size_and_uniqueness() -> None:
+    """DANE_ZDROWOTNE list has >= 80 entries, all unique, 1-5 words each."""
+    lst = values._DANE_ZDROWOTNE_LIST
+    assert len(lst) >= 80, f"expected >= 80 entries, got {len(lst)}"
+    assert len(set(lst)) == len(lst), "duplicate entries in _DANE_ZDROWOTNE_LIST"
+    for phrase in lst:
+        wc = len(phrase.split())
+        assert 1 <= wc <= 5, f"phrase outside 1-5 word limit: {phrase!r}"
+
+
+def test_dane_zdrowotne_500_seeds_pass_validator() -> None:
+    """DANE_ZDROWOTNE over 500 seeds all pass validator and are non-empty."""
+    rng = random.Random(42)
+    for _ in range(500):
+        v = values.generate_dane_zdrowotne(rng)
+        assert v != ""
+        assert values.validate_dane_zdrowotne(v), f"invalid DANE_ZDROWOTNE: {v!r}"
+
+
+def test_dane_zdrowotne_deterministic() -> None:
+    """DANE_ZDROWOTNE generator is deterministic."""
+    r1, r2 = random.Random(77), random.Random(77)
+    for _ in range(100):
+        assert values.generate_dane_zdrowotne(r1) == values.generate_dane_zdrowotne(r2)
+
+
+def test_dane_zdrowotne_in_generators_and_validators() -> None:
+    """DANE_ZDROWOTNE is registered in both _GENERATORS and _VALIDATORS."""
+    assert Label.DANE_ZDROWOTNE in values._GENERATORS
+    assert Label.DANE_ZDROWOTNE in values._VALIDATORS

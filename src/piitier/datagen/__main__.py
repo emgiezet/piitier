@@ -76,7 +76,17 @@ def main() -> None:
     build_p.add_argument(
         "--augment",
         action="store_true",
-        help="Apply OCR and diacritic augmentation to documents.",
+        help="Apply OCR and diacritic augmentation to a fraction of documents.",
+    )
+    build_p.add_argument(
+        "--augment-fraction",
+        type=float,
+        default=0.25,
+        metavar="F",
+        help=(
+            "Fraction of documents to augment when --augment is set (default: 0.25). "
+            "Must be in (0, 1]."
+        ),
     )
     build_p.add_argument(
         "--hard-negatives",
@@ -164,6 +174,7 @@ def main() -> None:
                 args.seed,
                 args.out,
                 augment=args.augment,
+                augment_fraction=args.augment_fraction,
                 hard_negatives=args.hard_negatives,
             )
         except BuildError as exc:

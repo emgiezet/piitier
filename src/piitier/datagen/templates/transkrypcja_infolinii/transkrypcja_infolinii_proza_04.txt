@@ -1,0 +1,11 @@
+Transkrypcja zgłoszenia szkody przez infolinię ubezpieczeniową – numer sprawy {{NR_SZKODY}}.
+
+Operator: Dzień dobry, proszę się przedstawić i podać numer PESEL.
+Klient: {{OSOBA#1}}, PESEL {{PESEL}}, adres {{ADRES}}.
+Operator: Jakiego pojazdu dotyczy zgłoszenie szkody?
+Klient: Rejestracja {{NR_REJESTRACYJNY}}, VIN {{VIN}}, polisa {{NR_POLISY}}.
+Operator: Szacowana kwota szkody?
+Klient: Około {{KWOTA}} PLN. Przelew proszę wykonać na {{IBAN}}.
+Operator: Proszę podać numer kontaktowy i adres e-mail.
+Klient: Telefon {{TELEFON}}, e-mail {{EMAIL}}. Mieszkam w {{MIEJSCOWOSC}}, kod pocztowy {{KOD_POCZTOWY}}.
+Operator: Dziękujemy za zgłoszenie. Numer szkody: {{NR_SZKODY}}. Do widzenia.
