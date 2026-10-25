@@ -24,8 +24,28 @@ def bio_tag_names() -> list[str]:
     return names
 
 
-def spans_to_token_labels(spans: list[Span], offset_mapping: list[tuple[int, int]]) -> list[int]:
-    """Compute BIO tag IDs for tokens based on ground-truth spans and token offset mapping."""
+def _token_content_range(text: str, tok_start: int, tok_end: int) -> tuple[int, int]:
+    """Return the sub-range of [tok_start, tok_end) that contains non-whitespace chars."""
+    s = tok_start
+    e = tok_end
+    while s < e and text[s].isspace():
+        s += 1
+    while e > s and text[e - 1].isspace():
+        e -= 1
+    return s, e
+
+
+def spans_to_token_labels(
+    spans: list[Span],
+    offset_mapping: list[tuple[int, int]],
+    text: str = "",
+) -> list[int]:
+    """Compute BIO tag IDs for tokens based on ground-truth spans and token offset mapping.
+
+    A token whose *non-whitespace* content overlaps a span receives B- (first such token
+    per span) or I- (subsequent tokens).  A token that is purely whitespace receives O.
+    Special / padding tokens (offset (0,0) or start >= end) receive -100 via build_dataset.
+    """
     tag_names = bio_tag_names()
     tag_to_id = {name: i for i, name in enumerate(tag_names)}
     o_id = tag_to_id[BIO_O]
@@ -40,9 +60,20 @@ def spans_to_token_labels(spans: list[Span], offset_mapping: list[tuple[int, int
         if tok_start >= tok_end:
             continue
 
+        # Determine the non-whitespace content range of this token.
+        if text:
+            cs, ce = _token_content_range(text, tok_start, tok_end)
+        else:
+            cs, ce = tok_start, tok_end
+
+        # Whitespace-only token → always O (no overlap possible).
+        if cs >= ce:
+            continue
+
         matching_span: Span | None = None
         for s in sorted_spans:
-            if s.start <= tok_start and tok_end <= s.end:
+            # Non-whitespace content of the token overlaps the span.
+            if cs < s.end and ce > s.start:
                 matching_span = s
                 break
 
@@ -65,7 +96,13 @@ def decode_spans(
     id2label: dict[int, str],
     threshold: float = 0.0,
 ) -> list[Span]:
-    """Decode token probability distributions into entity Spans."""
+    """Decode token probability distributions into entity Spans.
+
+    Leading whitespace is stripped from the character offset when a new entity starts
+    (B- tag or orphan I- treated as B-), so that the returned Span.start always points
+    at the first non-whitespace character of the entity.  An I- tag that follows O (or a
+    different label) is treated as a new B- rather than being silently dropped.
+    """
     spans: list[Span] = []
 
     current_label: str | None = None
@@ -117,20 +154,25 @@ def decode_spans(
 
         if tag == BIO_O:
             flush_entity()
-        elif tag.startswith("B-"):
-            flush_entity()
-            lbl_name = tag.removeprefix("B-")
-            current_label = lbl_name
-            current_start = tok_start
-            current_end = tok_end
-            current_scores = [score]
-        elif tag.startswith("I-"):
-            lbl_name = tag.removeprefix("I-")
-            if current_label == lbl_name:
+        elif tag.startswith("B-") or tag.startswith("I-"):
+            lbl_name = tag[2:]
+            if tag.startswith("I-") and current_label == lbl_name:
+                # Normal continuation of the current entity.
                 current_end = tok_end
                 current_scores.append(score)
             else:
+                # B- always starts fresh; orphan I- (after O or different label) is
+                # treated as a new B- so we do not silently drop the token.
                 flush_entity()
+                # Strip leading whitespace: the span should start at the first
+                # non-whitespace character of the token, not at the Ġ-prefix space.
+                cs = tok_start
+                while cs < tok_end and text[cs].isspace():
+                    cs += 1
+                current_label = lbl_name
+                current_start = cs if cs < tok_end else tok_start
+                current_end = tok_end
+                current_scores = [score]
         else:
             flush_entity()
 

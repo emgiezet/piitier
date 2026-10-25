@@ -93,7 +93,7 @@ def build_dataset(
             )
 
         offset_mapping = encodings["offset_mapping"][i]
-        token_labels = spans_to_token_labels(spans, offset_mapping)
+        token_labels = spans_to_token_labels(spans, offset_mapping, text=texts[i])
         attn_mask = encodings["attention_mask"][i]
 
         for j, (start, end) in enumerate(offset_mapping):
