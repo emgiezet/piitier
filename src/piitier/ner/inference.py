@@ -42,9 +42,13 @@ def spans_to_token_labels(
 ) -> list[int]:
     """Compute BIO tag IDs for tokens based on ground-truth spans and token offset mapping.
 
-    A token whose *non-whitespace* content overlaps a span receives B- (first such token
-    per span) or I- (subsequent tokens).  A token that is purely whitespace receives O.
-    Special / padding tokens (offset (0,0) or start >= end) receive -100 via build_dataset.
+    * A token whose *non-whitespace* content overlaps a span: B- (first such token per
+      span) or I- (subsequent tokens).
+    * A whitespace-only token strictly inside a span (its full range falls within the
+      span): -100 (IGNORE) — the model is not taught O mid-entity, so decode_spans can
+      safely skip those positions without splitting the entity.
+    * A whitespace-only token outside all spans: O.
+    * Special / padding tokens (offset (0,0) or start >= end): -100 via build_dataset.
     """
     tag_names = bio_tag_names()
     tag_to_id = {name: i for i, name in enumerate(tag_names)}
@@ -66,8 +70,12 @@ def spans_to_token_labels(
         else:
             cs, ce = tok_start, tok_end
 
-        # Whitespace-only token → always O (no overlap possible).
+        # Whitespace-only token: assign IGNORE if strictly inside any span, else leave O.
         if cs >= ce:
+            for s in sorted_spans:
+                if tok_start >= s.start and tok_end <= s.end:
+                    labels[i] = -100
+                    break
             continue
 
         matching_span: Span | None = None
@@ -97,6 +105,10 @@ def decode_spans(
     threshold: float = 0.0,
 ) -> list[Span]:
     """Decode token probability distributions into entity Spans.
+
+    Whitespace-only tokens are skipped entirely: they are trained with IGNORE (-100) in
+    spans_to_token_labels, so their model logits are meaningless and must not trigger a
+    flush.  This preserves entities like "717 253,28" that contain an internal space token.
 
     Leading whitespace is stripped from the character offset when a new entity starts
     (B- tag or orphan I- treated as B-), so that the returned Span.start always points
@@ -143,6 +155,10 @@ def decode_spans(
         if tok_start == 0 and tok_end == 0:
             continue
         if tok_start >= tok_end:
+            continue
+        # Whitespace-only tokens are IGNORE in training; skip without flushing so that
+        # an internal space does not split a multi-word entity.
+        if text[tok_start:tok_end].strip() == "":
             continue
         if not token_probs:
             flush_entity()
