@@ -64,7 +64,7 @@ python -m piitier.datagen build \
   --out data/synthetic/v0.1/
 ```
 
-## Statystyki Biegu (pełny bieg, piitier 0.1.0, seed 42) <!-- STATS: filled after build -->
-> - Dokumenty: TBD łącznie (TBD szablonowych + TBD twardych negatywów), split: `train` TBD, `dev` TBD; `augment: true`. <!-- STATS: filled after build -->
-> - `span_counts`: TBD <!-- STATS: filled after build -->
-> - SHA-256: `train.jsonl` TBD, `dev.jsonl` TBD; offsety zweryfikowane (`check` → 0). <!-- STATS: filled after build -->
+## Statystyki Biegu (pełny bieg, piitier 0.1.0, seed 42)
+> - Dokumenty: 22 000 łącznie (20 000 szablonowych + 2 000 twardych negatywów), split: `train` 21 283, `dev` 717; `augment: true`.
+> - `span_counts`: KWOTA 38920, OSOBA 28428, PESEL 18466, IBAN 17056, NR_POLISY 16725, NIP 11388, NR_DOWODU 11143, REGON 6771, ADRES 6003, NR_KARTY 4455, NR_REJESTRACYJNY 3252, MIEJSCOWOSC 3020, NAZWISKO 2840, IMIE 2705, KOD_POCZTOWY 2653, TELEFON 2468, VIN 2283, PLACOWKA 2222, LEKARZ 2222, NPWZ 2222, LEK 2222, EMAIL 1451, DATA_URODZENIA 1259, NR_SZKODY 1205, NR_UMOWY 1111, NR_KW 1111, ROZPOZNANIE 1111, ICD10 1111.
+> - SHA-256: `train.jsonl` `1530afd5a5f5a2efb116cd3a12742165c88cdadd6cc878b5967b1ea9554c1a98`, `dev.jsonl` `36c757419e978b2ed8d1cf8450bb52edc95676d32a9778528316bc7b4df9c752`; offsety zweryfikowane (`check` → 0).

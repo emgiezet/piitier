@@ -141,14 +141,11 @@ _PLATE_LEAK_RE = re.compile(
 # gate catches any survivor.  Shape: 2–3 uppercase letters + digit + 3–5 alphanumerics,
 # not preceded by another alphanumeric (prevents matching the middle of a product code).
 _PLATE_BEFORE_VIN_RE = re.compile(
-    r"(?<![A-Za-z0-9])([A-Z]{2,3}\s?\d[A-Z0-9]{3,5})(?=\s+"
-    + re.escape("{{VIN}}")
-    + r")",
+    r"(?<![A-Za-z0-9])([A-Z]{2,3}\s?\d[A-Z0-9]{3,5})(?=\s+" + re.escape("{{VIN}}") + r")",
 )
 # Gate: plate-shaped token directly before {{VIN}} that the rule missed.
 _PLATE_BEFORE_VIN_GATE_RE = re.compile(
-    r"(?<![A-Za-z0-9])[A-Z]{2,3}\s?\d[A-Z0-9]{3,5}\s+"
-    + re.escape("{{VIN}}")
+    r"(?<![A-Za-z0-9])[A-Z]{2,3}\s?\d[A-Z0-9]{3,5}\s+" + re.escape("{{VIN}}")
 )
 # Leak: street prefix still present in a literal — the street was not redacted.
 _STREET_LEAK_RE = re.compile(
@@ -299,9 +296,7 @@ _REGISTER_PLACEHOLDER_GATE_RE = re.compile(
 )
 # Gate (m1): a lowercase word immediately followed by digits after an ADRES placeholder
 # is a junk token that slipped through normalisation (e.g. ``{{ADRES#1}} city2111``).
-_ADRES_JUNK_SUFFIX_RE = re.compile(
-    r"\{\{ADRES(?:#\d+)?\}\}\s+[a-z]+\d+"
-)
+_ADRES_JUNK_SUFFIX_RE = re.compile(r"\{\{ADRES(?:#\d+)?\}\}\s+[a-z]+\d+")
 
 
 @functools.cache
@@ -405,6 +400,7 @@ def _redact_literal(literal: str) -> str:
         literal = literal[:start] + "{{" + label + "}}" + literal[end:]
     return literal
 
+
 def _rule_redact(chunk: str) -> str:
     """Replace every rule-detected span outside existing placeholders with ``{{LABEL}}``.
 
@@ -428,9 +424,7 @@ def _rule_redact(chunk: str) -> str:
     # (d) Plate immediately before {{VIN}} → NR_REJESTRACYJNY (B1).
     #     _redact_literal only sees the literal segment; after assembly this step
     #     catches a plate that precedes an already-placed {{VIN}} placeholder.
-    chunk = _PLATE_BEFORE_VIN_RE.sub(
-        "{{" + Label.NR_REJESTRACYJNY.name + "}}", chunk
-    )
+    chunk = _PLATE_BEFORE_VIN_RE.sub("{{" + Label.NR_REJESTRACYJNY.name + "}}", chunk)
     return chunk
 
 
@@ -614,8 +608,7 @@ def _apply_llm_spans(chunk: str, spans: list[Any]) -> tuple[str, bool, int]:
         if _reg_spans:
             _occ = [(m.start(), m.end()) for m in re.finditer(re.escape(text), chunk)]
             if _occ and all(
-                any(rs <= o_s and o_e <= r_e for rs, r_e in _reg_spans)
-                for o_s, o_e in _occ
+                any(rs <= o_s and o_e <= r_e for rs, r_e in _reg_spans) for o_s, o_e in _occ
             ):
                 continue  # keep literal — it is a company register number
         if label in _ENTITY_LABELS:

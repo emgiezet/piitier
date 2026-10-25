@@ -218,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     eval_metrics = trainer.evaluate()
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
+    trainer.save_model(str(config.output_dir))
+    tokenizer.save_pretrained(str(config.output_dir))
     (config.output_dir / "eval_results.json").write_text(
         json.dumps(eval_metrics, indent=2), encoding="utf-8"
     )
