@@ -18,12 +18,20 @@ from piitier.spans import Span
 
 @dataclass(frozen=True)
 class EntityPRF:
-    precision: float | None  # None = undefined (zero denominator)
-    recall: float | None  # None = undefined (zero denominator)
-    f1: float | None  # None = undefined (zero denominator)
-    tp: int = 0
-    fp: int = 0
-    fn: int = 0
+    """Per-entity precision/recall/F1 with raw TP/FP/FN counts.
+
+    P/R/F1 are always ``float`` (0.0 when the denominator is zero).
+    Use ``tp + fp == 0`` to detect undefined precision at the report layer.
+    Use ``tp + fn == 0`` to detect undefined recall.
+    Use ``2*tp + fp + fn == 0`` to detect undefined F1.
+    """
+
+    precision: float
+    recall: float
+    f1: float
+    tp: int
+    fp: int
+    fn: int
 
 
 def _spans_match(g: Span, p: Span, match: Literal["strict", "partial"]) -> bool:
@@ -72,12 +80,13 @@ def entity_metrics(
 
     strict: same label and identical [start, end).
     partial: same label and any non-empty overlap [start, end).
-    Zero denominator -> corresponding metric is None (undefined).
+    Zero-denominator metrics are 0.0; use tp/fp/fn counts to detect undefined
+    at the report layer.
     """
     tp, fp, fn = _entity_counts(gold, pred, match)
-    precision = tp / (tp + fp) if (tp + fp) > 0 else None
-    recall = tp / (tp + fn) if (tp + fn) > 0 else None
-    f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else None
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0.0
     return EntityPRF(precision=precision, recall=recall, f1=f1, tp=tp, fp=fp, fn=fn)
 
 
@@ -90,7 +99,8 @@ def corpus_entity_metrics(
 
     Matching is performed only within each document (per-document).
     Raises ValueError if gold_docs and pred_docs differ in length.
-    Zero denominator -> corresponding metric is None (undefined).
+    Zero-denominator metrics are 0.0; use tp/fp/fn counts to detect undefined
+    at the report layer.
     """
     if len(gold_docs) != len(pred_docs):
         raise ValueError(
@@ -103,12 +113,12 @@ def corpus_entity_metrics(
         total_tp += tp
         total_fp += fp
         total_fn += fn
-    precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else None
-    recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else None
+    precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
+    recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
     f1 = (
         2 * total_tp / (2 * total_tp + total_fp + total_fn)
         if (2 * total_tp + total_fp + total_fn) > 0
-        else None
+        else 0.0
     )
     return EntityPRF(
         precision=precision,
@@ -251,25 +261,29 @@ def _risk_weight_counts(gold: list[Span], pred: list[Span]) -> tuple[float, floa
     return (matched_weight, total_weight)
 
 
-def risk_weighted_recall(gold: list[Span], pred: list[Span]) -> float | None:
-    """Compute risk-weighted recall (strict match). Zero-gold -> None (undefined)."""
+def risk_weighted_recall(gold: list[Span], pred: list[Span]) -> float:
+    """Compute risk-weighted recall (strict match). Zero-gold -> 0.0.
+
+    Use the gold span count to detect undefined (zero denominator) at the report layer.
+    """
     if not gold:
-        return None
+        return 0.0
     matched_weight, total_weight = _risk_weight_counts(gold, pred)
     if total_weight == 0.0:
-        return None
+        return 0.0
     return matched_weight / total_weight
 
 
 def corpus_risk_weighted_recall(
     gold_docs: list[list[Span]],
     pred_docs: list[list[Span]],
-) -> float | None:
+) -> float:
     """Compute risk-weighted recall micro-aggregated over a corpus of documents.
 
     Matching is performed only within each document (per-document).
     Raises ValueError if gold_docs and pred_docs differ in length.
-    Returns None when all documents have no gold spans (undefined).
+    Returns 0.0 when all documents have no gold spans.
+    Use the total gold span count to detect undefined at the report layer.
     """
     if len(gold_docs) != len(pred_docs):
         raise ValueError(
@@ -283,7 +297,7 @@ def corpus_risk_weighted_recall(
         matched_weight += mw
         total_weight += tw
     if total_weight == 0.0:
-        return None
+        return 0.0
     return matched_weight / total_weight
 
 

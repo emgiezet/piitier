@@ -204,11 +204,15 @@ def run_benchmark(
 
 
 def _prf_dict(prf: EntityPRF) -> dict[str, object]:
-    """Serialize an EntityPRF to a JSON-safe dict (None → JSON null for undefined)."""
+    """Serialize an EntityPRF to JSON-safe dict.
+
+    P/R/F1 are ``null`` in JSON when the denominator is zero (undefined);
+    tp, fp, fn are always integers.
+    """
     return {
-        "p": prf.precision,
-        "r": prf.recall,
-        "f1": prf.f1,
+        "p": prf.precision if (prf.tp + prf.fp) > 0 else None,
+        "r": prf.recall if (prf.tp + prf.fn) > 0 else None,
+        "f1": prf.f1 if (2 * prf.tp + prf.fp + prf.fn) > 0 else None,
         "tp": prf.tp,
         "fp": prf.fp,
         "fn": prf.fn,
@@ -400,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
         result.gold_spans_per_doc, result.pred_spans_per_doc, match="partial"
     )
     rwr = corpus_risk_weighted_recall(result.gold_spans_per_doc, result.pred_spans_per_doc)
+    # rwr_undefined: true when total gold weight is zero (no gold spans in corpus)
+    rwr_undefined = sum(len(g) for g in result.gold_spans_per_doc) == 0
     leak = leak_rate(result.originals, result.gold_spans_per_doc, result.rendered, result.doc_ids)
 
     total_fidelity = sum(
@@ -477,6 +483,7 @@ def main(argv: list[str] | None = None) -> int:
         "partial_micro": partial_micro,
         "partial_by_label": partial_by_label,
         "risk_weighted_recall": rwr,
+        "risk_weighted_recall_undefined": rwr_undefined,
         "leak_rate": leak,
         "fidelity": total_fidelity,
         "numbering": total_numbering,
@@ -549,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
             sorted(lbl.name for lbl in comparable_labels) if comparable_labels else []
         ),
         "by_doc_type": {dt: _dt_v(v) for dt, v in by_doc_type.items()},
-        "risk_weighted_recall": rwr,
+        "risk_weighted_recall": None if rwr_undefined else rwr,
         "leak_rate": {
             "docs_leaked": leak.docs_leaked,
             "docs_total": leak.docs_total,

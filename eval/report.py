@@ -17,22 +17,36 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Formatting helpers
+# Formatting helpers — "undefined" is decided from TP/FP/FN counts
 # ---------------------------------------------------------------------------
 
 
-def _fmt_prf(v: float | None) -> str:
-    """Format a precision/recall/F1 value; None → 'undefined (0/0)'."""
-    if v is None:
+def _fmt_p(prf: EntityPRF) -> str:
+    """Format precision; 'undefined (0/0)' when TP+FP = 0."""
+    if (prf.tp + prf.fp) == 0:
         return "undefined (0/0)"
-    return f"{v:.4f}"
+    return f"{prf.precision:.4f}"
 
 
-def _fmt_rwr(v: float | None) -> str:
-    """Format a risk-weighted recall value; None → 'undefined (0/0)'."""
-    if v is None:
+def _fmt_r(prf: EntityPRF) -> str:
+    """Format recall; 'undefined (0/0)' when TP+FN = 0."""
+    if (prf.tp + prf.fn) == 0:
         return "undefined (0/0)"
-    return f"{v:.4f}"
+    return f"{prf.recall:.4f}"
+
+
+def _fmt_f1(prf: EntityPRF) -> str:
+    """Format F1; 'undefined (0/0)' when 2*TP+FP+FN = 0."""
+    if (2 * prf.tp + prf.fp + prf.fn) == 0:
+        return "undefined (0/0)"
+    return f"{prf.f1:.4f}"
+
+
+def _fmt_rwr(rwr: float, *, undefined: bool) -> str:
+    """Format risk-weighted recall; 'undefined (0/0)' when gold weight = 0."""
+    if undefined:
+        return "undefined (0/0)"
+    return f"{rwr:.4f}"
 
 
 def _fmt_doc_leak(leak: LeakRate) -> str:
@@ -104,11 +118,13 @@ def write_report(
         pass
 
     peak_ram = cast(int, metrics.get("peak_ram", 0))
-    strict_micro = cast(EntityPRF, metrics.get("strict_micro", EntityPRF(0.0, 0.0, 0.0)))
+    _default_prf = EntityPRF(0.0, 0.0, 0.0, 0, 0, 0)
+    strict_micro = cast(EntityPRF, metrics.get("strict_micro", _default_prf))
     strict_by_label = cast(dict[Label, EntityPRF], metrics.get("strict_by_label", {}))
-    partial_micro = cast(EntityPRF, metrics.get("partial_micro", EntityPRF(0.0, 0.0, 0.0)))
+    partial_micro = cast(EntityPRF, metrics.get("partial_micro", _default_prf))
     partial_by_label = cast(dict[Label, EntityPRF], metrics.get("partial_by_label", {}))
-    rwr = cast(float | None, metrics.get("risk_weighted_recall", None))
+    rwr = cast(float, metrics.get("risk_weighted_recall", 0.0))
+    rwr_undefined = cast(bool, metrics.get("risk_weighted_recall_undefined", False))
     leak = cast(
         LeakRate,
         metrics.get("leak_rate", LeakRate(0, doc_count, 0, gold_count, [])),
@@ -163,10 +179,10 @@ def write_report(
             f"- Peak RAM: {peak_ram} bytes",
             "",
             "## Encje (strict)",
-            f"- Micro Precision: {_fmt_prf(strict_micro.precision)}"
+            f"- Micro Precision: {_fmt_p(strict_micro)}"
             f" (TP={strict_micro.tp}, FP={strict_micro.fp}, FN={strict_micro.fn})",
-            f"- Micro Recall: {_fmt_prf(strict_micro.recall)}",
-            f"- Micro F1: {_fmt_prf(strict_micro.f1)}",
+            f"- Micro Recall: {_fmt_r(strict_micro)}",
+            f"- Micro F1: {_fmt_f1(strict_micro)}",
             "",
             "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
             "|---|---|---|---|---|---|---|",
@@ -175,18 +191,18 @@ def write_report(
 
     for lbl, prf in sorted(strict_by_label.items(), key=lambda x: x[0].name):
         lines.append(
-            f"| {lbl.name} | {_fmt_prf(prf.precision)} | {_fmt_prf(prf.recall)}"
-            f" | {_fmt_prf(prf.f1)} | {prf.tp} | {prf.fp} | {prf.fn} |"
+            f"| {lbl.name} | {_fmt_p(prf)} | {_fmt_r(prf)}"
+            f" | {_fmt_f1(prf)} | {prf.tp} | {prf.fp} | {prf.fn} |"
         )
 
     lines.extend(
         [
             "",
             "## Encje (partial)",
-            f"- Micro Precision: {_fmt_prf(partial_micro.precision)}"
+            f"- Micro Precision: {_fmt_p(partial_micro)}"
             f" (TP={partial_micro.tp}, FP={partial_micro.fp}, FN={partial_micro.fn})",
-            f"- Micro Recall: {_fmt_prf(partial_micro.recall)}",
-            f"- Micro F1: {_fmt_prf(partial_micro.f1)}",
+            f"- Micro Recall: {_fmt_r(partial_micro)}",
+            f"- Micro F1: {_fmt_f1(partial_micro)}",
             "",
             "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
             "|---|---|---|---|---|---|---|",
@@ -195,8 +211,8 @@ def write_report(
 
     for lbl, prf in sorted(partial_by_label.items(), key=lambda x: x[0].name):
         lines.append(
-            f"| {lbl.name} | {_fmt_prf(prf.precision)} | {_fmt_prf(prf.recall)}"
-            f" | {_fmt_prf(prf.f1)} | {prf.tp} | {prf.fp} | {prf.fn} |"
+            f"| {lbl.name} | {_fmt_p(prf)} | {_fmt_r(prf)}"
+            f" | {_fmt_f1(prf)} | {prf.tp} | {prf.fp} | {prf.fn} |"
         )
 
     # ------------------------------------------------------------------
@@ -215,17 +231,17 @@ def write_report(
                 "",
                 "## Porównywalna podtaksonomia (bardsai_v2)",
                 f"- Etykiety: {label_names}",
-                f"- Strict Micro Precision: {_fmt_prf(_comparable_strict.precision)}",
-                f"- Strict Micro Recall: {_fmt_prf(_comparable_strict.recall)}",
-                f"- Strict Micro F1: {_fmt_prf(_comparable_strict.f1)}",
+                f"- Strict Micro Precision: {_fmt_p(_comparable_strict)}",
+                f"- Strict Micro Recall: {_fmt_r(_comparable_strict)}",
+                f"- Strict Micro F1: {_fmt_f1(_comparable_strict)}",
             ]
         )
         if _comparable_partial is not None:
             lines.extend(
                 [
-                    f"- Partial Micro Precision: {_fmt_prf(_comparable_partial.precision)}",
-                    f"- Partial Micro Recall: {_fmt_prf(_comparable_partial.recall)}",
-                    f"- Partial Micro F1: {_fmt_prf(_comparable_partial.f1)}",
+                    f"- Partial Micro Precision: {_fmt_p(_comparable_partial)}",
+                    f"- Partial Micro Recall: {_fmt_r(_comparable_partial)}",
+                    f"- Partial Micro F1: {_fmt_f1(_comparable_partial)}",
                 ]
             )
 
@@ -233,7 +249,7 @@ def write_report(
         [
             "",
             "## Recall ważony ryzykiem",
-            f"- Risk-weighted recall: {_fmt_rwr(rwr)}",
+            f"- Risk-weighted recall: {_fmt_rwr(rwr, undefined=rwr_undefined)}",
             "",
             "## Leak rate",
             f"- Docs leaked: {_fmt_doc_leak(leak)}"
@@ -274,10 +290,9 @@ def write_report(
             lines.extend(
                 [
                     f"### {dt}",
-                    f"- Strict Micro Precision: {_fmt_prf(sm.precision)}"
-                    f" (TP={sm.tp}, FP={sm.fp}, FN={sm.fn})",
-                    f"- Strict Micro Recall: {_fmt_prf(sm.recall)}",
-                    f"- Strict Micro F1: {_fmt_prf(sm.f1)}",
+                    f"- Strict Micro Precision: {_fmt_p(sm)} (TP={sm.tp}, FP={sm.fp}, FN={sm.fn})",
+                    f"- Strict Micro Recall: {_fmt_r(sm)}",
+                    f"- Strict Micro F1: {_fmt_f1(sm)}",
                     "",
                     "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
                     "|---|---|---|---|---|---|---|",
@@ -285,8 +300,8 @@ def write_report(
             )
             for lbl, prf in sorted(sbl.items(), key=lambda x: x[0].name):
                 lines.append(
-                    f"| {lbl.name} | {_fmt_prf(prf.precision)} | {_fmt_prf(prf.recall)}"
-                    f" | {_fmt_prf(prf.f1)} | {prf.tp} | {prf.fp} | {prf.fn} |"
+                    f"| {lbl.name} | {_fmt_p(prf)} | {_fmt_r(prf)}"
+                    f" | {_fmt_f1(prf)} | {prf.tp} | {prf.fp} | {prf.fn} |"
                 )
             lines.append("")
 

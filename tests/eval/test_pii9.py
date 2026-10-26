@@ -6,9 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -166,10 +164,9 @@ def test_uc134_undefined_metric_for_zero_gold_and_zero_pred(tmp_path: Path) -> N
     """UC-134: label with no gold and no pred → undefined in report.
 
     A two-document corpus has PESEL gold/pred in both docs and no OSOBA at all.
-    The per-label report for OSOBA must show 'undefined (0/0)', not '0.0000'.
-    The JSON sidecar must have null for P/R/F1 for that label.
+    P/R/F1 are 0.0 (float) when TP=FP=FN=0; the report layer detects undefined
+    from counts and renders 'undefined (0/0)' in markdown and null in JSON.
     """
-    # No gold and no pred for OSOBA in either document
     gold_docs = [[_pesel(0, 11)], [_pesel(5, 16)]]
     pred_docs = [[_pesel(0, 11)], [_pesel(5, 16)]]
 
@@ -178,10 +175,15 @@ def test_uc134_undefined_metric_for_zero_gold_and_zero_pred(tmp_path: Path) -> N
         [[s for s in p if s.label == Label.OSOBA] for p in pred_docs],
     )
 
-    # All three metrics undefined (TP=FP=FN=0)
-    assert prf_osoba.precision is None, "precision must be None for zero denominator"
-    assert prf_osoba.recall is None, "recall must be None for zero denominator"
-    assert prf_osoba.f1 is None, "f1 must be None for zero denominator"
+    # TP=FP=FN=0 → P/R/F1 are 0.0; denominators are zero → undefined at report time
+    assert prf_osoba.precision == 0.0
+    assert prf_osoba.recall == 0.0
+    assert prf_osoba.f1 == 0.0
+    assert prf_osoba.tp == 0
+    assert prf_osoba.fp == 0
+    assert prf_osoba.fn == 0
+    assert (prf_osoba.tp + prf_osoba.fp) == 0, "precision denominator = 0 → undefined"
+    assert (prf_osoba.tp + prf_osoba.fn) == 0, "recall denominator = 0 → undefined"
 
     # write_report must produce 'undefined (0/0)' in markdown, not '0.0000'
     res = _minimal_bench_result(
@@ -189,13 +191,14 @@ def test_uc134_undefined_metric_for_zero_gold_and_zero_pred(tmp_path: Path) -> N
         gold_per_doc=gold_docs,
         pred_per_doc=pred_docs,
     )
+    pesel_prf = corpus_entity_metrics(gold_docs, pred_docs)
     metrics: dict[str, object] = {
-        "strict_micro": corpus_entity_metrics(gold_docs, pred_docs),
-        "strict_by_label": {Label.PESEL: corpus_entity_metrics(gold_docs, pred_docs),
-                             Label.OSOBA: prf_osoba},
+        "strict_micro": pesel_prf,
+        "strict_by_label": {Label.PESEL: pesel_prf, Label.OSOBA: prf_osoba},
         "partial_micro": corpus_entity_metrics(gold_docs, pred_docs, match="partial"),
         "partial_by_label": {Label.OSOBA: prf_osoba},
-        "risk_weighted_recall": None,
+        "risk_weighted_recall": 0.0,
+        "risk_weighted_recall_undefined": False,
         "leak_rate": LeakRate(0, 2, 0, 2, []),
         "fidelity": 0,
         "numbering": NumberingStats(0, 0, 0, 0),
@@ -217,24 +220,19 @@ def test_uc134_undefined_metric_for_zero_gold_and_zero_pred(tmp_path: Path) -> N
     content = md_path.read_text(encoding="utf-8")
 
     # Markdown: 'undefined (0/0)' must appear for OSOBA row; '0.0000' must NOT
-    # appear in the OSOBA row for any of P/R/F1
     osoba_row_match = re.search(r"\| OSOBA \|([^\n]+)", content)
     assert osoba_row_match, "OSOBA row not found in report"
     osoba_row = osoba_row_match.group(0)
     assert "undefined (0/0)" in osoba_row, f"Expected 'undefined (0/0)' in OSOBA row: {osoba_row!r}"
     assert "0.0000" not in osoba_row, f"'0.0000' must not appear in OSOBA row: {osoba_row!r}"
 
-    # risk-weighted recall undefined → 'undefined (0/0)' appears in the RWR section
-    assert "undefined (0/0)" in content
 
+def test_uc135_undefined_leak_rate_and_rwr(tmp_path: Path) -> None:
+    """UC-135: leak rate undefined when no docs with direct-id; RWR undefined for zero gold.
 
-# ---------------------------------------------------------------------------
-# UC-135: zero direct-id docs → leak rate undefined; zero-gold RWR → undefined
-# ---------------------------------------------------------------------------
-
-
-def test_uc135_undefined_leak_rate_and_rwr() -> None:
-    """UC-135: leak rate undefined when no docs with direct-id; RWR undefined for zero gold."""
+    Functions return 0.0 (float); 'undefined' is decided at the report layer
+    via docs_with_direct_id and the rwr_undefined flag.
+    """
     # Documents have only OSOBA spans (not in DIRECT_IDENTIFIERS)
     originals = ["Jan Kowalski podpisał umowę."]
     gold_spans_no_direct = [[_osoba(0, 13)]]
@@ -243,28 +241,59 @@ def test_uc135_undefined_leak_rate_and_rwr() -> None:
     lr = leak_rate(originals, gold_spans_no_direct, rendered, ["doc_x"])
 
     # No docs with direct identifiers → docs_with_direct_id = 0
-    assert lr.docs_with_direct_id == 0, (
-        f"Expected docs_with_direct_id=0, got {lr.docs_with_direct_id}"
-    )
-    # docs_total is still 1 (total documents)
+    assert lr.docs_with_direct_id == 0
     assert lr.docs_total == 1
 
-    # risk_weighted_recall on empty gold → undefined
+    # RWR on empty gold → 0.0 (undefined detected at report time from gold count)
     rwr_empty = corpus_risk_weighted_recall([[]], [[]])
-    assert rwr_empty is None, "RWR with zero gold weight must be None (undefined)"
+    assert rwr_empty == 0.0, "RWR returns 0.0; undefined is a report-layer concern"
 
-    # write_report renders 'undefined (0/0)' for the doc-leak-rate section
-    from eval.report import _fmt_doc_leak
+    # Report format helpers render 'undefined (0/0)'
+    from eval.report import _fmt_doc_leak, _fmt_rwr, _fmt_val_leak
 
     assert _fmt_doc_leak(lr) == "undefined (0/0)", (
         f"Expected 'undefined (0/0)', got {_fmt_doc_leak(lr)!r}"
     )
+    assert _fmt_rwr(0.0, undefined=True) == "undefined (0/0)"
+    assert _fmt_rwr(0.5, undefined=False) == "0.5000"
 
-    # Also check values leak rate when no gold values exist
     lr_empty_values = leak_rate([], [], [], [])
-    from eval.report import _fmt_val_leak
-
     assert _fmt_val_leak(lr_empty_values) == "undefined (0/0)"
+
+    # write_report renders 'undefined (0/0)' when rwr_undefined=True
+    prf_zero = corpus_entity_metrics([[]], [[]])
+    res = _minimal_bench_result(
+        originals=originals,
+        gold_per_doc=gold_spans_no_direct,
+        pred_per_doc=[[]],
+    )
+    md_path = tmp_path / "report_rwr_undef.md"
+    write_report(
+        md_path,
+        system_name="test",
+        system_version="0.0",
+        bench_version="v1",
+        split="dev",
+        threshold=None,
+        result=res,
+        metrics={
+            "strict_micro": prf_zero,
+            "strict_by_label": {},
+            "partial_micro": prf_zero,
+            "partial_by_label": {},
+            "risk_weighted_recall": 0.0,
+            "risk_weighted_recall_undefined": True,
+            "leak_rate": lr,
+            "fidelity": 0,
+            "numbering": NumberingStats(0, 0, 0, 0),
+            "throughput": ThroughputStats(100.0, 0.01),
+            "peak_ram": 0,
+        },
+    )
+    report_content = md_path.read_text(encoding="utf-8")
+    assert "undefined (0/0)" in report_content, (
+        "Report must show 'undefined (0/0)' for zero-gold RWR and zero direct-id leak"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -286,13 +315,16 @@ def test_uc136_none_system_bench_v1_dev(tmp_path: Path) -> None:
         pytest.skip("bench/v1/dev not available")
 
     out_dir = tmp_path / "reports"
-    env = {**os.environ, "PYTHONPATH": str(_root)}
     ret = main(
         [
-            "--system", "none",
-            "--bench", "v1",
-            "--split", "dev",
-            "--out-dir", str(out_dir),
+            "--system",
+            "none",
+            "--bench",
+            "v1",
+            "--split",
+            "dev",
+            "--out-dir",
+            str(out_dir),
         ]
     )
     assert ret == 0, "eval.run --system none must exit 0"
@@ -336,13 +368,16 @@ def test_uc137_mask_all_system_bench_v1_dev(tmp_path: Path) -> None:
         pytest.skip("bench/v1/dev not available")
 
     out_dir = tmp_path / "reports"
-    env = {**os.environ, "PYTHONPATH": str(_root)}
     ret = main(
         [
-            "--system", "mask-all",
-            "--bench", "v1",
-            "--split", "dev",
-            "--out-dir", str(out_dir),
+            "--system",
+            "mask-all",
+            "--bench",
+            "v1",
+            "--split",
+            "dev",
+            "--out-dir",
+            str(out_dir),
         ]
     )
     assert ret == 0, "eval.run --system mask-all must exit 0"
@@ -390,10 +425,14 @@ def test_uc138_report_provenance_metadata(tmp_path: Path) -> None:
     out_dir = tmp_path / "reports"
     ret = main(
         [
-            "--system", "none",
-            "--bench", "v1",
-            "--split", "dev",
-            "--out-dir", str(out_dir),
+            "--system",
+            "none",
+            "--bench",
+            "v1",
+            "--split",
+            "dev",
+            "--out-dir",
+            str(out_dir),
         ]
     )
     assert ret == 0
@@ -408,17 +447,15 @@ def test_uc138_report_provenance_metadata(tmp_path: Path) -> None:
 
     # Markdown: commit either 40-char hex or 'unknown'
     commit_pattern = re.compile(r"Commit:\s+([0-9a-f]{40}|unknown)")
-    assert commit_pattern.search(md), (
-        "Markdown report must contain 'Commit: <40hex or unknown>'"
-    )
+    assert commit_pattern.search(md), "Markdown report must contain 'Commit: <40hex or unknown>'"
 
     # JSON: git_commit field present and valid
     assert "git_commit" in data, "JSON must have git_commit field"
     commit_val = data["git_commit"]
     assert isinstance(commit_val, str), "git_commit must be a string"
-    assert (
-        re.fullmatch(r"[0-9a-f]{40}", commit_val) or commit_val == "unknown"
-    ), f"git_commit must be 40-char hex or 'unknown', got {commit_val!r}"
+    assert re.fullmatch(r"[0-9a-f]{40}", commit_val) or commit_val == "unknown", (
+        f"git_commit must be 40-char hex or 'unknown', got {commit_val!r}"
+    )
 
     # JSON: bench_sha256 dict with SHA-256 digests
     assert "bench_sha256" in data, "JSON must have bench_sha256 field"
