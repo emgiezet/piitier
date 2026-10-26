@@ -41,8 +41,6 @@ ThroughputStats = _metrics_mod.ThroughputStats
 
 def test_uc90_write_report_and_zero_gold(tmp_path: Path) -> None:
     res = BenchResult(
-        gold_spans=[],
-        pred_spans=[],
         gold_spans_per_doc=[],
         pred_spans_per_doc=[],
         originals=["Test doc without PII."],
@@ -170,8 +168,6 @@ def test_test_split_stdout_and_final_numbers(tmp_path: Path) -> None:
             test_dir.rmdir()
 
     res_obj = BenchResult(
-        gold_spans=[],
-        pred_spans=[],
         gold_spans_per_doc=[],
         pred_spans_per_doc=[],
         originals=["Test."],

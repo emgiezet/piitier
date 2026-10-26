@@ -14,7 +14,7 @@ if "eval.metrics" not in sys.modules:
         sys.modules["eval.metrics"] = _metrics_mod
         _spec_m.loader.exec_module(_metrics_mod)
 
-from eval.metrics import entity_metrics
+from eval.metrics import corpus_entity_metrics
 from piitier.labels import Label
 from piitier.ner.inference import NerPredictor, bio_tag_names, decode_spans, merge_windows
 from piitier.spans import Span
@@ -150,23 +150,27 @@ def score_checkpoint(
     records: list[dict[str, Any]],
     threshold: float | None = None,
 ) -> tuple[float, float]:
-    """Score checkpoint or ONNX model on records. Returns (f1, recall) strict."""
+    """Score checkpoint or ONNX model on records. Returns (f1, recall) strict.
+
+    Dispatch rules:
+    - path.suffix == ".onnx"  -> OnnxNerPredictor on that exact file.
+    - path.is_dir()           -> NerPredictor (PyTorch); never glob for *.onnx.
+    """
     thresh = threshold if threshold is not None else 0.0
     path = Path(checkpoint_or_dir)
 
-    if path.suffix == ".onnx" or (path.is_dir() and list(path.glob("*.onnx"))):
-        onnx_file = path if path.suffix == ".onnx" else list(path.glob("*.onnx"))[0]
-        tokenizer_ckpt = (
-            path.parent.parent if path.suffix == ".onnx" and path.parent.name == "onnx" else path
-        )
+    if path.suffix == ".onnx":
+        tokenizer_ckpt = path.parent.parent if path.parent.name == "onnx" else path.parent
         if not (tokenizer_ckpt / "config.json").exists():
-            tokenizer_ckpt = path.parent if path.is_dir() else path.parent
-        predictor = OnnxNerPredictor(onnx_file, tokenizer_ckpt, threshold=thresh)
+            tokenizer_ckpt = path.parent
+        predictor: NerPredictor | OnnxNerPredictor = OnnxNerPredictor(
+            path, tokenizer_ckpt, threshold=thresh
+        )
     else:
         predictor = NerPredictor(checkpoint=checkpoint_or_dir, threshold=thresh)
 
-    gold_all: list[Span] = []
-    pred_all: list[Span] = []
+    gold_docs: list[list[Span]] = []
+    pred_docs: list[list[Span]] = []
     for r in records:
         gold_spans = [
             Span(
@@ -180,10 +184,10 @@ def score_checkpoint(
             for s in r.get("spans", r.get("gold", []))
         ]
         pred_spans = predictor.predict(r["text"])
-        gold_all.extend(gold_spans)
-        pred_all.extend(pred_spans)
+        gold_docs.append(gold_spans)
+        pred_docs.append(pred_spans)
 
-    prf = entity_metrics(gold_all, pred_all, match="strict")
+    prf = corpus_entity_metrics(gold_docs, pred_docs, match="strict")
     return (float(prf.f1), float(prf.recall))
 
 
@@ -230,7 +234,9 @@ def main(argv: list[str] | None = None) -> int:
     eval_records = read_jsonl(config.eval_file)
     threshold = config.threshold if config.threshold is not None else 0.0
 
-    fp32_f1, fp32_recall = score_checkpoint(checkpoint, eval_records, threshold)
+    # Score FP32 on the exported ONNX file (not the PyTorch checkpoint),
+    # so the delta isolates only quantisation, not runtime differences.
+    fp32_f1, fp32_recall = score_checkpoint(onnx_path, eval_records, threshold)
     int8_f1, int8_recall = score_checkpoint(int8_path, eval_records, threshold)
 
     f1_delta = float(fp32_f1 - int8_f1)

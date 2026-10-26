@@ -17,7 +17,7 @@ if "eval.metrics" not in sys.modules:
         sys.modules["eval.metrics"] = _metrics_mod
         _spec_m.loader.exec_module(_metrics_mod)
 
-from eval.metrics import entity_metrics
+from eval.metrics import corpus_entity_metrics
 from piitier.labels import Label
 from piitier.ner.inference import NerPredictor
 from piitier.spans import Span
@@ -57,7 +57,8 @@ def calibrate_threshold(
 ) -> ThresholdResult:
     """Calibrate detection threshold targeting recall >= target_recall.
     Candidates: 0.0 + sorted unique prediction scores (descending).
-    For threshold t: predicted spans with score >= t; strict PRF via entity_metrics.
+    For threshold t: predicted spans with score >= t; strict PRF via corpus_entity_metrics.
+    Matching is per-document (a prediction from doc B cannot match gold from doc A).
     Chooses the highest threshold with recall >= target_recall.
     If no threshold meets target, returns ThresholdResult(0.0, recall@0.0, precision@0.0, False).
     """
@@ -73,8 +74,8 @@ def calibrate_threshold(
 
     results: list[ThresholdResult] = []
     for t in candidates:
-        gold_all: list[Span] = []
-        pred_all: list[Span] = []
+        gold_docs: list[list[Span]] = []
+        pred_docs: list[list[Span]] = []
         for doc in docs:
             g = doc["gold"] if isinstance(doc, dict) else doc.gold
             p_list = doc["pred"] if isinstance(doc, dict) else doc.pred
@@ -100,13 +101,13 @@ def calibrate_threshold(
                     score=item.score if isinstance(item, Span) else item.get("score", 1.0),
                     status=item.status if isinstance(item, Span) else item.get("status", "valid"),
                 )
-                score = span_obj.score if span_obj.score is not None else 1.0
-                if score >= t:
+                item_score = span_obj.score if span_obj.score is not None else 1.0
+                if item_score >= t:
                     pred_spans.append(span_obj)
-            gold_all.extend(gold_spans)
-            pred_all.extend(pred_spans)
+            gold_docs.append(gold_spans)
+            pred_docs.append(pred_spans)
 
-        prf = entity_metrics(gold_all, pred_all, match="strict")
+        prf = corpus_entity_metrics(gold_docs, pred_docs, match="strict")
         target_met = prf.recall >= target_recall
         results.append(
             ThresholdResult(

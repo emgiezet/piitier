@@ -50,7 +50,7 @@ def write_report(
     threshold_str = str(threshold) if threshold is not None else "brak — system bez progu"
     date_str = datetime.now().isoformat()
     doc_count = len(result.doc_ids)
-    gold_count = len(result.gold_spans)
+    gold_count = sum(len(g) for g in result.gold_spans_per_doc)
 
     gpu_name = "CPU"
     try:

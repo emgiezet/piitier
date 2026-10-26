@@ -1,7 +1,8 @@
-"""Evaluation metrics module (eval/metrics.py) — PII-4-d.
+"""Evaluation metrics module (eval/metrics.py) — PII-4-d, PII-7.
 
 Czyste funkcje ewaluacji: precision/recall encji (strict i partial),
 recall ważony ryzykiem, leak rate, wierność tekstu, spójność numeracji, throughput.
+PII-7 dodaje korpusowe funkcje per-dokument i pomocnicze liczniki TP/FP/FN.
 """
 
 from __future__ import annotations
@@ -31,21 +32,17 @@ def _spans_match(g: Span, p: Span, match: Literal["strict", "partial"]) -> bool:
         return max(g.start, p.start) < min(g.end, p.end)
 
 
-def entity_metrics(
+def _entity_counts(
     gold: list[Span],
     pred: list[Span],
-    match: Literal["strict", "partial"] = "strict",
-) -> EntityPRF:
-    """Compute micro EntityPRF (precision, recall, f1) for gold vs pred spans.
+    match: Literal["strict", "partial"],
+) -> tuple[int, int, int]:
+    """Return (TP, FP, FN) for gold vs pred spans with the given match mode.
 
-    strict: same label and identical [start, end).
-    partial: same label and any non-empty overlap [start, end).
-    Zero-gold and zero-pred -> P/R/F1 = 0.0.
+    Matching is greedy: each gold span is matched at most once.
     """
     if not gold and not pred:
-        return EntityPRF(0.0, 0.0, 0.0)
-    if not gold or not pred:
-        return EntityPRF(0.0, 0.0, 0.0)
+        return (0, 0, 0)
 
     matched_gold: set[int] = set()
     matched_pred: set[int] = set()
@@ -58,10 +55,53 @@ def entity_metrics(
                 break
 
     tp = len(matched_pred)
-    precision = tp / len(pred) if len(pred) > 0 else 0.0
-    recall = tp / len(gold) if len(gold) > 0 else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0.0 else 0.0
+    fp = len(pred) - tp
+    fn = len(gold) - tp
+    return (tp, fp, fn)
 
+
+def entity_metrics(
+    gold: list[Span],
+    pred: list[Span],
+    match: Literal["strict", "partial"] = "strict",
+) -> EntityPRF:
+    """Compute micro EntityPRF (precision, recall, f1) for gold vs pred spans.
+
+    strict: same label and identical [start, end).
+    partial: same label and any non-empty overlap [start, end).
+    Zero-gold and zero-pred -> P/R/F1 = 0.0.
+    """
+    tp, fp, fn = _entity_counts(gold, pred, match)
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0.0 else 0.0
+    return EntityPRF(precision=precision, recall=recall, f1=f1)
+
+
+def corpus_entity_metrics(
+    gold_docs: list[list[Span]],
+    pred_docs: list[list[Span]],
+    match: Literal["strict", "partial"] = "strict",
+) -> EntityPRF:
+    """Compute micro EntityPRF aggregated over a corpus of documents.
+
+    Matching is performed only within each document (per-document).
+    Raises ValueError if gold_docs and pred_docs differ in length.
+    """
+    if len(gold_docs) != len(pred_docs):
+        raise ValueError(
+            f"gold_docs and pred_docs must have the same length, "
+            f"got {len(gold_docs)} and {len(pred_docs)}"
+        )
+    total_tp = total_fp = total_fn = 0
+    for gold, pred in zip(gold_docs, pred_docs):
+        tp, fp, fn = _entity_counts(gold, pred, match)
+        total_tp += tp
+        total_fp += fp
+        total_fn += fn
+    precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
+    recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0.0 else 0.0
     return EntityPRF(precision=precision, recall=recall, f1=f1)
 
 
@@ -77,6 +117,32 @@ def entity_metrics_by_label(
         g_lbl = [s for s in gold if s.label == lbl]
         p_lbl = [s for s in pred if s.label == lbl]
         result[lbl] = entity_metrics(g_lbl, p_lbl, match)
+    return result
+
+
+def corpus_entity_metrics_by_label(
+    gold_docs: list[list[Span]],
+    pred_docs: list[list[Span]],
+    match: Literal["strict", "partial"] = "strict",
+) -> dict[Label, EntityPRF]:
+    """Compute per-label EntityPRF aggregated over a corpus of documents.
+
+    Matching is performed only within each document.
+    Raises ValueError if gold_docs and pred_docs differ in length.
+    """
+    if len(gold_docs) != len(pred_docs):
+        raise ValueError(
+            f"gold_docs and pred_docs must have the same length, "
+            f"got {len(gold_docs)} and {len(pred_docs)}"
+        )
+    all_labels: set[Label] = set()
+    for gold, pred in zip(gold_docs, pred_docs):
+        all_labels |= {s.label for s in gold} | {s.label for s in pred}
+    result: dict[Label, EntityPRF] = {}
+    for lbl in sorted(all_labels, key=lambda lbl_item: lbl_item.name):
+        g_docs = [[s for s in gold if s.label == lbl] for gold in gold_docs]
+        p_docs = [[s for s in pred if s.label == lbl] for pred in pred_docs]
+        result[lbl] = corpus_entity_metrics(g_docs, p_docs, match)
     return result
 
 
@@ -152,27 +218,55 @@ def group_for_label(label: Label) -> str:
     raise ValueError(f"Unknown label: {label}")
 
 
-def risk_weighted_recall(gold: list[Span], pred: list[Span]) -> float:
-    """Compute risk-weighted recall (strict match). Zero-gold -> 0.0."""
-    if not gold:
-        return 0.0
-
+def _risk_weight_counts(gold: list[Span], pred: list[Span]) -> tuple[float, float]:
+    """Return (matched_weight, total_weight) for one document (strict match)."""
     total_weight = 0.0
     matched_weight = 0.0
-
     matched_gold: set[int] = set()
     for p in pred:
         for g_idx, g in enumerate(gold):
             if g_idx not in matched_gold and _spans_match(g, p, "strict"):
                 matched_gold.add(g_idx)
                 break
-
     for g_idx, g in enumerate(gold):
         w = GROUP_WEIGHTS[group_for_label(g.label)]
         total_weight += w
         if g_idx in matched_gold:
             matched_weight += w
+    return (matched_weight, total_weight)
 
+
+def risk_weighted_recall(gold: list[Span], pred: list[Span]) -> float:
+    """Compute risk-weighted recall (strict match). Zero-gold -> 0.0."""
+    if not gold:
+        return 0.0
+    matched_weight, total_weight = _risk_weight_counts(gold, pred)
+    if total_weight == 0.0:
+        return 0.0
+    return matched_weight / total_weight
+
+
+def corpus_risk_weighted_recall(
+    gold_docs: list[list[Span]],
+    pred_docs: list[list[Span]],
+) -> float:
+    """Compute risk-weighted recall micro-aggregated over a corpus of documents.
+
+    Matching is performed only within each document (per-document).
+    Raises ValueError if gold_docs and pred_docs differ in length.
+    Returns 0.0 when all documents have no gold spans.
+    """
+    if len(gold_docs) != len(pred_docs):
+        raise ValueError(
+            f"gold_docs and pred_docs must have the same length, "
+            f"got {len(gold_docs)} and {len(pred_docs)}"
+        )
+    total_weight = 0.0
+    matched_weight = 0.0
+    for gold, pred in zip(gold_docs, pred_docs):
+        mw, tw = _risk_weight_counts(gold, pred)
+        matched_weight += mw
+        total_weight += tw
     if total_weight == 0.0:
         return 0.0
     return matched_weight / total_weight
