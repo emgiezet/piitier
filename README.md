@@ -46,6 +46,9 @@ uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold
 Exit code 2 means a usage or input error (missing file or model, invalid threshold). Errors name the path,
 never document content.
 
+`piitier scan <files>…` lists checksum-valid identifiers as `path:line:column: LABEL` without printing the
+value, and exits 1 if any are not in `--allowlist`. Use it to check files before sharing them.
+
 ## Python API
 
 ```python
@@ -129,14 +132,20 @@ cards in one job is forbidden by `.claude/playbooks/model-training.md`.
 
 ```bash
 uv sync --frozen
-uv run ruff format --check . && uv run ruff check . && uv run mypy src
-uv run pytest -q -m "not integration"      # unit tests, no network
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+uv run pre-commit run --all-files          # gitleaks, private keys, ruff, mypy, piitier scan
+uv run pytest -q -m "not integration"      # unit tests, no network (also run on push)
 uv run pytest -q -m integration            # downloads checkpoints from the Hugging Face Hub
 ```
 
+CI (`.github/workflows/ci.yml`) runs the hooks and unit tests on every pull request and push to `main`.
+A new checksum-valid identifier in any committed file fails the `piitier-scan` hook unless its fingerprint
+is in `.pii-allowlist`; only synthetic values may be allowlisted.
+
 Work is specced first: every change has a `specs/<TICKET>/spec.md` whose `UC-<n>` ids appear in test names.
 Agents and humans follow [`CLAUDE.md`](CLAUDE.md) (task router, invariants) and
-[`.claude/rules/python.md`](.claude/rules/python.md).
+[`.claude/rules/python.md`](.claude/rules/python.md). Results and decisions so far are summarised in
+[`FINDINGS.md`](FINDINGS.md).
 
 ## Known limitations
 
@@ -152,4 +161,4 @@ Agents and humans follow [`CLAUDE.md`](CLAUDE.md) (task router, invariants) and
 
 ## License
 
-Apache-2.0 (declared in `pyproject.toml`). The base model is Apache-2.0.
+Apache-2.0; see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). The base model is Apache-2.0.
