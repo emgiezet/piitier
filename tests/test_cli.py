@@ -398,6 +398,7 @@ def test_threshold_nan_exits_2_no_traceback(tmp_path: Path) -> None:
     )
     assert rc == 2
     assert b"Traceback" not in stderr_bytes
+    assert b"invalid threshold" in stderr_bytes
     assert stdout_bytes == b""
 
 
@@ -412,6 +413,7 @@ def test_threshold_gt1_exits_2_no_traceback(tmp_path: Path) -> None:
     )
     assert rc == 2
     assert b"Traceback" not in stderr_bytes
+    assert b"invalid threshold" in stderr_bytes
     assert stdout_bytes == b""
 
 

@@ -41,6 +41,10 @@ def mask_file(
     if model is not None and not model.is_dir():
         print(f"model not found: {model}", file=sys.stderr)
         return 2
+    # `not (0 <= t <= 1)` is also True for NaN, which fails every comparison.
+    if model is not None and not (0.0 <= threshold <= 1.0):
+        print(f"invalid threshold: {threshold} (expected a number in [0, 1])", file=sys.stderr)
+        return 2
 
     # 2. Refuse to overwrite input with output — check early, before model
     #    load, so a bad --model never writes partial output (NIT finding 8).
