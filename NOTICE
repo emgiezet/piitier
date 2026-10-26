@@ -1,0 +1,7 @@
+piitier
+Copyright 2026 Max Małecki
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Model checkpoints are fine-tuned from bardsai/eu-pii-anonimization-multilang-v2
+(Apache-2.0, bards.ai) and are distributed separately, each with its own model card.
