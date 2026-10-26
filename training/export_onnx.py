@@ -153,13 +153,14 @@ def score_checkpoint(
     """Score checkpoint or ONNX model on records. Returns (f1, recall) strict.
 
     Dispatch rules:
-    - path.suffix == ".onnx"  -> OnnxNerPredictor on that exact file.
-    - path.is_dir()           -> NerPredictor (PyTorch); never glob for *.onnx.
+    - path.is_file() and path.suffix == ".onnx" -> OnnxNerPredictor on that exact file.
+    - everything else (directory, non-.onnx file) -> NerPredictor (PyTorch).
+      A directory named *.onnx still goes to NerPredictor.
     """
     thresh = threshold if threshold is not None else 0.0
     path = Path(checkpoint_or_dir)
 
-    if path.suffix == ".onnx":
+    if path.is_file() and path.suffix == ".onnx":
         tokenizer_ckpt = path.parent.parent if path.parent.name == "onnx" else path.parent
         if not (tokenizer_ckpt / "config.json").exists():
             tokenizer_ckpt = path.parent

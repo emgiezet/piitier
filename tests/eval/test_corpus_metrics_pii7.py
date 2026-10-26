@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -45,6 +46,8 @@ NumberingStats = _metrics_mod.NumberingStats
 ThroughputStats = _metrics_mod.ThroughputStats
 
 BenchResult = _run_mod.BenchResult
+run_benchmark = _run_mod.run_benchmark
+read_docs = _run_mod.read_docs
 write_report = _report_mod.write_report
 
 
@@ -137,58 +140,120 @@ def test_uc112_risk_weighted_recall_length_mismatch_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
-# UC-113: BenchResult has no flat gold_spans/pred_spans; report reflects per-doc
+# UC-113: run_benchmark + corpus metrics with cross-doc collision scenario
+#
+# Verifies end-to-end: read_docs (eval.run) → run_benchmark (eval.run) →
+# corpus_entity_metrics / by_label / risk_weighted_recall → gold_spans count.
+# Cross-doc collision: gold PESEL(0,11) only in doc A, pred PESEL(0,11) only in
+# doc B → strict/partial micro, by-label PESEL, risk-weighted recall all 0;
+# JSON gold_spans count == 1.
+#
+# This test FAILS on origin/main because:
+#  (a) corpus_entity_metrics does not exist in old metrics.py
+#  (b) BenchResult still has flat gold_spans/pred_spans fields
 # ---------------------------------------------------------------------------
 
 
-def test_uc113_bench_result_and_report_use_per_document_metrics(tmp_path: Path) -> None:
-    """UC-113: BenchResult no longer has flat gold_spans/pred_spans; report reflects per-doc."""
-    # gold_spans_per_doc: doc A has one PESEL span, doc B has none
-    gold_per_doc = [[_pesel(0, 11)], []]
-    # pred_spans_per_doc: doc A predicts the PESEL correctly, doc B predicts nothing
-    pred_per_doc = [[_pesel(0, 11)], []]
-
-    result = BenchResult(
-        gold_spans_per_doc=gold_per_doc,
-        pred_spans_per_doc=pred_per_doc,
-        originals=["12345678901", "no pii here"],
-        rendered=["[PESEL_1]", "no pii here"],
-        doc_ids=["doc_a", "doc_b"],
-        latencies=[0.01, 0.01],
-        threshold=0.5,
+def test_uc113_run_benchmark_cross_doc_collision_all_metrics_zero(tmp_path: Path) -> None:
+    """UC-113: cross-doc collision via run_benchmark → all P/R metrics 0, gold_count=1."""
+    # Two-doc JSONL: doc A has PESEL gold at (0,11), doc B has no gold
+    docs_file = tmp_path / "docs.jsonl"
+    docs_file.write_text(
+        json.dumps(
+            {
+                "id": "docA",
+                "doc_type": "t",
+                "text": "12345678901 X",
+                "spans": [{"start": 0, "end": 11, "label": "PESEL", "text": "12345678901"}],
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "id": "docB",
+                "doc_type": "t",
+                "text": "12345678901 Y",
+                "spans": [],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
     )
+    docs = read_docs(docs_file)
 
-    # BenchResult must NOT have flat gold_spans / pred_spans attributes
-    assert not hasattr(result, "gold_spans"), "gold_spans flat field must be removed"
-    assert not hasattr(result, "pred_spans"), "pred_spans flat field must be removed"
+    class CrossDocSystem:
+        """Predicts PESEL(0,11) ONLY for doc B (text ends with Y), nothing for doc A."""
 
-    # gold count in report must equal sum of per-doc spans
+        def predict(self, text: str) -> list[Span]:
+            if text.endswith("Y"):
+                return [Span(0, 11, Label.PESEL, "pred", 1.0, "valid")]
+            return []
+
+    result = run_benchmark(CrossDocSystem(), docs)
+
+    # BenchResult must not carry flat gold_spans/pred_spans
+    assert not hasattr(result, "gold_spans"), "flat gold_spans must be removed"
+    assert not hasattr(result, "pred_spans"), "flat pred_spans must be removed"
+
+    # Per-document structure
+    assert len(result.gold_spans_per_doc) == 2
+    assert len(result.gold_spans_per_doc[0]) == 1  # doc A has 1 gold span
+    assert len(result.gold_spans_per_doc[1]) == 0  # doc B has no gold
+    assert len(result.pred_spans_per_doc[0]) == 0  # doc A: no pred
+    assert len(result.pred_spans_per_doc[1]) == 1  # doc B: pred PESEL(0,11)
+
+    # Cross-doc collision → strict micro P=R=F1=0
+    strict_micro = corpus_entity_metrics(
+        result.gold_spans_per_doc, result.pred_spans_per_doc, match="strict"
+    )
+    assert strict_micro.precision == 0.0
+    assert strict_micro.recall == 0.0
+    assert strict_micro.f1 == 0.0
+
+    # Partial micro also 0 (span offsets match but docs differ)
+    partial_micro = corpus_entity_metrics(
+        result.gold_spans_per_doc, result.pred_spans_per_doc, match="partial"
+    )
+    assert partial_micro.precision == 0.0
+    assert partial_micro.recall == 0.0
+
+    # By-label PESEL
+    by_label = corpus_entity_metrics_by_label(
+        result.gold_spans_per_doc, result.pred_spans_per_doc, match="strict"
+    )
+    assert Label.PESEL in by_label
+    assert by_label[Label.PESEL].recall == 0.0
+    assert by_label[Label.PESEL].precision == 0.0
+
+    # Risk-weighted recall
+    rwr = corpus_risk_weighted_recall(result.gold_spans_per_doc, result.pred_spans_per_doc)
+    assert rwr == 0.0
+
+    # JSON gold_spans count: sum of per-doc, not flat
     gold_count = sum(len(g) for g in result.gold_spans_per_doc)
     assert gold_count == 1
 
-    # Verify report renders correctly
+    # Report reflects the per-doc gold count correctly
     report_file = tmp_path / "report.md"
     write_report(
         report_file,
-        system_name="test",
-        system_version="0.1",
-        bench_version="v1",
+        system_name="cross-doc-test",
+        system_version="0.0",
+        bench_version="v0",
         split="dev",
-        threshold=0.5,
+        threshold=None,
         result=result,
         metrics={
-            "strict_micro": EntityPRF(1.0, 1.0, 1.0),
-            "strict_by_label": {},
-            "partial_micro": EntityPRF(1.0, 1.0, 1.0),
-            "partial_by_label": {},
-            "risk_weighted_recall": 1.0,
-            "leak_rate": LeakRate(0, 2, 0, 1, []),
+            "strict_micro": strict_micro,
+            "strict_by_label": by_label,
+            "partial_micro": partial_micro,
+            "partial_by_label": by_label,
+            "risk_weighted_recall": rwr,
+            "leak_rate": LeakRate(0, 2, 0, gold_count, []),
             "fidelity": 0,
             "numbering": NumberingStats(0, 0, 0, 0),
-            "throughput": ThroughputStats(50.0, 0.02),
-            "peak_ram": 2048,
+            "throughput": ThroughputStats(100.0, 0.01),
+            "peak_ram": 0,
         },
     )
-    content = report_file.read_text(encoding="utf-8")
-    # gold_count must appear as 1 in the report (not 2)
-    assert "Liczba spanów gold: 1" in content
+    assert "Liczba spanów gold: 1" in report_file.read_text(encoding="utf-8")
