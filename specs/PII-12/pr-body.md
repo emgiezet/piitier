@@ -7,4 +7,4 @@ Adopted from pawelkiszczak/warda (see FINDINGS.md, last section). Spec: `specs/P
 
 ### Verification
 - `uv run pre-commit run --all-files`: all hooks pass; `uv run pytest -q -m "not integration"`: green on the branch; CI on this PR.
-- Independent review: CHANGES_REQUESTED → all findings fixed; the new tests kill the reviewer's mutations.
+- Docs-only slice (no runtime code); no independent review. `tests/test_contributing.py` pins the sections and checks that the verification commands match `.claude/rules/python.md`.
