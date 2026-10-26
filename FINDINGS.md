@@ -32,6 +32,8 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 | Templates derived from internal policy PDFs and commission statements stay local (gitignored) and were filtered out of the git history | they kept literal source dates; CLAUDE.md invariant 2 (PR #9, [`docs/DATASET_CARD.md`](docs/DATASET_CARD.md)) |
 | A clean clone builds its corpus from hand-written templates only, so it differs from `data/synthetic/v0.3` | same |
 | New checksum-valid identifiers must be allowlisted on purpose (`.pii-allowlist`, `piitier scan` hook) | PII-8 |
+| Training templates annotate full names two ways: 23 occurrences in 16 templates as IMIE + NAZWISKO, 45 as OSOBA; `bench/v1` uses OSOBA throughout | likely part of the strict-F1 gap on the bench; the labelling guidelines follow `bench/v1`; unifying the templates needs a retrain (open ticket) |
+| Doctor titles (`dr`, `lek. med.`) are inside the LEKARZ span in the corpus (`src/piitier/datagen/render.py`) | the labelling guidelines follow the corpus |
 
 ## Process
 
@@ -40,13 +42,19 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 | Independent review caught a BLOCKER in two of the last three feature batches that all tests had passed | keep a review before every merge |
 | Tests written alongside a bugfix passed on the buggy code | bugfix tests must be shown to fail on the pre-fix code |
 | Subagents wrote into the owner's checkout instead of their worktree three times | absolute paths under the worktree, and check the owner's `git status` after every run |
+| In PII-9, PII-10 and PII-11 the reviewers' injected bugs (mutations) survived the first test suites | each fix round had to prove the new tests catch the reviewer's mutations |
 
 ## Compared with warda
 
 [`pawelkiszczak/warda`](https://github.com/pawelkiszczak/warda) is a local allow/redact/ask/block decision model for
-coding-agent tool calls, not a span anonymiser. Adopted from it: licence files, CI, pre-commit with secret scanning
-(PII-8). Adopted from PII-10: a separate calibration split with minimum support and confidence intervals.
-`calibration_file` in the run config is required before `training.calibrate` runs; existing run configs
-(e.g. `pii-5-v3`) must set this key before calibration is possible.
-Still open: a double-labelled hand-written gold set with an agreement floor and safe "twins",
-control baselines and reported denominators.
+coding-agent tool calls, not a span anonymiser. What piitier adopted and what is still open:
+
+| Practice | Where | Status |
+|---|---|---|
+| Licence files, CI on every PR, pre-commit with gitleaks and `piitier scan` | PII-8 | done |
+| Evaluation protocol: counts with every metric, zero denominator = undefined, control systems `none` / `mask-all`, report provenance | PII-9, [`docs/bench/PROTOCOL.md`](docs/bench/PROTOCOL.md) | done |
+| Calibration on a separate split, minimum support, Wilson interval, write-on-success | PII-10 | done; no calibration split exists yet, so existing run configs (e.g. `pii-5-v3`) need a `calibration_file` before `training.calibrate` runs |
+| Labelling guidelines, gold-set schema v2 with two annotators and twins, agreement with a kappa floor of 0.7 | PII-11, [`docs/labelling/GUIDELINES.md`](docs/labelling/GUIDELINES.md) | tooling done; writing and double-labelling the documents needs human annotators |
+| CONTRIBUTING and PR template | PII-12 | done |
+| Gate evaluators that refuse undefined metrics (the INT8 gate computes deltas from 0.0) | PROTOCOL.md, rule 1 | open |
+| Redaction hook for coding agents (`PreToolUse` / `PostToolUse`) | — | idea, not specced |
