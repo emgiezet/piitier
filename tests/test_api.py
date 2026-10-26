@@ -265,3 +265,64 @@ def test_uc110_valueerror_before_torch_import() -> None:
     assert result.returncode == 0, (
         f"subprocess failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Threshold validation (finding 3)
+# ---------------------------------------------------------------------------
+
+
+def test_threshold_nan_raises_valueerror() -> None:
+    """Anonymizer raises ValueError for NaN threshold before any heavy import."""
+    import math
+
+    with pytest.raises(ValueError, match="threshold"):
+        piitier.Anonymizer(predictor=_StubPredictor(), threshold=math.nan)
+
+
+def test_threshold_gt1_raises_valueerror() -> None:
+    """Anonymizer raises ValueError for threshold > 1."""
+    with pytest.raises(ValueError, match="threshold"):
+        piitier.Anonymizer(predictor=_StubPredictor(), threshold=1.5)
+
+
+def test_threshold_lt0_raises_valueerror() -> None:
+    """Anonymizer raises ValueError for threshold < 0."""
+    with pytest.raises(ValueError, match="threshold"):
+        piitier.Anonymizer(predictor=_StubPredictor(), threshold=-0.1)
+
+
+# ---------------------------------------------------------------------------
+# Nonexistent model path raises ValueError (finding 5)
+# ---------------------------------------------------------------------------
+
+
+def test_uc110_anonymizer_nonexistent_model_raises_valueerror() -> None:
+    """Anonymizer(model=<nonexistent>) raises ValueError before loading transformers."""
+    from pathlib import Path
+
+    with pytest.raises(ValueError, match="not found"):
+        piitier.Anonymizer(model=Path("/absolutely/nonexistent/path/xyz"))
+
+
+def test_uc110_nonexistent_model_no_torch_import() -> None:
+    """Nonexistent model path raises ValueError without touching torch/transformers."""
+    import subprocess
+    import sys
+
+    script = (
+        "import piitier, sys\n"
+        "try:\n"
+        "    piitier.Anonymizer(model='/absolutely/nonexistent/xyz')\n"
+        "except ValueError:\n"
+        "    pass\n"
+        "assert 'transformers' not in sys.modules, 'transformers was imported'\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"subprocess failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )

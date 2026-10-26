@@ -4,6 +4,8 @@ Implements the precedence rules from ``.claude/playbooks/pipeline-core.md``
 (section "Fusion precedence"):
 
 1. A rule span with ``status="valid"`` beats any overlapping NER span.
+   Rule spans are identified by ``source == "rule"`` or
+   ``source.startswith("rule:")``.
 2. Otherwise the type-priority table decides: higher group weight from
    ``docs/TAXONOMY.md`` wins; equal weight → longer span wins; equal length
    → earlier ``start`` wins.
@@ -14,11 +16,18 @@ Implements the precedence rules from ``.claude/playbooks/pipeline-core.md``
 5. Adjacent output spans are NOT merged. Every output span keeps the
    ``source`` and ``status`` of its winning input span.
 
+Complexity: O(n log n) via an event-sweep with a lazy-deletion max-heap.
+
 Sync test: ``tests/test_fusion.py::test_weights_match_taxonomy`` asserts
 that ``GROUP_WEIGHTS`` equals the table parsed from ``docs/TAXONOMY.md``.
 """
 
 from __future__ import annotations
+
+import heapq
+import math
+from collections import defaultdict
+from typing import Any
 
 from piitier.labels import Label
 from piitier.spans import Span
@@ -93,15 +102,19 @@ def label_weight(label: Label) -> float:
 
 
 def _is_valid_rule(span: Span) -> bool:
-    """Return ``True`` when *span* is a rule-based span with ``status="valid"``."""
-    return span.source.startswith("rule:") and span.status == "valid"
+    """Return ``True`` when *span* is a rule-based span with ``status="valid"``.
+
+    Rule detectors emit ``source="rule"``; ``"rule:<name>"`` is also accepted
+    for any legacy or test spans.
+    """
+    return (span.source == "rule" or span.source.startswith("rule:")) and span.status == "valid"
 
 
 def _priority_key(span: Span) -> tuple[int, float, int, int]:
     """Return a comparison key: higher tuple = higher precedence.
 
     Tie-breaking order:
-    1. valid rule span (1) beats NER / suspect rule (0).
+    1. Valid rule span (1) beats NER / suspect rule (0).
     2. Higher group weight from TAXONOMY.
     3. Longer span.
     4. Earlier start (negated so that smaller ``start`` → larger key value).
@@ -121,25 +134,31 @@ def fuse(
 ) -> list[Span]:
     """Merge rule-based and NER spans into a non-overlapping, sorted list.
 
-    Uses coordinate-compression sweep: every character covered by at least one
-    input span is assigned to the highest-precedence span covering that segment.
-    Consecutive segments won by the **same input span object** are coalesced;
-    fragments of a loser span that surround the winner remain separate spans.
+    Uses an O(n log n) event-sweep with a lazy-deletion max-heap: spans are
+    added/removed as the sweep crosses their start/end positions, and the
+    winner for each inter-event segment is the top of the heap.
 
     Args:
         rule_spans: Spans produced by deterministic rule detectors.
         ner_spans:  Spans produced by the NER model (carry a meaningful
                     ``score`` value).
-        threshold:  Minimum inclusive score for NER spans.  Spans with
-                    ``score < threshold`` are discarded before fusion.
-                    Rule spans are never filtered by threshold.
+        threshold:  Minimum inclusive score for NER spans in ``[0, 1]``.
+                    Spans with ``score < threshold`` are discarded before
+                    fusion.  Rule spans are never filtered by threshold.
+                    Raises ``ValueError`` for NaN or values outside ``[0, 1]``.
 
     Returns:
-        Non-overlapping list of :class:`~piitier.spans.Span` objects sorted by
-        ``start``.  Every character that was covered by any input span is
+        Non-overlapping list of :class:`~piitier.spans.Span` objects sorted
+        by ``start``.  Every character that was covered by any input span is
         covered by exactly one output span.  Adjacent output spans are **not**
         merged even when they share a label or source.
+
+    Raises:
+        ValueError: If *threshold* is NaN or outside ``[0, 1]``.
     """
+    if math.isnan(threshold) or not (0.0 <= threshold <= 1.0):
+        raise ValueError(f"threshold must be a finite value in [0, 1]; got {threshold!r}")
+
     # Step 1: filter NER spans below threshold (>= is kept).
     ner_filtered = [s for s in ner_spans if s.score >= threshold]
 
@@ -148,27 +167,57 @@ def fuse(
     if not all_spans:
         return []
 
-    # Step 3: coordinate compression — build sorted list of breakpoints.
-    breakpoints: list[int] = sorted({pos for s in all_spans for pos in (s.start, s.end)})
+    # Step 3: build event maps — spans grouped by their start and end positions.
+    span_starts: dict[int, list[Span]] = defaultdict(list)
+    span_ends: dict[int, list[Span]] = defaultdict(list)
+    for s in all_spans:
+        span_starts[s.start].append(s)
+        span_ends[s.end].append(s)
 
-    # Step 4: for each inter-breakpoint segment, elect the winner.
-    # winner_seq holds (seg_start, seg_end, winning_span_object).
+    breakpoints: list[int] = sorted(span_starts.keys() | span_ends.keys())
+
+    # Step 4: sweep left-to-right, maintaining a lazy-deletion max-heap.
+    #
+    # Heap entries are 6-tuples:
+    #   (neg_valid, neg_weight, neg_length, start, span_id, span)
+    # where span_id = id(span) guarantees uniqueness so Python never attempts
+    # to compare the Span object.  min-heap on negated priority → max-priority.
+    heap: list[Any] = []
+    active_ids: set[int] = set()  # id(span) for live spans
+
     winner_seq: list[tuple[int, int, Span]] = []
-    for i in range(len(breakpoints) - 1):
-        seg_start = breakpoints[i]
-        seg_end = breakpoints[i + 1]
-        covering = [s for s in all_spans if s.start <= seg_start and seg_end <= s.end]
-        if not covering:
-            continue
-        winner = max(covering, key=_priority_key)
-        winner_seq.append((seg_start, seg_end, winner))
+
+    for i, bp in enumerate(breakpoints):
+        # Remove spans whose interval has closed at this position.
+        for s in span_ends[bp]:
+            active_ids.discard(id(s))
+
+        # Add spans whose interval opens at this position.
+        for s in span_starts[bp]:
+            k = _priority_key(s)
+            sid = id(s)
+            # Negate all key components for max-heap via Python's min-heap.
+            # k = (is_valid, weight, length, -start)
+            # neg = (-is_valid, -weight, -length, start) since -(-start)=start
+            heapq.heappush(heap, (-k[0], -k[1], -k[2], -k[3], sid, s))
+            active_ids.add(sid)
+
+        # Determine winner for segment [bp, next_bp).
+        if i + 1 < len(breakpoints):
+            next_bp = breakpoints[i + 1]
+            # Drain stale entries (spans that have been removed from active_ids).
+            while heap and heap[0][4] not in active_ids:
+                heapq.heappop(heap)
+            if heap:
+                winner: Span = heap[0][5]
+                winner_seq.append((bp, next_bp, winner))
 
     if not winner_seq:
         return []
 
-    # Step 5: coalesce consecutive segments owned by the same input span.
-    # We use object identity so that fragments of the same input span that are
-    # separated by a different winner are NOT coalesced (no merging across gaps).
+    # Step 5: coalesce consecutive segments owned by the **same input span**.
+    # Object identity ensures that two fragments of a loser that straddle a
+    # winner are NOT coalesced even though they share label/source.
     result: list[Span] = []
     cur_start, cur_end, cur_span = winner_seq[0]
 

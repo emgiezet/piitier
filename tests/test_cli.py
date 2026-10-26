@@ -355,11 +355,81 @@ def test_uc108_mask_with_model_contains_pesel_placeholder(
 
 @pytest.mark.integration
 def test_uc108_without_model_byte_identical(tmp_path: Path, tiny_checkpoint: Path) -> None:
-    """UC-108: without --model the output is byte-identical to current piitier mask."""
+    """UC-108: without --model the CLI output is byte-identical to piitier.mask(text)."""
+    import piitier
+
+    text = "PESEL: 90051512340, tel."
     in_file = tmp_path / "in.txt"
-    in_file.write_text("PESEL: 90051512340, tel.", encoding="utf-8")
+    in_file.write_text(text, encoding="utf-8")
 
+    # Direct library call — today's behaviour
+    expected = piitier.mask(text).encode("utf-8")
+
+    # CLI without --model
+    _, out_no_model, _ = run_piitier_mask(["mask", str(in_file)])
+    assert out_no_model == expected, "CLI without --model must match piitier.mask(text)"
+
+    # CLI with --model must also produce the same PESEL masking
     _, out_with_model, _ = run_piitier_mask(["mask", str(in_file), "--model", str(tiny_checkpoint)])
-    _, out_without_model, _ = run_piitier_mask(["mask", str(in_file)])
+    assert b"[PESEL]" in out_with_model
+    assert b"90051512340" not in out_with_model
 
-    assert out_with_model == out_without_model
+
+# ---------------------------------------------------------------------------
+# Threshold CLI validation — NaN and >1 (finding 3)
+# ---------------------------------------------------------------------------
+
+
+def _make_txt(tmp_path: Path, content: str = "PESEL: 90051512340\n") -> Path:
+    """Write content to a .txt file in tmp_path and return its path."""
+    p = tmp_path / "in.txt"
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
+def test_threshold_nan_exits_2_no_traceback(tmp_path: Path) -> None:
+    """--threshold nan with valid model dir exits 2 and prints no traceback."""
+    in_file = _make_txt(tmp_path)
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+
+    rc, stdout_bytes, stderr_bytes = run_piitier_mask(
+        ["mask", str(in_file), "--model", str(model_dir), "--threshold", "nan"]
+    )
+    assert rc == 2
+    assert b"Traceback" not in stderr_bytes
+    assert stdout_bytes == b""
+
+
+def test_threshold_gt1_exits_2_no_traceback(tmp_path: Path) -> None:
+    """--threshold 1.5 with valid model dir exits 2 and prints no traceback."""
+    in_file = _make_txt(tmp_path)
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+
+    rc, stdout_bytes, stderr_bytes = run_piitier_mask(
+        ["mask", str(in_file), "--model", str(model_dir), "--threshold", "1.5"]
+    )
+    assert rc == 2
+    assert b"Traceback" not in stderr_bytes
+    assert stdout_bytes == b""
+
+
+# ---------------------------------------------------------------------------
+# Empty (invalid) model directory exits 2 cleanly (finding 4)
+# ---------------------------------------------------------------------------
+
+
+def test_empty_model_dir_exits_2_no_traceback(tmp_path: Path) -> None:
+    """An existing but empty model directory causes exit 2 without traceback."""
+    in_file = _make_txt(tmp_path)
+    empty_model = tmp_path / "empty_model"
+    empty_model.mkdir()
+
+    rc, stdout_bytes, stderr_bytes = run_piitier_mask(
+        ["mask", str(in_file), "--model", str(empty_model)]
+    )
+    assert rc == 2
+    assert b"Traceback" not in stderr_bytes
+    assert stdout_bytes == b""
+    assert b"90051512340" not in stderr_bytes

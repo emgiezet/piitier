@@ -27,8 +27,8 @@ class Span:
     label:
         PII entity type.
     source:
-        Origin of the detection, e.g. ``"rule:pesel"`` or ``"model:ner"``.
-        Never contains document text.
+        Origin of the detection, e.g. ``"rule"`` (all deterministic detectors)
+        or ``"model:ner"`` (NER model).  Never contains document text.
     score:
         Confidence in [0, 1] (1.0 = certain for rule-based detectors).
     status:
