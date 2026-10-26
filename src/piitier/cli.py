@@ -6,6 +6,8 @@ Entry points:
   text-layer .pdf file and masks PII with ``piitier.mask()`` (rules only, default) or
   ``piitier.Anonymizer`` (rules + NER when --model is given). Output goes to stdout or ``-o``.
   Exit 0 on success, 2 on usage/input error, 3 on a PDF with no text layer.
+- ``piitier compare <path> --model <dir> [--threshold T] [--device cpu|cuda]`` opens
+  a local two-pane TUI to inspect replacements without printing the document.
 - ``piitier scan [--allowlist F] [--write-allowlist F] <path>...`` reports checksum-valid
   identifiers as ``path:line:column: LABEL`` (never the value). Exit 0 when nothing outside the
   allowlist is found, 1 when something is, 2 on a missing path or allowlist.
@@ -183,6 +185,15 @@ def main() -> int:
         help="Minimum NER span score to keep (default: 0.0); ignored without --model",
     )
 
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Inspect original and anonymized text side by side in a terminal",
+    )
+    compare_parser.add_argument("input", type=Path, help="Input file (.txt, .md, .csv, .pdf)")
+    compare_parser.add_argument("--model", type=Path, required=True, help="Local NER checkpoint")
+    compare_parser.add_argument("--threshold", type=float, default=0.0, help="Minimum NER score")
+    compare_parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
+
     scan_parser = subparsers.add_parser(
         "scan",
         help="Report checksum-valid identifiers by position (never by value)",
@@ -208,6 +219,10 @@ def main() -> int:
         return mask_file(args.input, args.output, args.model, args.threshold)
     if args.command == "scan":
         return scan_files(args.paths, args.allowlist, args.write_allowlist)
+    if args.command == "compare":
+        from piitier.tui import compare_file
+
+        return compare_file(args.input, args.model, args.threshold, args.device)
 
     return 1
 

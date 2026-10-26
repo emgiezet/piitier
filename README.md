@@ -43,6 +43,17 @@ uv run piitier mask document.pdf          # rules only; .txt .md .csv .pdf (with
 uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold 0.0
 ```
 
+Inspect replacements locally without saving the original or masked text:
+
+```bash
+uv run piitier compare document.pdf --model <checkpoint-dir>
+```
+
+The Textual view puts original text on the left and masked text on the right.
+Red marks detected source fragments; green marks inserted labels. ↑/← and ↓/→ jump
+to the previous or next replacement in both panes (wrapping at the ends); `q` exits.
+Green means that replacement was applied, **not** that all PII was found.
+
 Exit code 2 means a usage or input error (missing file or model, invalid threshold). Errors name the path,
 never document content.
 
