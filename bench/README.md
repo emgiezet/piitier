@@ -28,7 +28,7 @@ Each line in `docs.jsonl` is a JSON object with the following schema:
 
 ---
 
-# PL-PII-Bench v2 (planned)
+# PL-PII-Bench v2
 
 v2 adds double annotation, adjudication, and twin records (documents without
 any direct identifiers that are paired with their PII-bearing counterparts).
@@ -80,11 +80,36 @@ A twin record is a document of the same type and comparable structure, but with
 all direct identifiers removed or replaced by non-PII content.  The pair lets
 evaluation tools measure false-positive rate on near-identical clean documents.
 
-### Validator
+### Validator — bench_schema
 
-`python -m eval.bench_schema <file>...` validates v2 JSONL files and reports
-errors as `<id>: <rule>: <detail>` (no document text).  Exit 0 = valid,
-exit 1 = errors, exit 2 = file not found.
+`python -m eval.bench_schema <file>...` validates v2 JSONL files.  Each error
+is printed as `line <N>: <rule>: <description>` — no file-supplied value
+(label text, annotator id, doc_type, etc.) appears in output.
+
+Exit codes: 0 = valid, 1 = validation errors, 2 = input problem (file not
+found, malformed JSON, non-object line, or no arguments).
+
+### Mix rule
+
+No single `doc_type` may exceed 30 % of the records in a file.  The rule is
+enforced by `bench_schema` on every validation run.  A twin pair contributes
+two records of the same `doc_type`, so a file needs at least 7 records for
+a twin pair to stay at or below 30 % (2/7 ≈ 28.6 %).
+
+### Agreement tool
+
+`python -m eval.agreement <file>` computes inter-annotator agreement from the
+first two annotators per record:
+
+- Span F1 strict and partial (overall and per entity label)
+- Cohen's kappa over per-character labels (`O` = outside spans), pooled
+  across all records.  An acceptance gate of kappa ≥ 0.7 is applied.
+
+Output: one `key: value` line per metric, 4 decimal places.  No file-supplied
+value appears in output; unknown labels cause exit 2.
+
+Exit codes: 0 = kappa ≥ 0.7, 1 = kappa < 0.7, 2 = input error (see above).
+
 
 ## Splits Policy
 
