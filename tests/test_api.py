@@ -134,3 +134,195 @@ def test_mask_multiple_pesels() -> None:
 def test_uc36_mask_separated_format_returns_placeholder(text: str) -> None:
     """UC-36: mask on each separated format returns exactly '[PESEL]'."""
     assert piitier.mask(text) == "[PESEL]"
+
+
+# ---------------------------------------------------------------------------
+# PII-6-a: Anonymizer, sys.modules guard, ValueError
+# ---------------------------------------------------------------------------
+
+
+class _StubPredictor:
+    """Minimal predictor stub: returns a single IMIE span at the start."""
+
+    def predict(self, text: str) -> list:
+        from piitier.labels import Label
+        from piitier.spans import Span
+
+        if len(text) < 3:
+            return []
+        return [Span(0, 3, Label.IMIE, "model:ner", 0.9, "valid")]
+
+
+# UC-106 -----------------------------------------------------------------------
+
+
+def test_uc106_anonymizer_stub_predictor_masks_name_and_pesel() -> None:
+    """UC-106: Anonymizer(predictor=stub, threshold=0.5) masks name (NER) and PESEL (rule).
+
+    Text: "Jan 90051512340"
+    Stub returns IMIE [0,3) score=0.9 (>= 0.5 → kept).
+    Rules detect PESEL [4,15).
+    Expected: "[IMIĘ_n] [PESEL]"; zero changed characters outside spans.
+    """
+    text = "Jan 90051512340"
+    anon = piitier.Anonymizer(predictor=_StubPredictor(), threshold=0.5)
+    result = anon.mask(text)
+
+    assert "[IMIĘ_n]" in result
+    assert "[PESEL]" in result
+    # The space between name and PESEL must be preserved (outside any span)
+    assert result == "[IMIĘ_n] [PESEL]"
+
+
+def test_uc106_anonymizer_detect_returns_fused_spans() -> None:
+    """UC-106: Anonymizer.detect returns both rule and NER spans fused."""
+    from piitier.labels import Label
+
+    text = "Jan 90051512340"
+    anon = piitier.Anonymizer(predictor=_StubPredictor(), threshold=0.0)
+    spans = anon.detect(text)
+
+    labels = {s.label for s in spans}
+    assert Label.IMIE in labels
+    assert Label.PESEL in labels
+
+    # Non-overlapping, sorted
+    starts = [s.start for s in spans]
+    assert starts == sorted(starts)
+    for i in range(len(spans) - 1):
+        assert spans[i].end <= spans[i + 1].start
+
+
+# UC-107 -----------------------------------------------------------------------
+
+
+def test_uc107_mask_without_model_no_torch() -> None:
+    """UC-107: piitier.mask(text) without a model does not load transformers or torch.
+
+    Verified by running in a subprocess so that no prior test's imports contaminate
+    sys.modules.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import piitier, sys;"
+        "piitier.mask('PESEL: 90051512340');"
+        "bad = [m for m in ('transformers', 'torch') if m in sys.modules];"
+        "assert not bad, f'unexpected heavy imports: {bad}'"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"subprocess failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+
+def test_uc107_mask_without_model_same_result() -> None:
+    """UC-107: piitier.mask(text) without model produces the same output as before."""
+    text = "PESEL: 90051512340, tel."
+    assert piitier.mask(text) == "PESEL: [PESEL], tel."
+
+
+# UC-110 -----------------------------------------------------------------------
+
+
+def test_uc110_anonymizer_neither_arg_raises_valueerror() -> None:
+    """UC-110: Anonymizer() with no arguments raises ValueError."""
+    with pytest.raises(ValueError, match="exactly one"):
+        piitier.Anonymizer()
+
+
+def test_uc110_anonymizer_both_args_raises_valueerror() -> None:
+    """UC-110: Anonymizer(model=..., predictor=...) raises ValueError."""
+    from pathlib import Path
+
+    with pytest.raises(ValueError, match="exactly one"):
+        piitier.Anonymizer(model=Path("/some/path"), predictor=_StubPredictor())
+
+
+def test_uc110_valueerror_before_torch_import() -> None:
+    """UC-110: ValueError is raised before transformers/torch enter sys.modules."""
+    import subprocess
+    import sys
+
+    script = (
+        "import piitier, sys\n"
+        "try:\n"
+        "    piitier.Anonymizer()\n"
+        "except ValueError:\n"
+        "    pass\n"
+        "assert 'transformers' not in sys.modules, 'transformers was imported'\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"subprocess failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Threshold validation (finding 3)
+# ---------------------------------------------------------------------------
+
+
+def test_threshold_nan_raises_valueerror() -> None:
+    """Anonymizer raises ValueError for NaN threshold before any heavy import."""
+    import math
+
+    with pytest.raises(ValueError, match="threshold"):
+        piitier.Anonymizer(predictor=_StubPredictor(), threshold=math.nan)
+
+
+def test_threshold_gt1_raises_valueerror() -> None:
+    """Anonymizer raises ValueError for threshold > 1."""
+    with pytest.raises(ValueError, match="threshold"):
+        piitier.Anonymizer(predictor=_StubPredictor(), threshold=1.5)
+
+
+def test_threshold_lt0_raises_valueerror() -> None:
+    """Anonymizer raises ValueError for threshold < 0."""
+    with pytest.raises(ValueError, match="threshold"):
+        piitier.Anonymizer(predictor=_StubPredictor(), threshold=-0.1)
+
+
+# ---------------------------------------------------------------------------
+# Nonexistent model path raises ValueError (finding 5)
+# ---------------------------------------------------------------------------
+
+
+def test_uc110_anonymizer_nonexistent_model_raises_valueerror() -> None:
+    """Anonymizer(model=<nonexistent>) raises ValueError before loading transformers."""
+    from pathlib import Path
+
+    with pytest.raises(ValueError, match="not found"):
+        piitier.Anonymizer(model=Path("/absolutely/nonexistent/path/xyz"))
+
+
+def test_uc110_nonexistent_model_no_torch_import() -> None:
+    """Nonexistent model path raises ValueError without touching torch/transformers."""
+    import subprocess
+    import sys
+
+    script = (
+        "import piitier, sys\n"
+        "try:\n"
+        "    piitier.Anonymizer(model='/absolutely/nonexistent/xyz')\n"
+        "except ValueError:\n"
+        "    pass\n"
+        "assert 'transformers' not in sys.modules, 'transformers was imported'\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"subprocess failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
