@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import math
 import sys
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
@@ -55,6 +56,16 @@ class GroupRecall:
 
 
 @dataclass(frozen=True)
+class SweepPoint:
+    threshold: float
+    recall: float
+    precision: float
+    tp: int
+    fp: int
+    fn: int
+
+
+@dataclass(frozen=True)
 class ThresholdResult:
     threshold: float
     recall: float
@@ -66,6 +77,7 @@ class ThresholdResult:
     group_recalls: tuple[GroupRecall, ...] = field(default_factory=tuple)
     wilson_lower: float = 0.0
     wilson_upper: float = 0.0
+    sweep: tuple[SweepPoint, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -135,6 +147,7 @@ def _make_result(
     doc_count: int,
     match: _MatchMode,
     target_recall: float,
+    sweep: tuple[SweepPoint, ...] = (),
 ) -> ThresholdResult:
     """Compute Wilson interval and group recalls for one candidate threshold."""
     target_met = prf.recall >= target_recall
@@ -152,6 +165,7 @@ def _make_result(
         group_recalls=gr,
         wilson_lower=w_lower,
         wilson_upper=w_upper,
+        sweep=sweep,
     )
 
 
@@ -163,7 +177,7 @@ def calibrate_threshold(
 ) -> ThresholdResult:
     """Calibrate detection threshold targeting recall >= target_recall.
 
-    Candidates: 0.0 + sorted unique prediction scores (descending).
+    Candidates: 0.0 + prediction scores floored to a 0.01 grid (descending).
     For threshold t: predicted spans with score >= t; PRF via corpus_entity_metrics.
     Matching is per-document (a prediction from doc B cannot match gold from doc A).
     Returns the highest threshold with recall >= target_recall (early exit on first hit).
@@ -181,14 +195,19 @@ def calibrate_threshold(
     """
     doc_count = len(docs)
 
-    # Collect all prediction scores as threshold candidates.
-    # score=None is coerced to 1.0 at application time, so include 1.0 as a candidate.
+    # Bound candidates at 101. Correct multiplication rounding at exact decimal
+    # boundaries without promoting a candidate above its original score.
+    # score=None is coerced to 1.0 at application time.
     scores: set[float] = {0.0}
     for doc in docs:
         p_list = doc["pred"] if isinstance(doc, dict) else doc.pred
         for p in p_list:
             score = p.get("score", 1.0) if isinstance(p, dict) else getattr(p, "score", 1.0)
-            scores.add(float(score) if score is not None else 1.0)
+            value = float(score) if score is not None else 1.0
+            bounded = max(0.0, min(1.0, value))
+            bucket = math.floor(math.nextafter(bounded * 100, math.inf))
+            threshold = bucket / 100
+            scores.add(threshold if threshold <= bounded else (bucket - 1) / 100)
 
     # Build per-doc gold span lists and scored pred lists (done once, not per threshold)
     gold_docs: list[list[Span]] = []
@@ -243,6 +262,7 @@ def calibrate_threshold(
             doc_count=doc_count,
             group_recalls=result.group_recalls,
             wilson_lower=result.wilson_lower,
+            sweep=(SweepPoint(0.0, prf.recall, prf.precision, prf.tp, prf.fp, prf.fn),),
             wilson_upper=result.wilson_upper,
         )
 
@@ -251,10 +271,12 @@ def calibrate_threshold(
     candidates = sorted(list(scores), reverse=True)
     fallback_prf: Any = None
     fallback_pred_docs: list[list[Span]] = []
+    sweep: list[SweepPoint] = []
 
     for t in candidates:
         pred_docs = [[sp for sp, sc in doc_preds if sc >= t] for doc_preds in raw_preds]
         prf = corpus_entity_metrics(gold_docs, pred_docs, match=match)
+        sweep.append(SweepPoint(t, prf.recall, prf.precision, prf.tp, prf.fp, prf.fn))
 
         if abs(t) < 1e-9:
             # Save 0.0 stats for fallback if no threshold meets the target
@@ -264,7 +286,15 @@ def calibrate_threshold(
         if prf.recall >= target_recall:
             # First (= highest) threshold that meets the target — return immediately
             return _make_result(
-                t, prf, pred_docs, gold_docs, total_gold, doc_count, match, target_recall
+                t,
+                prf,
+                pred_docs,
+                gold_docs,
+                total_gold,
+                doc_count,
+                match,
+                target_recall,
+                tuple(sweep),
             )
 
     # No threshold met target — report recall at 0.0
@@ -278,6 +308,7 @@ def calibrate_threshold(
             doc_count,
             match,
             target_recall,
+            tuple(sweep),
         )
         return ThresholdResult(
             threshold=0.0,
@@ -290,10 +321,20 @@ def calibrate_threshold(
             group_recalls=result.group_recalls,
             wilson_lower=result.wilson_lower,
             wilson_upper=result.wilson_upper,
+            sweep=tuple(sweep),
         )
 
     # Absolute fallback: empty docs
-    return ThresholdResult(0.0, 0.0, 0.0, False, "target_not_met", total_gold, doc_count)
+    return ThresholdResult(
+        0.0,
+        0.0,
+        0.0,
+        False,
+        "target_not_met",
+        total_gold,
+        doc_count,
+        sweep=tuple(sweep),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -453,12 +494,33 @@ def write_threshold(
             group_recalls=result.group_recalls,
             wilson_lower=result.wilson_lower,
             wilson_upper=result.wilson_upper,
+            sweep=result.sweep,
         )
 
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    output_dir = _get_output_dir(config_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "calibration_sweep.json").write_text(
+        json.dumps(
+            {
+                "run": data.get("run"),
+                "match": match_mode,
+                "target_recall": target_recall,
+                "min_support": data.get("calibration_min_support", 100),
+                "gold_spans": result.gold_span_count,
+                "docs": result.doc_count,
+                "chosen_threshold": result.threshold if result.reason is None else None,
+                "reason": result.reason,
+                "stopped_early": result.reason is None,
+                "points": [asdict(point) for point in result.sweep],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     # Write config threshold only on success
     if result.reason is None:
-        config_text = config_path.read_text(encoding="utf-8")
-        data = yaml.safe_load(config_text) or {}
         data["threshold"] = result.threshold
         config_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
@@ -504,7 +566,7 @@ def main(argv: list[str] | None = None) -> int:
         elif (config.output_dir / "config.json").exists():
             checkpoint = config.output_dir
 
-    predictor = NerPredictor(checkpoint=checkpoint, threshold=0.0)
+    predictor = NerPredictor(checkpoint=checkpoint, threshold=0.0, device=config.calibration_device)
 
     docs: list[DocPrediction] = []
     for r in cal_records:

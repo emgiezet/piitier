@@ -28,6 +28,7 @@ class TrainingConfig:
     calibration_target_recall: float = 0.98
     calibration_match: str = "strict"
     calibration_min_support: int = 100
+    calibration_device: str = "cpu"
 
 
 class ConfigError(Exception):
@@ -58,6 +59,7 @@ _OPTIONAL_KEYS = {
     "calibration_target_recall",
     "calibration_match",
     "calibration_min_support",
+    "calibration_device",
 }
 
 
@@ -164,6 +166,11 @@ def load_config(path: Path) -> TrainingConfig:
         ) from exc
     if isinstance(_raw_min_support, float) and not float(_raw_min_support).is_integer():
         raise ConfigError(f"calibration_min_support must be an integer, got {_raw_min_support!r}")
+    calibration_device = data.get("calibration_device", "cpu")
+    if not isinstance(calibration_device, str) or not calibration_device.strip():
+        raise ConfigError(
+            f"calibration_device must be a non-empty string, got {calibration_device!r}"
+        )
 
     _check_test_split(train_file)
     _check_test_split(eval_file)
@@ -210,4 +217,5 @@ def load_config(path: Path) -> TrainingConfig:
         calibration_target_recall=calibration_target_recall,
         calibration_match=calibration_match,
         calibration_min_support=calibration_min_support,
+        calibration_device=calibration_device,
     )

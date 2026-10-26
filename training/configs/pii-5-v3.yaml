@@ -35,10 +35,7 @@
 # bench/v1/dev/docs.jsonl (5 docs) is evaluated separately after training,
 # not used as eval_file here (too small for meaningful mid-run eval).
 #
-# Hyperparameters:
-#   train docs: 21 289 (data/synthetic/v0.3, seed 42)  |  per_device_batch_size: 16
-#   steps/epoch: ceil(21289/16) = 1331  |  3 epochs → 3993 → max_steps: 4000
-#   learning_rate: 2e-5 (standard for BERT-family fine-tune on token classification)
+# Hyperparameters: 19 637 train docs, batch 16, max_steps 1300 (~1.06 epochs), lr 1e-5.
 
 run: pii-5-v3
 base_checkpoint: bardsai/eu-pii-anonimization-multilang-v2
@@ -47,6 +44,18 @@ base_license: Apache-2.0
 
 train_file: data/synthetic/v0.3/train.jsonl
 eval_file: data/synthetic/v0.3/dev.jsonl
+# Local historical v0.3 templates include derived policy/table templates (gitignored).
+# Restore and assemble them as described in FINDINGS.md, "Rebuild the local calibration split".
+# Build: uv run python -m piitier.datagen build --templates data/calibration-templates \
+#   --n 9000 --seed 900042 --augment --augment-fraction 0.25 --hard-negatives 900 \
+#   --out data/synthetic/v0.3-cal/
+# Filter duplicate calibration dev text hashes against v0.3 train/dev and update manifest
+# as described in FINDINGS.md (25 zero-gold hard negatives removed in this run).
+calibration_file: data/synthetic/v0.3-cal/dev.jsonl
+calibration_target_recall: 0.98
+calibration_match: strict
+calibration_min_support: 100
+calibration_device: cuda
 
 seed: 42
 max_steps: 1300
