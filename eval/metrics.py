@@ -334,7 +334,7 @@ class LeakRate:
     values_leaked: int
     values_total: int
     leaked_doc_ids: list[str]
-    docs_with_direct_id: int = 0  # docs containing at least one direct-identifier gold span
+    docs_with_direct_id: int  # docs containing at least one direct-identifier gold span
 
 
 def leak_rate(

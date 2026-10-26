@@ -124,10 +124,11 @@ def write_report(
     partial_micro = cast(EntityPRF, metrics.get("partial_micro", _default_prf))
     partial_by_label = cast(dict[Label, EntityPRF], metrics.get("partial_by_label", {}))
     rwr = cast(float, metrics.get("risk_weighted_recall", 0.0))
-    rwr_undefined = cast(bool, metrics.get("risk_weighted_recall_undefined", False))
+    # Decide undefined from gold_count: consistent with other count-based decisions
+    rwr_undefined = gold_count == 0
     leak = cast(
         LeakRate,
-        metrics.get("leak_rate", LeakRate(0, doc_count, 0, gold_count, [])),
+        metrics.get("leak_rate", LeakRate(0, doc_count, 0, gold_count, [], 0)),
     )
     fidelity_val = cast(int, metrics.get("fidelity", 0))
     numbering = cast(NumberingStats, metrics.get("numbering", NumberingStats(0, 0, 0, 0)))
@@ -231,7 +232,9 @@ def write_report(
                 "",
                 "## Porównywalna podtaksonomia (bardsai_v2)",
                 f"- Etykiety: {label_names}",
-                f"- Strict Micro Precision: {_fmt_p(_comparable_strict)}",
+                f"- Strict Micro Precision: {_fmt_p(_comparable_strict)}"
+                f" (TP={_comparable_strict.tp}, FP={_comparable_strict.fp},"
+                f" FN={_comparable_strict.fn})",
                 f"- Strict Micro Recall: {_fmt_r(_comparable_strict)}",
                 f"- Strict Micro F1: {_fmt_f1(_comparable_strict)}",
             ]
@@ -239,7 +242,9 @@ def write_report(
         if _comparable_partial is not None:
             lines.extend(
                 [
-                    f"- Partial Micro Precision: {_fmt_p(_comparable_partial)}",
+                    f"- Partial Micro Precision: {_fmt_p(_comparable_partial)}"
+                    f" (TP={_comparable_partial.tp}, FP={_comparable_partial.fp},"
+                    f" FN={_comparable_partial.fn})",
                     f"- Partial Micro Recall: {_fmt_r(_comparable_partial)}",
                     f"- Partial Micro F1: {_fmt_f1(_comparable_partial)}",
                 ]

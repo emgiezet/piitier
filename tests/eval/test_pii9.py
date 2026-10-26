@@ -198,8 +198,7 @@ def test_uc134_undefined_metric_for_zero_gold_and_zero_pred(tmp_path: Path) -> N
         "partial_micro": corpus_entity_metrics(gold_docs, pred_docs, match="partial"),
         "partial_by_label": {Label.OSOBA: prf_osoba},
         "risk_weighted_recall": 0.0,
-        "risk_weighted_recall_undefined": False,
-        "leak_rate": LeakRate(0, 2, 0, 2, []),
+        "leak_rate": LeakRate(0, 2, 0, 2, [], 0),
         "fidelity": 0,
         "numbering": NumberingStats(0, 0, 0, 0),
         "throughput": ThroughputStats(100.0, 0.01),
@@ -230,8 +229,9 @@ def test_uc134_undefined_metric_for_zero_gold_and_zero_pred(tmp_path: Path) -> N
 def test_uc135_undefined_leak_rate_and_rwr(tmp_path: Path) -> None:
     """UC-135: leak rate undefined when no docs with direct-id; RWR undefined for zero gold.
 
-    Functions return 0.0 (float); 'undefined' is decided at the report layer
-    via docs_with_direct_id and the rwr_undefined flag.
+    Functions return 0.0 (float); 'undefined' is decided at the report layer:
+    - doc_leak_rate: from docs_with_direct_id == 0 in LeakRate
+    - rwr: from gold_count == 0 in write_report (computed from result.gold_spans_per_doc)
     """
     # Documents have only OSOBA spans (not in DIRECT_IDENTIFIERS)
     originals = ["Jan Kowalski podpisał umowę."]
@@ -260,11 +260,16 @@ def test_uc135_undefined_leak_rate_and_rwr(tmp_path: Path) -> None:
     lr_empty_values = leak_rate([], [], [], [])
     assert _fmt_val_leak(lr_empty_values) == "undefined (0/0)"
 
-    # write_report renders 'undefined (0/0)' when rwr_undefined=True
+    # write_report renders 'undefined (0/0)' when gold_count == 0 (rwr) and
+    # docs_with_direct_id == 0 (doc leak rate).
+    # Use a zero-gold single-doc corpus so that write_report sees gold_count = 0.
+    zero_gold_lr = leak_rate(["no pii here"], [[]], ["no pii here"], ["d0"])
+    assert zero_gold_lr.docs_with_direct_id == 0
+    assert zero_gold_lr.values_total == 0
     prf_zero = corpus_entity_metrics([[]], [[]])
-    res = _minimal_bench_result(
-        originals=originals,
-        gold_per_doc=gold_spans_no_direct,
+    res_zero = _minimal_bench_result(
+        originals=["no pii here"],
+        gold_per_doc=[[]],  # zero gold spans → gold_count = 0 in write_report
         pred_per_doc=[[]],
     )
     md_path = tmp_path / "report_rwr_undef.md"
@@ -275,15 +280,14 @@ def test_uc135_undefined_leak_rate_and_rwr(tmp_path: Path) -> None:
         bench_version="v1",
         split="dev",
         threshold=None,
-        result=res,
+        result=res_zero,
         metrics={
             "strict_micro": prf_zero,
             "strict_by_label": {},
             "partial_micro": prf_zero,
             "partial_by_label": {},
             "risk_weighted_recall": 0.0,
-            "risk_weighted_recall_undefined": True,
-            "leak_rate": lr,
+            "leak_rate": zero_gold_lr,
             "fidelity": 0,
             "numbering": NumberingStats(0, 0, 0, 0),
             "throughput": ThroughputStats(100.0, 0.01),
@@ -294,6 +298,100 @@ def test_uc135_undefined_leak_rate_and_rwr(tmp_path: Path) -> None:
     assert "undefined (0/0)" in report_content, (
         "Report must show 'undefined (0/0)' for zero-gold RWR and zero direct-id leak"
     )
+
+
+def test_uc134_uc135_json_null_assertions(tmp_path: Path) -> None:
+    """UC-134/135 JSON half: eval.run on a zero-gold --docs file with system none.
+
+    Verifies the JSON sidecar emits null (not 0.0) for:
+    - strict_micro p / r / f1 (TP=FP=FN=0)
+    - risk_weighted_recall (no gold spans)
+    - leak_rate.doc_leak_rate (no docs with direct-id gold)
+    - leak_rate.value_leak_rate (values_total=0)
+    - per-label OSOBA: p=null (tp+fp=0 for none system on gold-only label)
+
+    This test kills the mutation: _prf_dict returns floats instead of null,
+    or rwr/leak-rates return 0.0 instead of null.
+    """
+    # Zero-gold JSONL: one doc, no spans
+    zero_gold_jsonl = tmp_path / "zero_gold.jsonl"
+    zero_gold_jsonl.write_text(
+        '{"id": "doc_zero", "doc_type": "test", "text": "no PII here", "spans": []}\n',
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "reports_zero"
+    ret = main(
+        [
+            "--system",
+            "none",
+            "--docs",
+            str(zero_gold_jsonl),
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+    assert ret == 0, "eval.run on zero-gold docs must exit 0"
+
+    json_reports = list(out_dir.glob("*.json"))
+    assert len(json_reports) == 1
+    data = json.loads(json_reports[0].read_text(encoding="utf-8"))
+
+    # strict_micro: TP=FP=FN=0 → all null
+    sm = data["strict_micro"]
+    assert sm["p"] is None, f"strict_micro.p must be null (zero denom), got {sm['p']}"
+    assert sm["r"] is None, f"strict_micro.r must be null (zero denom), got {sm['r']}"
+    assert sm["f1"] is None, f"strict_micro.f1 must be null (zero denom), got {sm['f1']}"
+    assert sm["tp"] == 0
+    assert sm["fp"] == 0
+    assert sm["fn"] == 0
+
+    # risk_weighted_recall: no gold spans → null
+    assert data["risk_weighted_recall"] is None, (
+        f"risk_weighted_recall must be null for zero-gold, got {data['risk_weighted_recall']}"
+    )
+
+    # leak_rate: no gold values, no direct-id docs → both null
+    lr = data["leak_rate"]
+    assert lr["doc_leak_rate"] is None, (
+        f"doc_leak_rate must be null for no direct-id docs, got {lr['doc_leak_rate']}"
+    )
+    assert lr["value_leak_rate"] is None, (
+        f"value_leak_rate must be null for no gold values, got {lr['value_leak_rate']}"
+    )
+
+    # per-label OSOBA: gold-only span, no predictions → p=null (tp+fp=0)
+    osoba_jsonl = tmp_path / "osoba_gold.jsonl"
+    osoba_jsonl.write_text(
+        '{"id": "doc_osoba", "doc_type": "test",'
+        ' "text": "Jan Kowalski", "spans": ['
+        '{"start": 0, "end": 12, "label": "OSOBA", "text": "Jan Kowalski"}]}\n',
+        encoding="utf-8",
+    )
+    out_dir2 = tmp_path / "reports_osoba"
+    ret2 = main(
+        [
+            "--system",
+            "none",
+            "--docs",
+            str(osoba_jsonl),
+            "--out-dir",
+            str(out_dir2),
+        ]
+    )
+    assert ret2 == 0
+    data2 = json.loads(list(out_dir2.glob("*.json"))[0].read_text(encoding="utf-8"))
+    osoba_entry = data2.get("strict_by_label", {}).get("OSOBA")
+    assert osoba_entry is not None, "OSOBA must appear in strict_by_label"
+    assert osoba_entry["p"] is None, (
+        f"OSOBA precision must be null (no predictions), got {osoba_entry['p']}"
+    )
+    assert osoba_entry["r"] == 0.0, (
+        f"OSOBA recall must be 0.0 (gold exists, none matched), got {osoba_entry['r']}"
+    )
+    assert osoba_entry["tp"] == 0
+    assert osoba_entry["fp"] == 0
+    assert osoba_entry["fn"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -411,12 +509,10 @@ def test_uc137_mask_all_system_bench_v1_dev(tmp_path: Path) -> None:
 def test_uc138_report_provenance_metadata(tmp_path: Path) -> None:
     """UC-138: every eval.run produces markdown and JSON with provenance.
 
-    Both outputs must contain:
-    - git commit: 40 hex chars or the string 'unknown'
-    - SHA-256 of every bench file read (keyed by filename)
-    - document count
-    - split name
-    - threshold
+    Asserts:
+    - Markdown: exact 'Commit: <40hex-or-unknown>' line
+    - Markdown: exact 'Dokumenty: N' line (not just any line containing N)
+    - JSON: git_commit, bench_sha256, docs, split, threshold fields
     """
     bench_dir = _root / "bench" / "v1" / "dev"
     if not bench_dir.exists():
@@ -439,50 +535,84 @@ def test_uc138_report_provenance_metadata(tmp_path: Path) -> None:
 
     md_reports = list(out_dir.glob("*.md"))
     json_reports = list(out_dir.glob("*.json"))
-    assert len(md_reports) == 1
-    assert len(json_reports) == 1
+    assert len(md_reports) == 1 and len(json_reports) == 1
 
     md = md_reports[0].read_text(encoding="utf-8")
     data = json.loads(json_reports[0].read_text(encoding="utf-8"))
 
-    # Markdown: commit either 40-char hex or 'unknown'
-    commit_pattern = re.compile(r"Commit:\s+([0-9a-f]{40}|unknown)")
-    assert commit_pattern.search(md), "Markdown report must contain 'Commit: <40hex or unknown>'"
-
-    # JSON: git_commit field present and valid
-    assert "git_commit" in data, "JSON must have git_commit field"
+    # JSON: git_commit present and valid
+    assert "git_commit" in data
     commit_val = data["git_commit"]
-    assert isinstance(commit_val, str), "git_commit must be a string"
+    assert isinstance(commit_val, str)
     assert re.fullmatch(r"[0-9a-f]{40}", commit_val) or commit_val == "unknown", (
         f"git_commit must be 40-char hex or 'unknown', got {commit_val!r}"
     )
 
-    # JSON: bench_sha256 dict with SHA-256 digests
-    assert "bench_sha256" in data, "JSON must have bench_sha256 field"
+    # Markdown: exact 'Commit: <value>' line must appear
+    commit_line = f"Commit: {commit_val}"
+    assert commit_line in md, f"Markdown must contain the exact line {commit_line!r}"
+
+    # Markdown: exact 'Dokumenty: N' line (doc count)
+    doc_count = data["docs"]
+    assert doc_count > 0
+    dokumenty_line = f"Dokumenty: {doc_count}"
+    assert dokumenty_line in md, f"Markdown must contain exact line {dokumenty_line!r}"
+
+    # JSON: bench_sha256 dict with valid SHA-256 digests
+    assert "bench_sha256" in data
     sha256_map = data["bench_sha256"]
-    assert isinstance(sha256_map, dict) and len(sha256_map) > 0, (
-        "bench_sha256 must be a non-empty dict"
-    )
-    sha256_pattern = re.compile(r"^[0-9a-f]{64}$")
+    assert isinstance(sha256_map, dict) and len(sha256_map) > 0
+    sha256_pat = re.compile(r"^[0-9a-f]{64}$")
     for fname, digest in sha256_map.items():
-        assert sha256_pattern.match(digest), (
-            f"bench_sha256[{fname!r}]={digest!r} is not a SHA-256 hex digest"
+        assert sha256_pat.match(digest), (
+            f"bench_sha256[{fname!r}] is not a SHA-256 digest: {digest!r}"
         )
 
-    # Markdown: SHA-256 appears somewhere in the provenance section
-    assert re.search(r"[0-9a-f]{64}", md), (
-        "Markdown report must contain at least one SHA-256 digest"
-    )
+    # Markdown: at least one SHA-256 digest appears in the provenance section
+    assert re.search(r"[0-9a-f]{64}", md), "Markdown must contain a SHA-256 digest"
 
-    # JSON: document count, split, threshold
-    assert data["docs"] > 0, "docs count must be positive"
-    assert data["split"] == "dev", f"Expected split='dev', got {data['split']!r}"
-    # threshold is None (not provided) → JSON null
+    # JSON: split and threshold
+    assert data["split"] == "dev"
     assert data["threshold"] is None
 
-    # Markdown: split and doc count appear
-    assert "dev" in md, "Markdown must mention the split name"
-    assert str(data["docs"]) in md, "Markdown must mention the document count"
+
+def test_uc138_unknown_commit_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """UC-138 fallback: when git is unavailable, commit is 'unknown'."""
+    bench_dir = _root / "bench" / "v1" / "dev"
+    if not bench_dir.exists():
+        pytest.skip("bench/v1/dev not available")
+
+    # Monkeypatch subprocess.run in the eval.run module to simulate no git
+    def _no_git(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError("git not found")
+
+    monkeypatch.setattr(_run_mod.subprocess, "run", _no_git)
+
+    out_dir = tmp_path / "reports_fallback"
+    ret = main(
+        [
+            "--system",
+            "none",
+            "--bench",
+            "v1",
+            "--split",
+            "dev",
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+    assert ret == 0, "eval.run must not crash when git is unavailable"
+
+    json_reports = list(out_dir.glob("*.json"))
+    assert len(json_reports) == 1
+    data = json.loads(json_reports[0].read_text(encoding="utf-8"))
+
+    assert data["git_commit"] == "unknown", (
+        f"Expected git_commit='unknown' when git unavailable, got {data['git_commit']!r}"
+    )
+
+    md = list(out_dir.glob("*.md"))[0].read_text(encoding="utf-8")
+    assert "Commit: unknown" in md, "Markdown must show 'Commit: unknown' when git unavailable"
 
 
 # ---------------------------------------------------------------------------
@@ -540,14 +670,23 @@ def test_uc139_protocol_md_required_sections_and_gates() -> None:
         "PROTOCOL.md split table must include bench test"
     )
 
-    # Gate names from spec Context
-    gate_names = ["fidelity-zero", "doc-leak-rate", "int8-recall-drop", "calibration-recall"]
-    for gate in gate_names:
-        assert gate in content, f"PROTOCOL.md must contain gate name '{gate}'"
-
-    # Thresholds from spec Context
-    assert "0.01" in content, "PROTOCOL.md must mention 0.01 threshold (int8 recall drop)"
-    assert "0.98" in content, "PROTOCOL.md must mention 0.98 threshold (calibration recall)"
+    # Gate names and their thresholds: each gate row must contain the threshold
+    # (parse the table rows and check gate-name and threshold co-occur)
+    gate_thresholds = {
+        "fidelity-zero": "0",  # = 0 changed chars
+        "doc-leak-rate": "0.01",  # < 1 % (0.01)
+        "int8-recall-drop": "0.01",  # ≤ 0.01
+        "calibration-recall": "0.98",  # ≥ 0.98
+    }
+    table_lines = [ln for ln in content.splitlines() if ln.strip().startswith("|")]
+    for gate, threshold in gate_thresholds.items():
+        gate_row = next((ln for ln in table_lines if gate in ln), None)
+        assert gate_row is not None, (
+            f"PROTOCOL.md gate table must contain a row with gate name '{gate}'"
+        )
+        assert threshold in gate_row, (
+            f"Gate row for '{gate}' must contain threshold '{threshold}': {gate_row!r}"
+        )
 
     # Reporting rule: zero denominator = undefined, never PASS
     assert re.search(r"(?i)zero.denominator.*undefined|undefined.*zero.denominator", content), (

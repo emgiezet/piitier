@@ -483,7 +483,6 @@ def main(argv: list[str] | None = None) -> int:
         "partial_micro": partial_micro,
         "partial_by_label": partial_by_label,
         "risk_weighted_recall": rwr,
-        "risk_weighted_recall_undefined": rwr_undefined,
         "leak_rate": leak,
         "fidelity": total_fidelity,
         "numbering": total_numbering,

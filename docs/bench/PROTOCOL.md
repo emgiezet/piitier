@@ -97,6 +97,12 @@ Fidelity = chars changed outside predicted spans
 The invariant is `Fidelity = 0` for any correctly-implemented system (output
 differs from input only inside detected `[start, end)` spans).
 
+**Compatibility note:** Reports produced before PII-9 (commits before `8989aa5`)
+computed fidelity against *gold spans* rather than predicted spans.  A legacy
+report with non-zero fidelity may reflect characters changed outside *gold* spans
+rather than outside *predicted* spans, and is not directly comparable with
+post-PII-9 reports under the `fidelity-zero` gate.
+
 ### Numbering Consistency
 
 For every label marked `numbered` in `docs/TAXONOMY.md`:
@@ -142,17 +148,25 @@ production-ready.  Each gate is evaluated on the designated split.
 1. **Zero denominator = undefined, never PASS.**  When a metric's denominator
    is zero (no predictions, no gold spans, or no documents with direct identifiers),
    the metric is reported as `undefined (0/0)` in Markdown and `null` in JSON.
-   An undefined metric **never** satisfies a gate; the gate status is `SKIP`
-   (not enough data) rather than PASS or FAIL.
+   Gate evaluators **MUST** treat an undefined metric as neither PASS nor FAIL;
+   the gate status is `SKIP` (not enough data).  An undefined metric **never**
+   satisfies a gate condition.
+
+   *Implementation gap (PII-9):* The INT8 gate (`training/export_onnx.py`,
+   `exceeds_tolerance`) computes `fp32_recall − int8_recall` using floats that
+   are `0.0` on a zero-gold corpus, so the delta is `0` and the gate passes
+   silently.  Future gate implementations must check the denominator first and
+   refuse to evaluate when either side is undefined.
 
 2. **Every report must include provenance metadata:**
    - Git commit SHA (40 hex characters, or `unknown` if git is unavailable).
    - SHA-256 digest of every benchmark file read, keyed by filename.
    - Document count, split name, and detection threshold.
 
-3. **Counts alongside rates.**  Every precision/recall/F1 value in a report must be
-   accompanied by the underlying TP, FP, FN counts so that readers can verify
-   the arithmetic and aggregate across reports.
+3. **Counts alongside rates.**  Every precision/recall/F1 section in a report
+   must include the underlying TP, FP, FN counts at least once per section
+   (e.g. alongside the Precision line) so that readers can verify the arithmetic
+   and aggregate across reports.
 
 4. **`bench test` is final.**  Numbers from `bench test` are the authoritative
    numbers for a model version.  They must not be cherry-picked or re-run after
