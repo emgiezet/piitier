@@ -30,7 +30,7 @@ Out:
 - Obniżenie celu recall, aby wymusić sukces kalibracji.
 - Użycie `bench/v1/test` do doboru progu lub treningu; ręczne wpisanie progu bez pomiaru.
 
-Change budget: 500 authored lines (generated evaluation artifacts excluded), 18 files, 5 modules
+Change budget for the full PR: 900 authored lines (generated evaluation artifacts excluded), 20 files, 5 modules
 
 ## Context
 
