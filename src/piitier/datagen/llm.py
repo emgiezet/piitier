@@ -36,6 +36,7 @@ _ALLOWED_DOC_TYPES = frozenset(
         "polisa",
         "skierowanie",
         "transkrypcja_infolinii",
+        "zestawienie_prowizyjne",
     }
 )
 
@@ -82,64 +83,8 @@ def _validate_ollama_url(url_str: str) -> None:
         raise OllamaURLError("refusing non-loopback ollama url")
 
 
-def write_templates(
-    doc_type: str,
-    count: int,
-    out: Path,
-    model: str = "hf.co/SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF:Q8_0",
-    ollama_url: str = "http://127.0.0.1:11434",
-    seed: int | None = None,
-    temperature: float = 0.2,
-) -> dict[str, Any]:
-    if (
-        not isinstance(doc_type, str)
-        or doc_type not in _ALLOWED_DOC_TYPES
-        or "/" in doc_type
-        or "\\" in doc_type
-        or ".." in doc_type
-        or Path(doc_type).is_absolute()
-    ):
-        raise ValueError(f"Invalid doc_type: {doc_type}")
-
-    _validate_ollama_url(ollama_url)
-
-    prompts_dir = Path(__file__).parent / "prompts"
-    prompt_file = prompts_dir / f"{doc_type}.txt"
-    if not prompt_file.exists():
-        raise FileNotFoundError(f"Prompt file not found for doc_type: {doc_type}")
-    prompt_bytes = prompt_file.read_bytes()
-    prompt_sha256 = hashlib.sha256(prompt_bytes).hexdigest()
-    prompt_text = prompt_bytes.decode("utf-8")
-
-    # Load and validate existing manifest.json if present (must be valid JSON array, reject blank)
-    manifest_path = out / "manifest.json"
-    manifest_records: list[dict[str, Any]] = []
-    if manifest_path.exists():
-        m_content = manifest_path.read_text(encoding="utf-8")
-        if not m_content.strip():
-            raise ValueError("Manifest is blank or whitespace-only")
-        try:
-            parsed_json = json.loads(m_content)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Malformed existing manifest: {e}") from e
-
-        if not isinstance(parsed_json, list):
-            raise ValueError("Manifest must be a JSON array")
-        manifest_records = parsed_json
-
-    # Deduplicate against ALL template files under out (across all doc_types)
-    seen_hashes: set[str] = set()
-    if out.exists():
-        for p_file in out.glob("**/*.txt"):
-            if p_file.is_file():
-                try:
-                    content = p_file.read_bytes()
-                    h = hashlib.sha256(content).hexdigest()
-                    seen_hashes.add(h)
-                except Exception as e:
-                    raise ValueError(f"Unreadable template file: {p_file}") from e
-
-    opener = _get_opener()
+def _probe_model(opener: urllib.request.OpenerDirector, ollama_url: str, model: str) -> str:
+    """Return the digest of *model* from ``/api/tags``; raise if the model is not served."""
     tags_url = f"{ollama_url.rstrip('/')}/api/tags"
     try:
         req = urllib.request.Request(tags_url, method="GET")
@@ -181,12 +126,101 @@ def write_templates(
                         break
             if not isinstance(digest, str) or not digest:
                 raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}")
+            return digest
     except (OSError, urllib.error.URLError, TimeoutError, http.client.HTTPException) as e:
         raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
     except (OllamaURLError, OllamaUnreachableError):
         raise
     except Exception as e:
         raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
+
+
+def _generate(
+    opener: urllib.request.OpenerDirector,
+    ollama_url: str,
+    payload: dict[str, Any],
+    timeout: float = 120,
+) -> str:
+    """POST *payload* to ``/api/generate`` and return the ``response`` string."""
+    generate_url = f"{ollama_url.rstrip('/')}/api/generate"
+    try:
+        req = urllib.request.Request(
+            generate_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with opener.open(req, timeout=timeout) as resp:
+            raw_res = resp.read().decode("utf-8")
+            try:
+                res_data = json.loads(raw_res)
+            except json.JSONDecodeError as e:
+                raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
+            if not isinstance(res_data, dict):
+                raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}")
+            text = res_data.get("response")
+            if not isinstance(text, str):
+                raise OllamaUnreachableError(
+                    f"ollama not reachable at {ollama_url}: non-string response"
+                )
+            return text
+    except (OSError, urllib.error.URLError, TimeoutError, http.client.HTTPException) as e:
+        raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
+    except (OllamaURLError, OllamaUnreachableError):
+        raise
+    except Exception as e:
+        raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
+
+
+def write_templates(
+    doc_type: str,
+    count: int,
+    out: Path,
+    model: str = "hf.co/SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF:Q8_0",
+    ollama_url: str = "http://127.0.0.1:11434",
+    seed: int | None = None,
+    temperature: float = 0.2,
+) -> dict[str, Any]:
+    if (
+        not isinstance(doc_type, str)
+        or doc_type not in _ALLOWED_DOC_TYPES
+        or "/" in doc_type
+        or "\\" in doc_type
+        or ".." in doc_type
+        or Path(doc_type).is_absolute()
+    ):
+        raise ValueError(f"Invalid doc_type: {doc_type}")
+
+    _validate_ollama_url(ollama_url)
+
+    prompts_dir = Path(__file__).parent / "prompts"
+    prompt_file = prompts_dir / f"{doc_type}.txt"
+    if not prompt_file.exists():
+        raise FileNotFoundError(f"Prompt file not found for doc_type: {doc_type}")
+    prompt_bytes = prompt_file.read_bytes()
+    prompt_sha256 = hashlib.sha256(prompt_bytes).hexdigest()
+    prompt_text = prompt_bytes.decode("utf-8")
+
+    # Shared manifest loader; lazy import avoids the circular templatize ↔ llm dependency.
+    from piitier.datagen.templatize import _load_manifest
+
+    manifest_path = out / "manifest.json"
+    manifest_records = _load_manifest(manifest_path)
+
+    # Deduplicate against ALL template files under out (across all doc_types)
+    seen_hashes: set[str] = set()
+    if out.exists():
+        for p_file in out.glob("**/*.txt"):
+            if p_file.is_file():
+                try:
+                    content = p_file.read_bytes()
+                    h = hashlib.sha256(content).hexdigest()
+                    seen_hashes.add(h)
+                except Exception as e:
+                    raise ValueError(f"Unreadable template file: {p_file}") from e
+
+    opener = _get_opener()
+    digest = _probe_model(opener, ollama_url, model)
 
     accepted = 0
     rejected: dict[str, int] = {
@@ -196,8 +230,6 @@ def write_templates(
         "leaked_value": 0,
         "duplicate": 0,
     }
-
-    generate_url = f"{ollama_url.rstrip('/')}/api/generate"
 
     for _ in range(count):
         payload: dict[str, Any] = {
@@ -213,32 +245,7 @@ def write_templates(
         if options:
             payload["options"] = options
 
-        try:
-            req = urllib.request.Request(
-                generate_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with opener.open(req, timeout=120) as resp:
-                raw_res = resp.read().decode("utf-8")
-                try:
-                    res_data = json.loads(raw_res)
-                except json.JSONDecodeError as e:
-                    raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
-                if not isinstance(res_data, dict):
-                    raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}")
-                text = res_data.get("response")
-                if not isinstance(text, str):
-                    raise OllamaUnreachableError(
-                        f"ollama not reachable at {ollama_url}: non-string response"
-                    )
-        except (OSError, urllib.error.URLError, TimeoutError, http.client.HTTPException) as e:
-            raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
-        except (OllamaURLError, OllamaUnreachableError):
-            raise
-        except Exception as e:
-            raise OllamaUnreachableError(f"ollama not reachable at {ollama_url}") from e
+        text = _generate(opener, ollama_url, payload)
 
         # 1. Parse as template
         try:

@@ -1,0 +1,10 @@
+Od: {{EMAIL}}
+Do: reklamacje@ubezpieczenia.pl
+Temat: Reklamacja polisy {{NR_POLISY}}
+
+Szanowni Państwo,
+
+moje imię i nazwisko to {{IMIE#1}} {{NAZWISKO#1}}, zamieszkały pod adresem {{ADRES}}, telefon kontaktowy: {{TELEFON}}. W związku z polisą numer {{NR_POLISY}} chciałbym zgłosić zastrzeżenia dotyczące naliczonej składki w wysokości {{KWOTA}} zł. Jestem przekonany, że na mocy umowy numer {{NR_UMOWY}} przysługuje mi zniżka, która nie została uwzględniona w ostatniej kalkulacji. Proszę o szczegółową analizę sprawy oraz kontakt zwrotny na adres {{EMAIL}} lub pod numerem {{TELEFON}} w godzinach roboczych. PESEL: {{PESEL}}. Korespondencja: {{KOD_POCZTOWY}} {{MIEJSCOWOSC}}.
+
+Pozdrawiam serdecznie,
+{{IMIE#1}} {{NAZWISKO#1}}

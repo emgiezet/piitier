@@ -94,10 +94,18 @@ def test_uc51_lekarz_inflection_and_fallback() -> None:
 
 def test_uc52_build_check_manifest_medical_templates(tmp_path: Path) -> None:
     """UC-52: build passes, check returns 0, span_counts include medical labels."""
-    from piitier.datagen.build import _PACKAGED_TEMPLATES_DIR, build, check
+    from piitier.datagen.build import _PACKAGED_TEMPLATES_DIR, build, check, collect_templates
 
     out_dir = tmp_path / "dataset"
-    build(_PACKAGED_TEMPLATES_DIR, out=out_dir, n=30, seed=123)
+    # Round-robin selects one doc_type per iteration, cycling through all types.
+    # n_types × max_per_type guarantees every template in the largest doc_type
+    # renders at least once, so every label-bearing template is covered.
+    _templates = collect_templates(_PACKAGED_TEMPLATES_DIR)
+    _by_type: dict[str, list] = {}
+    for _t in _templates:
+        _by_type.setdefault(_t.doc_type, []).append(_t)
+    n = len(_by_type) * max(len(v) for v in _by_type.values())
+    build(_PACKAGED_TEMPLATES_DIR, out=out_dir, n=n, seed=123)
 
     exit_code, stderr = check(out_dir)
     assert exit_code == 0
@@ -110,13 +118,51 @@ def test_uc52_build_check_manifest_medical_templates(tmp_path: Path) -> None:
         assert lbl in span_counts, f"{lbl} missing from manifest span_counts"
 
 
-def test_uc53_prompt_label_list_27_labels() -> None:
-    """UC-53: prompt for each doc_type lists all 27 labels from _SUPPORTED_LABELS."""
+def test_uc53_prompt_label_list_28_labels() -> None:
+    """UC-53: prompt for each doc_type lists all 30 labels from _SUPPORTED_LABELS."""
+    from piitier.datagen.build import DOC_TYPES
     from piitier.datagen.llm import _SUPPORTED_LABELS
 
     prompts_dir = Path(__file__).parent.parent.parent / "src" / "piitier" / "datagen" / "prompts"
-    for prompt_file in prompts_dir.glob("*.txt"):
-        content = prompt_file.read_text(encoding="utf-8")
-        assert "27 obsługiwanych znaczników" in content
+    for doc_type in sorted(DOC_TYPES):
+        content = (prompts_dir / f"{doc_type}.txt").read_text(encoding="utf-8")
+        assert "30 obsługiwanych znaczników" in content
         for lbl in _SUPPORTED_LABELS:
             assert f"{{{{{lbl.name}}}}}" in content
+
+
+# ---------------------------------------------------------------------------
+# New tests: DANE_ZDROWOTNE
+# ---------------------------------------------------------------------------
+
+
+def test_dane_zdrowotne_list_size_and_uniqueness() -> None:
+    """DANE_ZDROWOTNE list has >= 80 entries, all unique, 1-5 words each."""
+    lst = values._DANE_ZDROWOTNE_LIST
+    assert len(lst) >= 80, f"expected >= 80 entries, got {len(lst)}"
+    assert len(set(lst)) == len(lst), "duplicate entries in _DANE_ZDROWOTNE_LIST"
+    for phrase in lst:
+        wc = len(phrase.split())
+        assert 1 <= wc <= 5, f"phrase outside 1-5 word limit: {phrase!r}"
+
+
+def test_dane_zdrowotne_500_seeds_pass_validator() -> None:
+    """DANE_ZDROWOTNE over 500 seeds all pass validator and are non-empty."""
+    rng = random.Random(42)
+    for _ in range(500):
+        v = values.generate_dane_zdrowotne(rng)
+        assert v != ""
+        assert values.validate_dane_zdrowotne(v), f"invalid DANE_ZDROWOTNE: {v!r}"
+
+
+def test_dane_zdrowotne_deterministic() -> None:
+    """DANE_ZDROWOTNE generator is deterministic."""
+    r1, r2 = random.Random(77), random.Random(77)
+    for _ in range(100):
+        assert values.generate_dane_zdrowotne(r1) == values.generate_dane_zdrowotne(r2)
+
+
+def test_dane_zdrowotne_in_generators_and_validators() -> None:
+    """DANE_ZDROWOTNE is registered in both _GENERATORS and _VALIDATORS."""
+    assert Label.DANE_ZDROWOTNE in values._GENERATORS
+    assert Label.DANE_ZDROWOTNE in values._VALIDATORS

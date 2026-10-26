@@ -22,6 +22,8 @@ class TrainingConfig:
     threshold: float | None = None
     predict_checkpoint: str | None = None
     int8_recall_tolerance: float = 0.01
+    base_license: str | None = None
+    bf16: bool = False
 
 
 class ConfigError(Exception):
@@ -46,6 +48,8 @@ _OPTIONAL_KEYS = {
     "threshold",
     "predict_checkpoint",
     "int8_recall_tolerance",
+    "base_license",
+    "bf16",
 }
 
 
@@ -96,6 +100,8 @@ def load_config(path: Path) -> TrainingConfig:
     int8_recall_tolerance = (
         float(data["int8_recall_tolerance"]) if "int8_recall_tolerance" in data else 0.01
     )
+    base_license = str(data["base_license"]) if data.get("base_license") is not None else None
+    bf16 = bool(data.get("bf16", False))
     config_dir = path.parent
 
     def resolve_file_path(val: str | Path) -> Path:
@@ -150,4 +156,6 @@ def load_config(path: Path) -> TrainingConfig:
         threshold=threshold,
         predict_checkpoint=predict_checkpoint,
         int8_recall_tolerance=int8_recall_tolerance,
+        base_license=base_license,
+        bf16=bf16,
     )

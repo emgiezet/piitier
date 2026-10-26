@@ -13,22 +13,35 @@ check <dir>
 write-templates --doc-type <t> --count <N> --out <dir> ...
     Write synthetic templates using local Ollama model.
 
+templatize --pdf-dir <dir> --out <dir> [--doc-type polisa] [--limit N] [--reject-dir <dir>] ...
+    Convert real PDFs into placeholder-only templates using local Ollama
+    span marking; prints the result counts as JSON.
+
+templatize-tables --src <dir> --out <dir> [--doc-type zestawienie_prowizyjne]
+    [--max-per-file N] [--reject-dir <dir>]
+    Convert tabular XLSX/CSV commission-settlement files into placeholder-only
+    templates; prints the result counts as JSON.
+
 Exit codes
 ----------
 0  success
 1  check found a bad span
-2  output directory is inside bench/ or already non-empty / URL error
+2  output directory is inside bench/ or already non-empty / URL error /
+   invalid argument or missing prompt
 3  Ollama unreachable
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from piitier.datagen.build import _PACKAGED_TEMPLATES_DIR, BuildError, build, check
 from piitier.datagen.llm import OllamaUnreachableError, OllamaURLError, write_templates
+from piitier.datagen.tabular import templatize_tables
+from piitier.datagen.templatize import templatize
 
 # ---------------------------------------------------------------------------
 # Main
@@ -63,7 +76,17 @@ def main() -> None:
     build_p.add_argument(
         "--augment",
         action="store_true",
-        help="Apply OCR and diacritic augmentation to documents.",
+        help="Apply OCR and diacritic augmentation to a fraction of documents.",
+    )
+    build_p.add_argument(
+        "--augment-fraction",
+        type=float,
+        default=0.25,
+        metavar="F",
+        help=(
+            "Fraction of documents to augment when --augment is set (default: 0.25). "
+            "Must be in (0, 1]."
+        ),
     )
     build_p.add_argument(
         "--hard-negatives",
@@ -91,6 +114,56 @@ def main() -> None:
     wt_p.add_argument("--seed", type=int, default=None, help="RNG seed.")
     wt_p.add_argument("--temperature", type=float, default=0.2, help="Temperature.")
 
+    # -- templatize ----------------------------------------------------------
+    tz_p = sub.add_parser("templatize", help="Convert real PDFs into placeholder-only templates.")
+    tz_p.add_argument("--pdf-dir", type=Path, required=True, help="Directory with *.pdf files.")
+    tz_p.add_argument("--out", type=Path, required=True, help="Templates root directory.")
+    tz_p.add_argument("--doc-type", default="polisa", help="Document type.")
+    tz_p.add_argument("--limit", type=int, default=None, help="Process only the first N PDFs.")
+    tz_p.add_argument(
+        "--model", default="hf.co/SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF:Q8_0", help="Model tag."
+    )
+    tz_p.add_argument("--ollama-url", default="http://127.0.0.1:11434", help="Ollama URL.")
+    tz_p.add_argument("--temperature", type=float, default=0.0, help="Temperature.")
+    tz_p.add_argument(
+        "--reject-dir",
+        type=Path,
+        default=None,
+        help="Write rejected chunks here for inspection (must be outside the repository).",
+    )
+    tz_p.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Concurrent LLM requests; set to Ollama's OLLAMA_NUM_PARALLEL.",
+    )
+
+    # -- templatize-tables ---------------------------------------------------
+    tt_p = sub.add_parser(
+        "templatize-tables",
+        help="Convert tabular XLSX/CSV files into placeholder-only templates.",
+    )
+    tt_p.add_argument("--src", type=Path, required=True, metavar="DIR", help="Source directory.")
+    tt_p.add_argument("--out", type=Path, required=True, metavar="DIR", help="Templates root.")
+    tt_p.add_argument(
+        "--doc-type",
+        default="zestawienie_prowizyjne",
+        help="Document type (default: zestawienie_prowizyjne).",
+    )
+    tt_p.add_argument(
+        "--max-per-file",
+        type=int,
+        default=3,
+        metavar="N",
+        help="Maximum templates per worksheet (default: 3).",
+    )
+    tt_p.add_argument(
+        "--reject-dir",
+        type=Path,
+        default=None,
+        help="Write rejected snippets here for inspection (must be outside the repository).",
+    )
+
     args = parser.parse_args()
 
     if args.command == "build":
@@ -101,6 +174,7 @@ def main() -> None:
                 args.seed,
                 args.out,
                 augment=args.augment,
+                augment_fraction=args.augment_fraction,
                 hard_negatives=args.hard_negatives,
             )
         except BuildError as exc:
@@ -132,6 +206,41 @@ def main() -> None:
         except (ValueError, FileExistsError, FileNotFoundError) as exc:
             print(str(exc), file=sys.stderr)
             sys.exit(2)
+
+    elif args.command == "templatize":
+        try:
+            result = templatize(
+                args.pdf_dir,
+                args.out,
+                doc_type=args.doc_type,
+                limit=args.limit,
+                model=args.model,
+                ollama_url=args.ollama_url,
+                temperature=args.temperature,
+                reject_dir=args.reject_dir,
+                workers=args.workers,
+            )
+        except OllamaUnreachableError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(3)
+        except (OllamaURLError, ValueError, FileNotFoundError) as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(result, ensure_ascii=False))
+
+    elif args.command == "templatize-tables":
+        try:
+            result = templatize_tables(
+                args.src,
+                args.out,
+                doc_type=args.doc_type,
+                max_per_file=args.max_per_file,
+                reject_dir=args.reject_dir,
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

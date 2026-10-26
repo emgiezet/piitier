@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass
 
 from piitier.datagen import people
@@ -14,9 +15,15 @@ from piitier.datagen.template import (
     TemplateError,
     parse,
 )
-from piitier.datagen.values import generate_value
+from piitier.datagen.values import generate_dochod, generate_kwota, generate_value
 from piitier.labels import Label
 from piitier.spans import Span
+
+# Labels whose span may absorb an adjacent template-literal currency token.
+_CURRENCY_LABELS: frozenset[Label] = frozenset({Label.KWOTA, Label.DOCHOD})
+# Matches optional whitespace + a currency token at start of a string.
+_CURRENCY_FOLLOW_RE: re.Pattern[str] = re.compile(r"^[ \t]*(?:złotych|zł|PLN|EUR|euro|€)(?!\w)")
+
 
 # Person-group labels: OSOBA/IMIE/NAZWISKO/DATA_URODZENIA always use a PersonRecord;
 # explicit PESEL#k also joins this group (anonymous PESEL keeps the old structured path).
@@ -74,6 +81,8 @@ def render(template: Template, seed: int) -> Document:
         Label.EMAIL,
         # PII-3-a finance / insurance labels
         Label.NR_UMOWY,
+        Label.KWOTA,
+        Label.DOCHOD,
         Label.NR_POLISY,
         Label.NR_SZKODY,
         Label.NR_REJESTRACYJNY,
@@ -86,6 +95,7 @@ def render(template: Template, seed: int) -> Document:
         Label.PLACOWKA,
         Label.LEKARZ,
         Label.NPWZ,
+        Label.DANE_ZDROWOTNE,
     }
     for item in parsed:
         if isinstance(item, Placeholder) and item.label not in supported_labels:
@@ -163,7 +173,7 @@ def render(template: Template, seed: int) -> Document:
     person_records: dict[str, people.PersonRecord] = {}
     address_records: dict[str, people.AddressRecord] = {}
     doctor_records: dict[str, tuple[people.PersonRecord, str]] = {}
-    value_cache: dict[tuple[Label, str, str | None], tuple[str, int]] = {}
+    value_cache: dict[tuple[Label, str, str | None, bool], tuple[str, int]] = {}
 
     # Second pass: build text and spans
     rendered_parts: list[str] = []
@@ -171,13 +181,23 @@ def render(template: Template, seed: int) -> Document:
     current_offset = 0
     fallbacks: int = 0  # per-document inflection fallback counter
 
-    for item in parsed:
+    for _i, item in enumerate(parsed):
         if isinstance(item, str):
             rendered_parts.append(item)
             current_offset += len(item)
         elif isinstance(item, Placeholder):
             eid = get_entity_id(item.label, item.entity)
-            cache_key = (item.label, eid, item.case)
+            # KWOTA/DOCHOD: peek at the next parsed element to determine whether a
+            # currency token follows in the template. This prevents embedded-currency
+            # values from being generated when the template already supplies one.
+            if item.label in _CURRENCY_LABELS:
+                _nxt = parsed[_i + 1] if _i + 1 < len(parsed) else None
+                _curr_follows: bool = bool(
+                    isinstance(_nxt, str) and _CURRENCY_FOLLOW_RE.match(_nxt)
+                )
+            else:
+                _curr_follows = False
+            cache_key = (item.label, eid, item.case, _curr_follows)
             if cache_key not in value_cache:
                 # Explicit PESEL#k joins the person group; anonymous {{PESEL}} keeps
                 # the old structured path so that UC-1/UC-2 determinism is preserved.
@@ -240,7 +260,12 @@ def render(template: Template, seed: int) -> Document:
                     val = people.get_address_field(item.label, address_records[eid])
                     value_cache[cache_key] = (val, 0)
                 else:
-                    val = generate_value(item.label, rng)
+                    if item.label is Label.KWOTA:
+                        val = generate_kwota(rng, currency_follows=_curr_follows)
+                    elif item.label is Label.DOCHOD:
+                        val = generate_dochod(rng, currency_follows=_curr_follows)
+                    else:
+                        val = generate_value(item.label, rng)
                     value_cache[cache_key] = (val, 0)
             val, occ_fb = value_cache[cache_key]
             fallbacks += occ_fb
@@ -264,11 +289,33 @@ def render(template: Template, seed: int) -> Document:
             )
 
     text = "".join(rendered_parts)
+
+    # Extend KWOTA/DOCHOD spans over an adjacent template-literal currency token.
+    # The generator was told not to embed currency when the template has one, so
+    # the span must absorb the currency text to keep doc.text[s.start:s.end]==s.text.
+    extended_spans: list[SyntheticSpan] = []
+    for _span in spans:
+        if _span.label in _CURRENCY_LABELS:
+            _m = _CURRENCY_FOLLOW_RE.match(text[_span.end :])
+            if _m:
+                _new_end = _span.end + len(_m.group(0))
+                _span = SyntheticSpan(
+                    start=_span.start,
+                    end=_new_end,
+                    label=_span.label,
+                    source=_span.source,
+                    score=_span.score,
+                    status=_span.status,
+                    entity=_span.entity,
+                    text=text[_span.start : _new_end],
+                )
+        extended_spans.append(_span)
+
     return Document(
         text=text,
         template_id=template.template_id,
         doc_type=template.doc_type,
         seed=seed,
-        spans=spans,
+        spans=extended_spans,
         inflection_fallbacks=fallbacks,
     )

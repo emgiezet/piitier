@@ -1,0 +1,10 @@
+Od: {{EMAIL}}
+Do: bok@bank24.pl
+Temat: Zapytanie o saldo umowy kredytowej
+
+Szanowni Państwo,
+
+zwracam się z uprzejmą prośbą w sprawie umowy numer {{NR_UMOWY}}. Jestem {{IMIE#1}} {{NAZWISKO#1}}, PESEL {{PESEL}}, ur. {{DATA_URODZENIA}}, adres korespondencyjny: {{ADRES}}. Zgodnie z moimi obliczeniami pozostało do spłaty {{KWOTA}} zł, jednak harmonogram przesłany w ostatniej wiadomości podaje inną kwotę. Ewentualny przelew nadpłaty proszę skierować na rachunek {{IBAN}}. NIP mojej działalności: {{NIP}}. Czekam na odpowiedź pod numerem {{TELEFON}} lub na wskazany adres e-mail. Zamieszkuję w {{MIEJSCOWOSC}}, kod pocztowy {{KOD_POCZTOWY}}.
+
+Z poważaniem,
+{{IMIE#1}} {{NAZWISKO#1}}

@@ -31,6 +31,7 @@ DOC_TYPES = frozenset(
         "transkrypcja_infolinii",
         "wypis_szpitalny",
         "skierowanie",
+        "zestawienie_prowizyjne",
     }
 )
 
@@ -366,11 +367,30 @@ def test_uc28_manifest_counts_match_jsonl(tmp_path: Path) -> None:
         "split_counts",
         "version",
         "inflection_fallbacks",
+        "augment",
+        "augment_fraction",
+        "augmented_doc_count",
+        "transform_doc_counts",
+        "hard_negatives",
     }
     assert expected_fields <= set(manifest.keys()), (
         f"missing manifest fields: {expected_fields - set(manifest.keys())}"
     )
-    assert manifest["inflection_fallbacks"] == 0
+    # inflection_fallbacks must equal the sum over the written documents: re-render each
+    # record from its template and seed (fallbacks depend on which names Morfeusz lacks).
+    from piitier.datagen.build import _PACKAGED_TEMPLATES_DIR, collect_templates
+    from piitier.datagen.render import render
+
+    by_id = {t.template_id: t for t in collect_templates(_PACKAGED_TEMPLATES_DIR)}
+    expected_fallbacks = 0
+    for fname in ("train.jsonl", "dev.jsonl"):
+        for raw in (tmp_path / fname).read_text(encoding="utf-8").splitlines():
+            if raw.strip():
+                rec = json.loads(raw)
+                doc = render(by_id[rec["template_id"]], seed=rec["seed"])
+                assert doc.text == rec["text"]
+                expected_fallbacks += doc.inflection_fallbacks
+    assert manifest["inflection_fallbacks"] == expected_fallbacks
 
 
 def test_manifest_fallback_aggregation_sum(monkeypatch, tmp_path: Path) -> None:
@@ -445,6 +465,89 @@ def test_split_function_uses_sha256_not_python_hash() -> None:
         "skierowanie_01",
     ):
         assert _split_for(tid) == "train", f"{tid!r} should be train"
+
+
+# ---------------------------------------------------------------------------
+# Train-coverage guard (UC-G1 – UC-G3)
+# ---------------------------------------------------------------------------
+
+
+def test_guard_forces_solo_dev_template_to_train(tmp_path: Path) -> None:
+    """mail_klienta_01 hashes to dev; as the only mail_klienta template it must be
+    forced to train: all documents are in train.jsonl and manifest lists it."""
+    import json
+
+    from piitier.datagen.build import _split_for, build
+
+    # Sanity: confirm the fixture property holds.
+    assert _split_for("mail_klienta_01") == "dev"
+
+    tmpl_dir = tmp_path / "templates"
+    mk_dir = tmpl_dir / "mail_klienta"
+    mk_dir.mkdir(parents=True)
+    (mk_dir / "mail_klienta_01.txt").write_text("Treść wiadomości.", encoding="utf-8")
+
+    out = tmp_path / "corpus"
+    build(tmpl_dir, n=5, seed=42, out=out)
+
+    train_records = [
+        json.loads(line)
+        for line in (out / "train.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    dev_records = [
+        json.loads(line)
+        for line in (out / "dev.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert all(r["doc_type"] == "mail_klienta" for r in train_records)
+    assert len(train_records) == 5
+    assert len(dev_records) == 0
+
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert "mail_klienta" in manifest["split_forced_train"]
+
+
+def test_guard_preserves_sha256_split_for_mixed_type(tmp_path: Path) -> None:
+    """A doc type with one train-hashed (polisa_01) and one dev-hashed (polisa_06)
+    template must NOT be forced; each template keeps its sha256 assignment."""
+    import json
+
+    from piitier.datagen.build import _split_for, build
+
+    # Sanity: confirm fixture properties.
+    assert _split_for("polisa_01") == "train"
+    assert _split_for("polisa_06") == "dev"
+
+    tmpl_dir = tmp_path / "templates"
+    polisa_dir = tmpl_dir / "polisa"
+    polisa_dir.mkdir(parents=True)
+    (polisa_dir / "polisa_01.txt").write_text("Polisa A.", encoding="utf-8")
+    (polisa_dir / "polisa_06.txt").write_text("Polisa B.", encoding="utf-8")
+
+    out = tmp_path / "corpus"
+    # Use enough docs so both templates are visited.
+    build(tmpl_dir, n=10, seed=7, out=out)
+
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert "polisa" not in manifest["split_forced_train"]
+
+    train_tids = {
+        json.loads(line)["template_id"]
+        for line in (out / "train.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+    dev_tids = {
+        json.loads(line)["template_id"]
+        for line in (out / "dev.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+
+    assert "polisa_01" in train_tids, "polisa_01 (train hash) must be in train"
+    assert "polisa_06" in dev_tids, "polisa_06 (dev hash) must be in dev"
+    assert "polisa_01" not in dev_tids, "polisa_01 must not appear in dev"
+    assert "polisa_06" not in train_tids, "polisa_06 must not appear in train"
 
 
 # ---------------------------------------------------------------------------

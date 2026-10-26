@@ -24,8 +24,32 @@ def bio_tag_names() -> list[str]:
     return names
 
 
-def spans_to_token_labels(spans: list[Span], offset_mapping: list[tuple[int, int]]) -> list[int]:
-    """Compute BIO tag IDs for tokens based on ground-truth spans and token offset mapping."""
+def _token_content_range(text: str, tok_start: int, tok_end: int) -> tuple[int, int]:
+    """Return the sub-range of [tok_start, tok_end) that contains non-whitespace chars."""
+    s = tok_start
+    e = tok_end
+    while s < e and text[s].isspace():
+        s += 1
+    while e > s and text[e - 1].isspace():
+        e -= 1
+    return s, e
+
+
+def spans_to_token_labels(
+    spans: list[Span],
+    offset_mapping: list[tuple[int, int]],
+    text: str = "",
+) -> list[int]:
+    """Compute BIO tag IDs for tokens based on ground-truth spans and token offset mapping.
+
+    * A token whose *non-whitespace* content overlaps a span: B- (first such token per
+      span) or I- (subsequent tokens).
+    * A whitespace-only token strictly inside a span (its full range falls within the
+      span): -100 (IGNORE) — the model is not taught O mid-entity, so decode_spans can
+      safely skip those positions without splitting the entity.
+    * A whitespace-only token outside all spans: O.
+    * Special / padding tokens (offset (0,0) or start >= end): -100 via build_dataset.
+    """
     tag_names = bio_tag_names()
     tag_to_id = {name: i for i, name in enumerate(tag_names)}
     o_id = tag_to_id[BIO_O]
@@ -40,9 +64,24 @@ def spans_to_token_labels(spans: list[Span], offset_mapping: list[tuple[int, int
         if tok_start >= tok_end:
             continue
 
+        # Determine the non-whitespace content range of this token.
+        if text:
+            cs, ce = _token_content_range(text, tok_start, tok_end)
+        else:
+            cs, ce = tok_start, tok_end
+
+        # Whitespace-only token: assign IGNORE if strictly inside any span, else leave O.
+        if cs >= ce:
+            for s in sorted_spans:
+                if tok_start >= s.start and tok_end <= s.end:
+                    labels[i] = -100
+                    break
+            continue
+
         matching_span: Span | None = None
         for s in sorted_spans:
-            if s.start <= tok_start and tok_end <= s.end:
+            # Non-whitespace content of the token overlaps the span.
+            if cs < s.end and ce > s.start:
                 matching_span = s
                 break
 
@@ -65,7 +104,17 @@ def decode_spans(
     id2label: dict[int, str],
     threshold: float = 0.0,
 ) -> list[Span]:
-    """Decode token probability distributions into entity Spans."""
+    """Decode token probability distributions into entity Spans.
+
+    Whitespace-only tokens are skipped entirely: they are trained with IGNORE (-100) in
+    spans_to_token_labels, so their model logits are meaningless and must not trigger a
+    flush.  This preserves entities like "717 253,28" that contain an internal space token.
+
+    Leading whitespace is stripped from the character offset when a new entity starts
+    (B- tag or orphan I- treated as B-), so that the returned Span.start always points
+    at the first non-whitespace character of the entity.  An I- tag that follows O (or a
+    different label) is treated as a new B- rather than being silently dropped.
+    """
     spans: list[Span] = []
 
     current_label: str | None = None
@@ -107,6 +156,10 @@ def decode_spans(
             continue
         if tok_start >= tok_end:
             continue
+        # Whitespace-only tokens are IGNORE in training; skip without flushing so that
+        # an internal space does not split a multi-word entity.
+        if text[tok_start:tok_end].strip() == "":
+            continue
         if not token_probs:
             flush_entity()
             continue
@@ -117,20 +170,25 @@ def decode_spans(
 
         if tag == BIO_O:
             flush_entity()
-        elif tag.startswith("B-"):
-            flush_entity()
-            lbl_name = tag.removeprefix("B-")
-            current_label = lbl_name
-            current_start = tok_start
-            current_end = tok_end
-            current_scores = [score]
-        elif tag.startswith("I-"):
-            lbl_name = tag.removeprefix("I-")
-            if current_label == lbl_name:
+        elif tag.startswith("B-") or tag.startswith("I-"):
+            lbl_name = tag[2:]
+            if tag.startswith("I-") and current_label == lbl_name:
+                # Normal continuation of the current entity.
                 current_end = tok_end
                 current_scores.append(score)
             else:
+                # B- always starts fresh; orphan I- (after O or different label) is
+                # treated as a new B- so we do not silently drop the token.
                 flush_entity()
+                # Strip leading whitespace: the span should start at the first
+                # non-whitespace character of the token, not at the Ġ-prefix space.
+                cs = tok_start
+                while cs < tok_end and text[cs].isspace():
+                    cs += 1
+                current_label = lbl_name
+                current_start = cs if cs < tok_end else tok_start
+                current_end = tok_end
+                current_scores = [score]
         else:
             flush_entity()
 

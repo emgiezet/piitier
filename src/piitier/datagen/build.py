@@ -11,9 +11,14 @@ BuildError                        — raised by build() for guarded write condit
 The CLI (``python -m piitier.datagen build|check``) is in ``__main__.py``.
 
 Split rule: sha256(template_id, encoding='utf-8') % 10 == 0  →  dev,  else  train.
+Train-coverage guard: if every template of a doc type would be assigned to dev, all
+                      templates of that type are forced to train instead.  The guard is
+                      deterministic and independent of n/seed.  Forced types are recorded
+                      in ``manifest.json`` under the key ``split_forced_train``.
 IDs: ``doc_{i:07d}`` where i is the global document index [0, n).
 Seeds: base_seed + i.
-Traversal: sorted(doc_types) then sorted(filenames) — stable across platforms.
+Traversal: round-robin over sorted(doc_types), then sorted(filenames) within each type
+           — equal shares per type, stable across platforms.
 """
 
 from __future__ import annotations
@@ -24,12 +29,13 @@ import random
 from pathlib import Path
 
 import piitier
+from piitier.datagen.augment import ALL_TRANSFORMS
 from piitier.datagen.augment import augment as augment_doc
 from piitier.datagen.hard_negatives import make_hard_negative_docs
 from piitier.datagen.render import render
 from piitier.datagen.template import Template
 
-# The eight supported document types, sorted for deterministic traversal.
+# The nine supported document types, sorted for deterministic traversal.
 DOC_TYPES: frozenset[str] = frozenset(
     {
         "mail_klienta",
@@ -39,6 +45,7 @@ DOC_TYPES: frozenset[str] = frozenset(
         "umowa_kredytowa",
         "wypis_szpitalny",
         "wyciag",
+        "zestawienie_prowizyjne",
         "zgloszenie_szkody",
     }
 )
@@ -92,6 +99,25 @@ def _split_for(template_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Train-coverage guard
+# ---------------------------------------------------------------------------
+
+
+def _forced_train_types(type_templates: dict[str, list[Template]]) -> frozenset[str]:
+    """Return the set of doc types where *every* template would be assigned to dev.
+
+    For these types the caller must override the split to ``'train'`` so that every
+    doc type is always represented in the training set.  Types with at least one
+    train-assigned template are returned unchanged (empty intersection with result).
+    """
+    forced: set[str] = set()
+    for doc_type, tmpls in type_templates.items():
+        if all(_split_for(t.template_id) == "dev" for t in tmpls):
+            forced.add(doc_type)
+    return frozenset(forced)
+
+
+# ---------------------------------------------------------------------------
 # Template collection
 # ---------------------------------------------------------------------------
 
@@ -120,6 +146,33 @@ def collect_templates(templates_dir: Path) -> list[Template]:
 
 
 # ---------------------------------------------------------------------------
+# Augmentation helpers
+# ---------------------------------------------------------------------------
+
+# Per-transform inclusion probability when a document is selected for augmentation.
+_TRANSFORM_PROBS: dict[str, float] = {
+    "ocr_confusions": 0.5,
+    "space_digit_groups": 0.5,
+    "strip_diacritics": 0.5,
+    "uppercase": 0.3,
+}
+
+
+def _select_transforms(rng: random.Random) -> frozenset[str]:
+    """Return a random non-empty subset of augmentation transforms.
+
+    Each transform in :data:`ALL_TRANSFORMS` is included independently with the
+    probability given by :data:`_TRANSFORM_PROBS`.  If all draws miss the threshold
+    (probability ≈ 0.5³ × 0.7 ≈ 0.09), a single transform is chosen uniformly at
+    random to guarantee the returned set is non-empty.
+    """
+    selected: set[str] = {t for t in ALL_TRANSFORMS if rng.random() < _TRANSFORM_PROBS.get(t, 0.5)}
+    if not selected:
+        selected = {ALL_TRANSFORMS[rng.randrange(len(ALL_TRANSFORMS))]}
+    return frozenset(selected)
+
+
+# ---------------------------------------------------------------------------
 # Builder
 # ---------------------------------------------------------------------------
 
@@ -131,6 +184,7 @@ def build(
     out: Path,
     *,
     augment: bool = False,
+    augment_fraction: float = 0.25,
     hard_negatives: int = 0,
 ) -> None:
     """Render *n* synthetic documents and write ``train.jsonl``, ``dev.jsonl``,
@@ -149,7 +203,12 @@ def build(
         and must not resolve to a path containing a ``bench`` component.
         Raises :exc:`BuildError` before any writes if either guard is violated.
     augment:
-        Whether to apply OCR and diacritic augmentation to every document.
+        Whether to apply OCR and diacritic augmentation to a fraction of documents.
+    augment_fraction:
+        Fraction of documents to augment when *augment* is ``True``.  Each document
+        is independently augmented with probability *augment_fraction* using a random
+        non-empty subset of transforms (uppercase: P=0.3, others: P=0.5).
+        Must satisfy ``0 < augment_fraction <= 1``.  Ignored when *augment* is False.
     hard_negatives:
         Number of hard negative documents to append.
     """
@@ -158,6 +217,8 @@ def build(
         raise BuildError(f"hard_negatives must be >= 0, got {hard_negatives}")
     if n < 0:
         raise BuildError(f"n must be >= 0, got {n}")
+    if augment and not (0 < augment_fraction <= 1):
+        raise BuildError(f"augment_fraction must be in (0, 1], got {augment_fraction}")
     templates = collect_templates(templates_dir)
     if not templates:
         raise ValueError(f"No .txt templates found in {templates_dir}")
@@ -167,16 +228,37 @@ def build(
     span_counts: dict[str, int] = {}
     split_counts: dict[str, int] = {"train": 0, "dev": 0}
     total_fallbacks: int = 0
+    transform_doc_counts: dict[str, int] = {}
+    augmented_doc_count: int = 0
+
+    # Group templates by doc_type (collect_templates already sorts within each type).
+    _type_templates: dict[str, list[Template]] = {}
+    for t in templates:
+        _type_templates.setdefault(t.doc_type, []).append(t)
+    _types: list[str] = sorted(_type_templates)
+    _type_counters: dict[str, int] = dict.fromkeys(_types, 0)
+    _forced: frozenset[str] = _forced_train_types(_type_templates)
 
     # 1. Template documents
     for i in range(n):
-        tmpl = templates[i % len(templates)]
+        dt = _types[i % len(_types)]
+        k = _type_counters[dt]
+        _type_counters[dt] += 1
+        tmpl = _type_templates[dt][k % len(_type_templates[dt])]
         doc_seed = seed + i
         doc_id = f"doc_{i:07d}"
 
         doc = render(tmpl, doc_seed)
         if augment:
-            doc = augment_doc(doc, random.Random(doc_seed))
+            doc_rng = random.Random(doc_seed)
+            if doc_rng.random() < augment_fraction:
+                transforms = _select_transforms(doc_rng)
+                doc = augment_doc(doc, doc_rng, transforms=transforms)
+                augmented_doc_count += 1
+                for transform_name in transforms:
+                    transform_doc_counts[transform_name] = (
+                        transform_doc_counts.get(transform_name, 0) + 1
+                    )
         total_fallbacks += doc.inflection_fallbacks
         spans_data = [
             {
@@ -201,7 +283,7 @@ def build(
             ensure_ascii=False,
         )
 
-        split = _split_for(tmpl.template_id)
+        split = _split_for(tmpl.template_id) if tmpl.doc_type not in _forced else "train"
         if split == "dev":
             dev_lines.append(record)
             split_counts["dev"] += 1
@@ -221,7 +303,15 @@ def build(
             doc_id = doc.template_id  # hn_{j:07d}
 
             if augment:
-                doc = augment_doc(doc, random.Random(doc_seed))
+                hn_rng = random.Random(doc_seed)
+                if hn_rng.random() < augment_fraction:
+                    transforms = _select_transforms(hn_rng)
+                    doc = augment_doc(doc, hn_rng, transforms=transforms)
+                    augmented_doc_count += 1
+                    for transform_name in transforms:
+                        transform_doc_counts[transform_name] = (
+                            transform_doc_counts.get(transform_name, 0) + 1
+                        )
 
             spans_data = [
                 {
@@ -280,9 +370,13 @@ def build(
         "template_counts": dict(sorted(template_counts.items())),
         "span_counts": dict(sorted(span_counts.items())),
         "split_counts": split_counts,
+        "split_forced_train": sorted(_forced),
         "version": piitier.__version__,
         "inflection_fallbacks": total_fallbacks,
         "augment": augment,
+        "augment_fraction": augment_fraction if augment else None,
+        "augmented_doc_count": augmented_doc_count,
+        "transform_doc_counts": dict(sorted(transform_doc_counts.items())),
         "hard_negatives": hard_negatives,
     }
     (out / "manifest.json").write_text(

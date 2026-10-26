@@ -101,6 +101,9 @@ def test_uc62_augment_flag_and_offsets(tmp_path: Path) -> None:
     )
     m_def = json.loads((out_def / "manifest.json").read_text(encoding="utf-8"))
     assert m_def["augment"] is False
+    assert m_def["augment_fraction"] is None
+    assert m_def["augmented_doc_count"] == 0
+    assert m_def["transform_doc_counts"] == {}
     assert check(out_def) == (0, "")
 
     out_aug = tmp_path / "aug"
@@ -120,7 +123,10 @@ def test_uc62_augment_flag_and_offsets(tmp_path: Path) -> None:
     )
     m_aug = json.loads((out_aug / "manifest.json").read_text(encoding="utf-8"))
     assert m_aug["augment"] is True
+    assert m_aug["augment_fraction"] == 0.25
     assert m_aug["hard_negatives"] == 20
+    assert "transform_doc_counts" in m_aug
+    assert isinstance(m_aug["augmented_doc_count"], int)
     assert check(out_aug) == (0, "")
 
 
@@ -189,6 +195,8 @@ def test_uc64_integration_2000_docs(tmp_path: Path) -> None:
     assert manifest["n"] == 1800
     assert manifest["hard_negatives"] == 200
     assert manifest["augment"] is True
+    assert manifest["augment_fraction"] == 0.25
+    assert isinstance(manifest["augmented_doc_count"], int)
     assert sum(manifest["split_counts"].values()) == 2000
 
     agg_span_counts: dict[str, int] = {}
@@ -213,3 +221,148 @@ def test_uc65_dataset_card_exists_and_content() -> None:
     assert "MIT" in content
     assert "Morfeusz" in content
     assert "BSD-2-Clause" in content
+
+
+# ---------------------------------------------------------------------------
+# augment_fraction new behaviour tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_augment_fraction_respected_within_tolerance(tmp_path: Path) -> None:
+    """With augment_fraction=0.5 and 400 docs, augmented_doc_count ≈ 200 ± 60 (3σ).
+
+    Binomial(400, 0.5): σ ≈ 10, so ±60 is extremely conservative.
+    """
+    out = tmp_path / "out"
+    res = _run(
+        "build",
+        "--templates",
+        str(PACKAGED_TEMPLATES),
+        "--n",
+        "400",
+        "--seed",
+        "7",
+        "--augment",
+        "--augment-fraction",
+        "0.5",
+        "--hard-negatives",
+        "0",
+        "--out",
+        str(out),
+    )
+    assert res.returncode == 0, res.stderr
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    count = manifest["augmented_doc_count"]
+    assert 140 <= count <= 260, (
+        f"augmented_doc_count={count} is outside expected range [140, 260] for f=0.5, n=400"
+    )
+    assert manifest["augment_fraction"] == 0.5
+    assert check(out) == (0, "")
+
+
+@pytest.mark.integration
+def test_augment_false_byte_identical(tmp_path: Path) -> None:
+    """Two builds with augment=False and the same seed produce byte-identical output.
+
+    Verifies that the new augment_fraction code path is never touched when augment=False.
+    """
+    out1 = tmp_path / "run1"
+    out2 = tmp_path / "run2"
+    for out in (out1, out2):
+        _run(
+            "build",
+            "--templates",
+            str(PACKAGED_TEMPLATES),
+            "--n",
+            "50",
+            "--seed",
+            "99",
+            "--out",
+            str(out),
+        )
+    for filename in ("train.jsonl", "dev.jsonl", "manifest.json"):
+        h1 = hashlib.sha256((out1 / filename).read_bytes()).hexdigest()
+        h2 = hashlib.sha256((out2 / filename).read_bytes()).hexdigest()
+        assert h1 == h2, f"{filename} differs between two augment=False runs"
+
+
+@pytest.mark.integration
+def test_augment_fraction_1_0_augments_all_docs(tmp_path: Path) -> None:
+    """With augment_fraction=1.0 every document is augmented (augmented_doc_count == n)."""
+    out = tmp_path / "out"
+    n = 50
+    res = _run(
+        "build",
+        "--templates",
+        str(PACKAGED_TEMPLATES),
+        "--n",
+        str(n),
+        "--seed",
+        "5",
+        "--augment",
+        "--augment-fraction",
+        "1.0",
+        "--hard-negatives",
+        "0",
+        "--out",
+        str(out),
+    )
+    assert res.returncode == 0, res.stderr
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["augmented_doc_count"] == n, (
+        f"Expected all {n} docs augmented but got {manifest['augmented_doc_count']}"
+    )
+    assert check(out) == (0, "")
+
+
+@pytest.mark.integration
+def test_augment_fraction_invalid_exits2(tmp_path: Path) -> None:
+    """--augment --augment-fraction 0 exits 2 (fraction out of range)."""
+    out = tmp_path / "out"
+    for bad in ("0", "-0.1", "1.5"):
+        res = _run(
+            "build",
+            "--templates",
+            str(PACKAGED_TEMPLATES),
+            "--n",
+            "10",
+            "--seed",
+            "1",
+            "--augment",
+            "--augment-fraction",
+            bad,
+            "--out",
+            str(out),
+        )
+        assert res.returncode == 2, (
+            f"Expected exit 2 for --augment-fraction {bad!r}, got {res.returncode}: {res.stderr}"
+        )
+
+
+@pytest.mark.integration
+def test_augment_fraction_determinism(tmp_path: Path) -> None:
+    """Same seed and augment_fraction → byte-identical output on two runs."""
+    out1 = tmp_path / "r1"
+    out2 = tmp_path / "r2"
+    for out in (out1, out2):
+        _run(
+            "build",
+            "--templates",
+            str(PACKAGED_TEMPLATES),
+            "--n",
+            "60",
+            "--seed",
+            "11",
+            "--augment",
+            "--augment-fraction",
+            "0.4",
+            "--hard-negatives",
+            "10",
+            "--out",
+            str(out),
+        )
+    for filename in ("train.jsonl", "dev.jsonl", "manifest.json"):
+        h1 = hashlib.sha256((out1 / filename).read_bytes()).hexdigest()
+        h2 = hashlib.sha256((out2 / filename).read_bytes()).hexdigest()
+        assert h1 == h2, f"{filename} differs between identical augmented runs"

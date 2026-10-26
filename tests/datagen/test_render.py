@@ -264,3 +264,85 @@ def test_entity_caching_and_scoping() -> None:
     assert card_spans[0].text == card_spans[1].text
     assert iban_rules.is_valid(iban_spans[0].text)
     assert payment_card_rules.is_valid(card_spans[0].text)
+
+
+# ---------------------------------------------------------------------------
+# Currency-span extension: KWOTA/DOCHOD span absorbs adjacent template currency
+# ---------------------------------------------------------------------------
+
+
+def test_kwota_span_extends_over_template_pln() -> None:
+    """Span for {{KWOTA}} PLN includes 'PLN'; doc.text[start:end] == span.text."""
+    doc = _render("Składka: {{KWOTA}} PLN rocznie.", seed=0)
+    spans = [s for s in doc.spans if s.label is Label.KWOTA]
+    assert len(spans) == 1
+    span = spans[0]
+    assert doc.text[span.start : span.end] == span.text, "offset mismatch"
+    assert span.text.endswith(" PLN"), f"currency not absorbed: {span.text!r}"
+
+
+def test_kwota_span_extends_over_template_zl() -> None:
+    """Span for {{KWOTA}} zł includes 'zł'."""
+    doc = _render("Kwota: {{KWOTA}} zł.", seed=1)
+    span = next(s for s in doc.spans if s.label is Label.KWOTA)
+    assert doc.text[span.start : span.end] == span.text
+    assert span.text.endswith(" zł"), f"currency not absorbed: {span.text!r}"
+
+
+def test_no_double_currency_when_template_has_currency() -> None:
+    """{{KWOTA}} PLN never produces 'PLN PLN' or 'zł PLN' etc. over 50 seeds."""
+    import re
+
+    double_ccy = re.compile(r"(?:PLN|zł|EUR|€|złotych|euro).{0,2}(?:PLN|zł|EUR|€|złotych|euro)")
+    for seed in range(50):
+        doc = _render("Wartość: {{KWOTA}} PLN.", seed=seed)
+        span = next(s for s in doc.spans if s.label is Label.KWOTA)
+        assert not double_ccy.search(span.text), f"double currency in seed {seed}: {span.text!r}"
+        assert doc.text[span.start : span.end] == span.text
+
+
+def test_kwota_without_template_currency_may_embed() -> None:
+    """{{KWOTA}} (no template currency) sometimes embeds currency in the span over 100 seeds."""
+    embedded = 0
+    for seed in range(100):
+        doc = _render("Kwota: {{KWOTA}}.", seed=seed)
+        span = next(s for s in doc.spans if s.label is Label.KWOTA)
+        assert doc.text[span.start : span.end] == span.text
+        if any(tok in span.text for tok in ("PLN", "zł", "EUR", "€")):
+            embedded += 1
+    # We expect ~30% embedded; at least 1 over 100 seeds is a sanity floor.
+    assert embedded >= 1, "embedded currency was never generated in 100 seeds"
+
+
+def test_dochod_span_extends_over_template_currency() -> None:
+    """Span for {{DOCHOD}} PLN includes 'PLN'."""
+    doc = _render("Dochód: {{DOCHOD}} PLN miesięcznie.", seed=2)
+    spans = [s for s in doc.spans if s.label is Label.DOCHOD]
+    assert len(spans) == 1
+    span = spans[0]
+    assert doc.text[span.start : span.end] == span.text
+    assert span.text.endswith(" PLN")
+
+
+def test_offsets_exact_for_all_new_labels() -> None:
+    """doc.text[s.start:s.end] == s.text for KWOTA, DOCHOD, DANE_ZDROWOTNE, NR_SZKODY, NR_POLISY."""
+    tmpl = "K:{{KWOTA}} PLN D:{{DOCHOD}} zł DZ:{{DANE_ZDROWOTNE}} SZ:{{NR_SZKODY}} PO:{{NR_POLISY}}"
+    for seed in range(50):
+        doc = _render(tmpl, seed=seed)
+        for span in doc.spans:
+            assert doc.text[span.start : span.end] == span.text, (
+                f"seed {seed}, label {span.label.name}: "
+                f"text[{span.start}:{span.end}]={doc.text[span.start : span.end]!r} "
+                f"!= span.text={span.text!r}"
+            )
+
+
+def test_render_currency_extension_deterministic() -> None:
+    """Same seed produces identical spans (including extended currency) across calls."""
+    tmpl = "Składka: {{KWOTA}} PLN, dochód: {{DOCHOD}} EUR."
+    doc1 = _render(tmpl, seed=42)
+    doc2 = _render(tmpl, seed=42)
+    assert doc1.text == doc2.text
+    assert [(s.start, s.end, s.text) for s in doc1.spans] == [
+        (s.start, s.end, s.text) for s in doc2.spans
+    ]

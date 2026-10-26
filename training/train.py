@@ -94,7 +94,7 @@ def build_dataset(
             )
 
         offset_mapping = encodings["offset_mapping"][i]
-        token_labels = spans_to_token_labels(spans, offset_mapping)
+        token_labels = spans_to_token_labels(spans, offset_mapping, text=texts[i])
         attn_mask = encodings["attention_mask"][i]
 
         for j, (start, end) in enumerate(offset_mapping):
@@ -200,6 +200,9 @@ def main(argv: list[str] | None = None) -> int:
 
     use_cpu = not torch.cuda.is_available()
 
+    # GPU selection happens above: with several cards visible and no CUDA_VISIBLE_DEVICES,
+    # index 0 (the RTX 3090 Ti under CUDA's default fastest-first order) is pinned. An explicit
+    # `CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1` launch selects the same card.
     training_args = TrainingArguments(
         output_dir=str(config.output_dir),
         max_steps=config.max_steps,
@@ -207,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         per_device_eval_batch_size=config.per_device_batch_size,
         learning_rate=config.learning_rate,
         seed=config.seed,
+        bf16=config.bf16,
         save_strategy="no",
         eval_strategy="no" if config.max_steps == 1 else "steps",
         use_cpu=use_cpu,
@@ -225,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
     eval_metrics = trainer.evaluate()
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
+    trainer.save_model(str(config.output_dir))
+    tokenizer.save_pretrained(str(config.output_dir))
     (config.output_dir / "eval_results.json").write_text(
         json.dumps(eval_metrics, indent=2), encoding="utf-8"
     )
