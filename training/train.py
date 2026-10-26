@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -161,6 +162,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error loading config: {e}", file=sys.stderr)
         return 1
 
+    # Pin to a single GPU when several are visible: multi-GPU DataParallel
+    # synchronises to the smallest card and mixes unlike GPUs in one job,
+    # which the hardware playbook forbids. Must run before any CUDA call.
+    if (
+        torch.cuda.is_available()
+        and torch.cuda.device_count() > 1
+        and "CUDA_VISIBLE_DEVICES" not in os.environ
+    ):
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
@@ -189,9 +200,9 @@ def main(argv: list[str] | None = None) -> int:
 
     use_cpu = not torch.cuda.is_available()
 
-    # Single-GPU requirement: launch with CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1
-    # to restrict to the RTX 3090 Ti (CUDA's default fastest-first order makes index 1 the
-    # RTX 3080) and keep HF Trainer from pulling both cards into a DataParallel job.
+    # GPU selection happens above: with several cards visible and no CUDA_VISIBLE_DEVICES,
+    # index 0 (the RTX 3090 Ti under CUDA's default fastest-first order) is pinned. An explicit
+    # `CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1` launch selects the same card.
     training_args = TrainingArguments(
         output_dir=str(config.output_dir),
         max_steps=config.max_steps,
