@@ -120,7 +120,7 @@ class _StubPredictor:
         self._preds = per_record
         self._idx = 0
 
-    def predict(self, text: str) -> list[Span]:
+    def predict_window_spans(self, text: str) -> list[Span]:
         spans = self._preds[self._idx % len(self._preds)]
         self._idx += 1
         return spans
@@ -365,7 +365,7 @@ def test_uc142_main_exits_1_config_unchanged_card_has_count_and_reason(
     original_bytes = cfg.read_bytes()
 
     stub = _StubPredictor([[_pred(j * 10, j * 10 + 5) for j in range(10)]] * 4)
-    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold: stub)
+    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold, device: stub)
 
     ret = calibrate_main([str(cfg)])
 
@@ -446,7 +446,7 @@ def test_uc143_strict_main_exits_1_config_unchanged(
     )
     original_bytes = cfg.read_bytes()
     stub = _StubPredictor([[_pred(1, 10), _pred(20, 30)]] * 3)
-    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold: stub)
+    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold, device: stub)
 
     ret = calibrate_main([str(cfg)])
     assert ret == 1
@@ -479,7 +479,7 @@ def test_uc143_partial_main_exits_0_threshold_written(
         calibration_min_support=1,
     )
     stub = _StubPredictor([[_pred(1, 10), _pred(20, 30)]] * 3)
-    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold: stub)
+    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold, device: stub)
 
     assert calibrate_main([str(cfg)]) == 0
     data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
@@ -631,7 +631,7 @@ def test_uc144_calibration_target_recall_from_config_is_used(
         calibration_min_support=1,
     )
     stub = _StubPredictor([[_pred(j * 10, j * 10 + 5) for j in range(9)]] * 10)
-    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold: stub)
+    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold, device: stub)
 
     assert calibrate_main([str(cfg)]) == 0, "recall=0.9 ≥ target=0.8 → must succeed"
 
@@ -704,7 +704,7 @@ def test_uc145_main_reads_calibration_file_not_eval_file(
     )
 
     stub = _StubPredictor([[_pred(j * 10, j * 10 + 5, score=0.9) for j in range(5)]] * 5)
-    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold: stub)
+    monkeypatch.setattr(_cal_mod, "NerPredictor", lambda checkpoint, threshold, device: stub)
 
     accessed: list[Path] = []
     original_read = _cal_mod.read_jsonl

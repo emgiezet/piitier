@@ -1,0 +1,16 @@
+# First v4 training stage. Build the local-only train file as described in FINDINGS.md.
+# 19 637 v0.3 train docs + 4 000 new, train-only medical docs (seed 781007).
+# Resume from the local pii-5-v3 weights; do not train on v0.3 dev or calibration.
+run: pii-5-v4a
+base_checkpoint: training/out/pii-5-v3
+base_revision: main
+base_license: Apache-2.0
+train_file: data/synthetic/v0.3-medical/train.jsonl
+eval_file: data/synthetic/v0.3/dev.jsonl
+seed: 42
+max_steps: 2200
+per_device_batch_size: 16
+learning_rate: 1.0e-5
+max_length: 1024
+bf16: true
+output_dir: ../out/pii-5-v4a
