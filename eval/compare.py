@@ -6,6 +6,10 @@ Usage::
 
 Exits 1 when any label in the comparable subset loses more than *threshold*
 recall (strict) relative to the base report.
+
+PII-9 note: P/R/F1 values in the JSON may be ``null`` (undefined) when the
+denominator is zero.  Helpers return ``None`` for null values.  A regression
+check is *skipped* (not flagged) when either side has undefined recall.
 """
 
 from __future__ import annotations
@@ -13,30 +17,65 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Helpers (pure, no I/O — easy to unit-test)
 # ---------------------------------------------------------------------------
 
 
-def _prf_entry(by_label: dict[str, object], label: str) -> tuple[float, float, float]:
+def _nullable_float(v: object) -> float | None:
+    """Return a float or None; pass through None (JSON null)."""
+    if v is None:
+        return None
+    return float(v)
+
+
+def _fmt_val(v: float | None) -> str:
+    """Format a metric value; None → 'undefined'."""
+    if v is None:
+        return "undefined"
+    return f"{v:.4f}"
+
+
+def _fmt_delta(a: float | None, b: float | None) -> str:
+    """Format a metric delta; N/A when either side is undefined."""
+    if a is None or b is None:
+        return "N/A"
+    return f"{b - a:+.4f}"
+
+
+def _prf_entry(
+    by_label: dict[str, object], label: str
+) -> tuple[float | None, float | None, float | None]:
     """Return (precision, recall, f1) for *label* from a strict_by_label dict.
 
-    Missing labels are treated as (0, 0, 0) — they had no gold or pred spans.
+    A label *absent* from the report is treated as (0.0, 0.0, 0.0) — the system
+    produced no output for it.  A label *present* with a null value is treated as
+    ``None`` (undefined denominator — regression check is skipped for that label).
     """
-    raw = by_label.get(label, None)
-    if not isinstance(raw, dict):
+    raw = by_label.get(label)
+    if raw is None or not isinstance(raw, dict):
+        # Label absent entirely → treat as zero output (old behaviour, enables regression detection)
         return 0.0, 0.0, 0.0
-    return float(raw.get("p", 0.0)), float(raw.get("r", 0.0)), float(raw.get("f1", 0.0))
+    return (
+        _nullable_float(raw.get("p")),
+        _nullable_float(raw.get("r")),
+        _nullable_float(raw.get("f1")),
+    )
 
 
-def _micro_entry(report: dict[str, object], key: str) -> tuple[float, float, float]:
+def _micro_entry(
+    report: dict[str, object], key: str
+) -> tuple[float | None, float | None, float | None]:
     """Extract micro (p, r, f1) from a nested dict under *key* in *report*."""
     m = report.get(key)
     if not isinstance(m, dict):
-        return 0.0, 0.0, 0.0
-    return float(m.get("p", 0.0)), float(m.get("r", 0.0)), float(m.get("f1", 0.0))
+        return None, None, None
+    return (
+        _nullable_float(m.get("p")),
+        _nullable_float(m.get("r")),
+        _nullable_float(m.get("f1")),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +94,9 @@ def compare_reports(
         (markdown_output, regression_detected)
 
     A *regression* is defined as any label in the comparable subset losing more
-    than *threshold* recall (strict) relative to the base report.
+    than *threshold* recall (strict) relative to the base report.  When either
+    side has undefined (null) recall, the label is reported as SKIP and does
+    not count as a regression.
     """
     comparable_raw = base.get("comparable_labels", [])
     comparable_set: frozenset[str] = (
@@ -80,12 +121,16 @@ def compare_reports(
 
     bp, br, bf = _micro_entry(base, "comparable_strict_micro")
     np_, nr, nf = _micro_entry(new, "comparable_strict_micro")
-    lines.append(f"| strict | {bp:.4f} | {br:.4f} | {bf:.4f} | {np_:.4f} | {nr:.4f} | {nf:.4f} |")
+    lines.append(
+        f"| strict | {_fmt_val(bp)} | {_fmt_val(br)} | {_fmt_val(bf)}"
+        f" | {_fmt_val(np_)} | {_fmt_val(nr)} | {_fmt_val(nf)} |"
+    )
 
     bpp, brp, bfp = _micro_entry(base, "comparable_partial_micro")
     npp, nrp, nfp = _micro_entry(new, "comparable_partial_micro")
     lines.append(
-        f"| partial | {bpp:.4f} | {brp:.4f} | {bfp:.4f} | {npp:.4f} | {nrp:.4f} | {nfp:.4f} |"
+        f"| partial | {_fmt_val(bpp)} | {_fmt_val(brp)} | {_fmt_val(bfp)}"
+        f" | {_fmt_val(npp)} | {_fmt_val(nrp)} | {_fmt_val(nfp)} |"
     )
 
     # ----------------------------------------------------------------
@@ -109,25 +154,25 @@ def compare_reports(
         bp_l, br_l, bf_l = _prf_entry(base_by_label, label)
         np_l, nr_l, nf_l = _prf_entry(new_by_label, label)
 
-        dp = np_l - bp_l
-        dr = nr_l - br_l
-        df1 = nf_l - bf_l
-
         in_comparable = label in comparable_set
 
-        if in_comparable and dr < -threshold:
-            regression = True
-            regressions.append(label)
-            status = "REGRESSION"
-        elif in_comparable:
-            status = "ok"
+        if in_comparable:
+            if br_l is None or nr_l is None:
+                status = "SKIP (undefined)"
+            elif nr_l - br_l < -threshold:
+                regression = True
+                regressions.append(label)
+                status = "REGRESSION"
+            else:
+                status = "ok"
         else:
             status = ""
 
         lines.append(
-            f"| {label} | {bp_l:.4f} | {np_l:.4f} | {dp:+.4f} | "
-            f"{br_l:.4f} | {nr_l:.4f} | {dr:+.4f} | "
-            f"{bf_l:.4f} | {nf_l:.4f} | {df1:+.4f} | {status} |"
+            f"| {label} | {_fmt_val(bp_l)} | {_fmt_val(np_l)} | {_fmt_delta(bp_l, np_l)}"
+            f" | {_fmt_val(br_l)} | {_fmt_val(nr_l)} | {_fmt_delta(br_l, nr_l)}"
+            f" | {_fmt_val(bf_l)} | {_fmt_val(nf_l)} | {_fmt_delta(bf_l, nf_l)}"
+            f" | {status} |"
         )
 
     # ----------------------------------------------------------------
@@ -155,20 +200,21 @@ def compare_reports(
             base_dt = base_dt if isinstance(base_dt, dict) else {}
             new_dt = new_dt if isinstance(new_dt, dict) else {}
 
-            def _sm(d: dict[str, object]) -> tuple[float, float, float]:
+            def _sm(d: dict[str, object]) -> tuple[float | None, float | None, float | None]:
                 sm = d.get("strict_micro", {})
                 sm = sm if isinstance(sm, dict) else {}
-                return float(sm.get("p", 0.0)), float(sm.get("r", 0.0)), float(sm.get("f1", 0.0))
+                return (
+                    _nullable_float(sm.get("p")),
+                    _nullable_float(sm.get("r")),
+                    _nullable_float(sm.get("f1")),
+                )
 
             bm = _sm(base_dt)
             nm = _sm(new_dt)
-            dp = nm[0] - bm[0]
-            dr = nm[1] - bm[1]
-            df1 = nm[2] - bm[2]
             lines.append(
-                f"| {dt} | {bm[0]:.4f} | {nm[0]:.4f} | {dp:+.4f} | "
-                f"{bm[1]:.4f} | {nm[1]:.4f} | {dr:+.4f} | "
-                f"{bm[2]:.4f} | {nm[2]:.4f} | {df1:+.4f} |"
+                f"| {dt} | {_fmt_val(bm[0])} | {_fmt_val(nm[0])} | {_fmt_delta(bm[0], nm[0])}"
+                f" | {_fmt_val(bm[1])} | {_fmt_val(nm[1])} | {_fmt_delta(bm[1], nm[1])}"
+                f" | {_fmt_val(bm[2])} | {_fmt_val(nm[2])} | {_fmt_delta(bm[2], nm[2])} |"
             )
 
     # ----------------------------------------------------------------
@@ -222,35 +268,24 @@ def compare_reports(
 
 def main(argv: list[str] | None = None) -> int:
     """Main entry point: compare two JSON eval reports."""
-    parser = argparse.ArgumentParser(
-        description="Compare two eval JSON reports and flag recall regressions."
-    )
-    parser.add_argument("base", help="Path to base-model JSON report")
-    parser.add_argument("new", help="Path to new (fine-tuned) JSON report")
+    parser = argparse.ArgumentParser(description="Compare two eval JSON reports.")
+    parser.add_argument("base", help="Base JSON report path")
+    parser.add_argument("new", help="New JSON report path")
     parser.add_argument(
         "--threshold",
         type=float,
         default=0.02,
-        help="Recall regression threshold (default: 0.02)",
+        help="Recall drop threshold for regression (default: 0.02)",
     )
     args = parser.parse_args(argv)
 
-    base_path = Path(args.base)
-    new_path = Path(args.new)
+    with open(args.base, "r", encoding="utf-8") as f:
+        base_data: dict[str, object] = json.load(f)
+    with open(args.new, "r", encoding="utf-8") as f:
+        new_data: dict[str, object] = json.load(f)
 
-    for p in (base_path, new_path):
-        if not p.exists():
-            print(f"Error: {p} not found.", file=sys.stderr)
-            return 1
-
-    with open(base_path, "r", encoding="utf-8") as f:
-        base: dict[str, object] = json.load(f)
-    with open(new_path, "r", encoding="utf-8") as f:
-        new: dict[str, object] = json.load(f)
-
-    table, regression = compare_reports(base, new, threshold=args.threshold)
-    print(table)
-
+    output, regression = compare_reports(base_data, new_data, threshold=args.threshold)
+    print(output)
     return 1 if regression else 0
 
 

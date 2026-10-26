@@ -249,7 +249,7 @@ def test_uc113_run_benchmark_cross_doc_collision_all_metrics_zero(tmp_path: Path
             "partial_micro": partial_micro,
             "partial_by_label": by_label,
             "risk_weighted_recall": rwr,
-            "leak_rate": LeakRate(0, 2, 0, gold_count, []),
+            "leak_rate": LeakRate(0, 2, 0, gold_count, [], 0),
             "fidelity": 0,
             "numbering": NumberingStats(0, 0, 0, 0),
             "throughput": ThroughputStats(100.0, 0.01),

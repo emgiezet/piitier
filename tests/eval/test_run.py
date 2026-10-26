@@ -51,12 +51,12 @@ def test_uc90_write_report_and_zero_gold(tmp_path: Path) -> None:
     )
 
     metrics = {
-        "strict_micro": EntityPRF(0.0, 0.0, 0.0),
+        "strict_micro": EntityPRF(0.0, 0.0, 0.0, 0, 0, 0),
         "strict_by_label": {},
-        "partial_micro": EntityPRF(0.0, 0.0, 0.0),
+        "partial_micro": EntityPRF(0.0, 0.0, 0.0, 0, 0, 0),
         "partial_by_label": {},
         "risk_weighted_recall": 0.0,
-        "leak_rate": LeakRate(0, 1, 0, 0, []),
+        "leak_rate": LeakRate(0, 1, 0, 0, [], 0),
         "fidelity": 0,
         "numbering": NumberingStats(0, 0, 0, 0),
         "throughput": ThroughputStats(100.0, 0.01),

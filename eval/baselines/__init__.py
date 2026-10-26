@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from eval.baselines.bardsai_v2 import BardsaiV2System
+from eval.baselines.control import MaskAllSystem, NoneSystem
 from eval.baselines.piitier_systems import NerSystem, RulesSystem
 from eval.baselines.presidio_pl import PresidioSystem
 from eval.baselines.privacy_filter import PrivacyFilterSystem
@@ -30,6 +31,8 @@ _SYSTEM_FACTORIES: dict[str, Any] = {
     "presidio": PresidioSystem,
     "bardsai-v2": BardsaiV2System,
     "privacy-filter": PrivacyFilterSystem,
+    "none": NoneSystem,
+    "mask-all": MaskAllSystem,
 }
 
 

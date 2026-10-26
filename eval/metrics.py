@@ -18,9 +18,20 @@ from piitier.spans import Span
 
 @dataclass(frozen=True)
 class EntityPRF:
+    """Per-entity precision/recall/F1 with raw TP/FP/FN counts.
+
+    P/R/F1 are always ``float`` (0.0 when the denominator is zero).
+    Use ``tp + fp == 0`` to detect undefined precision at the report layer.
+    Use ``tp + fn == 0`` to detect undefined recall.
+    Use ``2*tp + fp + fn == 0`` to detect undefined F1.
+    """
+
     precision: float
     recall: float
     f1: float
+    tp: int
+    fp: int
+    fn: int
 
 
 def _spans_match(g: Span, p: Span, match: Literal["strict", "partial"]) -> bool:
@@ -69,13 +80,14 @@ def entity_metrics(
 
     strict: same label and identical [start, end).
     partial: same label and any non-empty overlap [start, end).
-    Zero-gold and zero-pred -> P/R/F1 = 0.0.
+    Zero-denominator metrics are 0.0; use tp/fp/fn counts to detect undefined
+    at the report layer.
     """
     tp, fp, fn = _entity_counts(gold, pred, match)
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0.0 else 0.0
-    return EntityPRF(precision=precision, recall=recall, f1=f1)
+    f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0.0
+    return EntityPRF(precision=precision, recall=recall, f1=f1, tp=tp, fp=fp, fn=fn)
 
 
 def corpus_entity_metrics(
@@ -87,6 +99,8 @@ def corpus_entity_metrics(
 
     Matching is performed only within each document (per-document).
     Raises ValueError if gold_docs and pred_docs differ in length.
+    Zero-denominator metrics are 0.0; use tp/fp/fn counts to detect undefined
+    at the report layer.
     """
     if len(gold_docs) != len(pred_docs):
         raise ValueError(
@@ -101,8 +115,19 @@ def corpus_entity_metrics(
         total_fn += fn
     precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
     recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0.0 else 0.0
-    return EntityPRF(precision=precision, recall=recall, f1=f1)
+    f1 = (
+        2 * total_tp / (2 * total_tp + total_fp + total_fn)
+        if (2 * total_tp + total_fp + total_fn) > 0
+        else 0.0
+    )
+    return EntityPRF(
+        precision=precision,
+        recall=recall,
+        f1=f1,
+        tp=total_tp,
+        fp=total_fp,
+        fn=total_fn,
+    )
 
 
 def entity_metrics_by_label(
@@ -237,7 +262,10 @@ def _risk_weight_counts(gold: list[Span], pred: list[Span]) -> tuple[float, floa
 
 
 def risk_weighted_recall(gold: list[Span], pred: list[Span]) -> float:
-    """Compute risk-weighted recall (strict match). Zero-gold -> 0.0."""
+    """Compute risk-weighted recall (strict match). Zero-gold -> 0.0.
+
+    Use the gold span count to detect undefined (zero denominator) at the report layer.
+    """
     if not gold:
         return 0.0
     matched_weight, total_weight = _risk_weight_counts(gold, pred)
@@ -255,6 +283,7 @@ def corpus_risk_weighted_recall(
     Matching is performed only within each document (per-document).
     Raises ValueError if gold_docs and pred_docs differ in length.
     Returns 0.0 when all documents have no gold spans.
+    Use the total gold span count to detect undefined at the report layer.
     """
     if len(gold_docs) != len(pred_docs):
         raise ValueError(
@@ -305,6 +334,7 @@ class LeakRate:
     values_leaked: int
     values_total: int
     leaked_doc_ids: list[str]
+    docs_with_direct_id: int  # docs containing at least one direct-identifier gold span
 
 
 def leak_rate(
@@ -322,9 +352,13 @@ def leak_rate(
     values_leaked = 0
     docs_leaked = 0
     leaked_doc_ids: list[str] = []
+    docs_with_direct_id = 0
 
     for orig, spans, rend, doc_id in zip(originals, gold_spans, rendered, doc_ids):
         doc_has_direct_leak = False
+        doc_has_direct_id = any(s.label in DIRECT_IDENTIFIERS for s in spans)
+        if doc_has_direct_id:
+            docs_with_direct_id += 1
         for span in spans:
             values_total += 1
             if span.start < 0 or span.end > len(orig) or span.start >= span.end:
@@ -348,6 +382,7 @@ def leak_rate(
         values_leaked=values_leaked,
         values_total=values_total,
         leaked_doc_ids=leaked_doc_ids,
+        docs_with_direct_id=docs_with_direct_id,
     )
 
 

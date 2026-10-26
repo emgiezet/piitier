@@ -262,3 +262,65 @@ def test_cli_no_regression_exit_zero(tmp_path: Path) -> None:
 
     rc = _main_fn([str(base_path), str(new_path)])
     assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Null-aware (PII-9): null p/r/f1 in JSON reports
+# ---------------------------------------------------------------------------
+
+
+def test_null_prf_no_crash() -> None:
+    """compare_reports handles null (None) P/R/F1 values without TypeError."""
+    # PII-9: undefined metrics come through as JSON null / Python None
+    base = _report(
+        by_label={"PESEL": {"p": None, "r": 0.8, "f1": None, "tp": 0, "fp": 0, "fn": 5}},
+        comparable_labels=["PESEL"],
+        comparable_strict_micro={"p": None, "r": 0.8, "f1": None},
+    )
+    new = _report(
+        by_label={"PESEL": {"p": None, "r": 0.7, "f1": None, "tp": 0, "fp": 0, "fn": 6}},
+        comparable_labels=["PESEL"],
+        comparable_strict_micro={"p": None, "r": 0.7, "f1": None},
+    )
+    # Must not raise TypeError
+    table, regression = _compare_fn(base, new, threshold=0.02)
+    assert isinstance(table, str)
+    # p is null on both sides → rendered as 'undefined'
+    assert "undefined" in table
+    # Recall dropped (0.7 < 0.8) by 0.1 > threshold 0.02 → regression
+    assert regression is True
+    assert "REGRESSION" in table
+
+
+def test_null_recall_skips_regression() -> None:
+    """When either side has null recall, regression check is SKIPPED (not flagged)."""
+    base = _report(
+        by_label={"OSOBA": {"p": 0.9, "r": None, "f1": None, "tp": 0, "fp": 5, "fn": 0}},
+        comparable_labels=["OSOBA"],
+        comparable_strict_micro={"p": 0.9, "r": None, "f1": None},
+    )
+    new = _report(
+        by_label={"OSOBA": {"p": 0.0, "r": None, "f1": None, "tp": 0, "fp": 0, "fn": 0}},
+        comparable_labels=["OSOBA"],
+        comparable_strict_micro={"p": 0.0, "r": None, "f1": None},
+    )
+    table, regression = _compare_fn(base, new, threshold=0.02)
+    # Undefined recall on both sides → SKIP, no regression
+    assert regression is False
+    assert "SKIP" in table
+    assert "REGRESSION" not in table
+
+
+def test_null_one_side_skips_regression() -> None:
+    """Null recall on new side → SKIP even when base had a defined value."""
+    base = _report(
+        by_label={"PESEL": {"p": 1.0, "r": 0.9, "f1": 0.95}},
+        comparable_labels=["PESEL"],
+    )
+    new = _report(
+        by_label={"PESEL": {"p": None, "r": None, "f1": None}},
+        comparable_labels=["PESEL"],
+    )
+    table, regression = _compare_fn(base, new, threshold=0.02)
+    assert regression is False
+    assert "SKIP" in table

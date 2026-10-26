@@ -78,10 +78,15 @@ def test_uc79_entity_metrics() -> None:
     assert res_partial.f1 == pytest.approx(0.8)
 
     res_zeropred = entity_metrics(gold, [], "strict")
-    assert res_zeropred == EntityPRF(0.0, 0.0, 0.0)
+    # No predictions: tp=0, fp=0, fn=3 → P/R/F1 = 0.0 (undefined at report layer)
+    assert res_zeropred == EntityPRF(0.0, 0.0, 0.0, 0, 0, 3)
+    assert res_zeropred.tp == 0
+    assert res_zeropred.fp == 0
+    assert res_zeropred.fn == 3
 
     res_bothzero = entity_metrics([], [], "strict")
-    assert res_bothzero == EntityPRF(0.0, 0.0, 0.0)
+    # No gold, no pred: tp=fp=fn=0 → all 0.0; report layer renders as undefined
+    assert res_bothzero == EntityPRF(0.0, 0.0, 0.0, 0, 0, 0)
 
     by_lbl = entity_metrics_by_label(gold, pred_strict, "strict")
     assert Label.PESEL in by_lbl
@@ -89,7 +94,8 @@ def test_uc79_entity_metrics() -> None:
     assert by_lbl[Label.PESEL].precision == 0.5
     assert by_lbl[Label.PESEL].recall == 0.5
     assert by_lbl[Label.PESEL].f1 == 0.5
-    assert by_lbl[Label.NIP] == EntityPRF(0.0, 0.0, 0.0)
+    # NIP: gold=1 span, pred=0 NIP → tp=0, fp=0, fn=1 → P=0.0, R=0.0, F1=0.0
+    assert by_lbl[Label.NIP] == EntityPRF(0.0, 0.0, 0.0, 0, 0, 1)
 
 
 def test_uc80_risk_weighted_recall() -> None:
@@ -117,6 +123,7 @@ def test_uc80_risk_weighted_recall() -> None:
 
     rwr = risk_weighted_recall(gold, pred)
     assert rwr == pytest.approx(1.6 / 2.6)
+    # Empty gold → 0.0; report layer detects undefined from gold count (PII-9)
     assert risk_weighted_recall([], pred) == 0.0
 
     taxonomy_path = Path(__file__).parents[2] / "docs" / "TAXONOMY.md"
