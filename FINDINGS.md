@@ -45,5 +45,8 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 
 [`pawelkiszczak/warda`](https://github.com/pawelkiszczak/warda) is a local allow/redact/ask/block decision model for
 coding-agent tool calls, not a span anonymiser. Adopted from it: licence files, CI, pre-commit with secret scanning
-(PII-8). Still open: a double-labelled hand-written gold set with an agreement floor and safe "twins", a separate
-calibration split with minimum support and confidence intervals, control baselines and reported denominators.
+(PII-8). Adopted from PII-10: a separate calibration split with minimum support and confidence intervals.
+`calibration_file` in the run config is required before `training.calibrate` runs; existing run configs
+(e.g. `pii-5-v3`) must set this key before calibration is possible.
+Still open: a double-labelled hand-written gold set with an agreement floor and safe "twins",
+control baselines and reported denominators.

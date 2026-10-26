@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import math
 import sys
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -78,10 +78,10 @@ def wilson_interval(tp: int, n: int, z: float = 1.96) -> tuple[float, float]:
     """95% Wilson score confidence interval for recall (tp successes out of n total).
 
     Returns (lower, upper) both clamped to [0, 1].
-    Returns (0.0, 0.0) when n == 0.
+    Returns (0.0, 1.0) when n == 0 (maximum uncertainty).
     """
     if n == 0:
-        return (0.0, 0.0)
+        return (0.0, 1.0)
     p = tp / n
     z2 = z * z
     denom = 1.0 + z2 / n
@@ -126,6 +126,35 @@ def _compute_group_recalls(
     return tuple(results)
 
 
+def _make_result(
+    threshold: float,
+    prf: Any,
+    pred_docs: list[list[Span]],
+    gold_docs: list[list[Span]],
+    total_gold: int,
+    doc_count: int,
+    match: _MatchMode,
+    target_recall: float,
+) -> ThresholdResult:
+    """Compute Wilson interval and group recalls for one candidate threshold."""
+    target_met = prf.recall >= target_recall
+    tp = round(prf.recall * total_gold)
+    w_lower, w_upper = wilson_interval(tp, total_gold)
+    gr = _compute_group_recalls(gold_docs, pred_docs, match)
+    return ThresholdResult(
+        threshold=float(threshold),
+        recall=float(prf.recall),
+        precision=float(prf.precision),
+        target_met=target_met,
+        reason=None if target_met else "target_not_met",
+        gold_span_count=total_gold,
+        doc_count=doc_count,
+        group_recalls=gr,
+        wilson_lower=w_lower,
+        wilson_upper=w_upper,
+    )
+
+
 def calibrate_threshold(
     docs: list[dict[str, Any] | DocPrediction],
     target_recall: float = 0.98,
@@ -137,7 +166,8 @@ def calibrate_threshold(
     Candidates: 0.0 + sorted unique prediction scores (descending).
     For threshold t: predicted spans with score >= t; PRF via corpus_entity_metrics.
     Matching is per-document (a prediction from doc B cannot match gold from doc A).
-    Chooses the highest threshold with recall >= target_recall.
+    Returns the highest threshold with recall >= target_recall (early exit on first hit).
+    Wilson interval and group recalls are computed only for the returned result.
 
     Args:
         min_support: minimum number of gold spans required; 0 = no minimum.
@@ -151,14 +181,14 @@ def calibrate_threshold(
     """
     doc_count = len(docs)
 
-    # Collect all prediction scores as threshold candidates
+    # Collect all prediction scores as threshold candidates.
+    # score=None is coerced to 1.0 at application time, so include 1.0 as a candidate.
     scores: set[float] = {0.0}
     for doc in docs:
         p_list = doc["pred"] if isinstance(doc, dict) else doc.pred
         for p in p_list:
             score = p.get("score", 1.0) if isinstance(p, dict) else getattr(p, "score", 1.0)
-            if score is not None:
-                scores.add(float(score))
+            scores.add(float(score) if score is not None else 1.0)
 
     # Build per-doc gold span lists and scored pred lists (done once, not per threshold)
     gold_docs: list[list[Span]] = []
@@ -188,8 +218,8 @@ def calibrate_threshold(
                 score=item.score if isinstance(item, Span) else item.get("score", 1.0),
                 status=item.status if isinstance(item, Span) else item.get("status", "valid"),
             )
-            item_score = span_obj.score if span_obj.score is not None else 1.0
-            scored_preds.append((span_obj, float(item_score)))
+            item_score = float(span_obj.score) if span_obj.score is not None else 1.0
+            scored_preds.append((span_obj, item_score))
         gold_docs.append(gold_spans)
         raw_preds.append(scored_preds)
 
@@ -200,89 +230,98 @@ def calibrate_threshold(
     if min_support > 0 and total_gold < min_support:
         pred_docs_at_0 = [[sp for sp, _sc in doc_preds] for doc_preds in raw_preds]
         prf = corpus_entity_metrics(gold_docs, pred_docs_at_0, match=match)
-        tp_at_0 = round(prf.recall * total_gold)
-        w_lower, w_upper = wilson_interval(tp_at_0, total_gold)
-        gr = _compute_group_recalls(gold_docs, pred_docs_at_0, match)
+        result = _make_result(
+            0.0, prf, pred_docs_at_0, gold_docs, total_gold, doc_count, match, target_recall
+        )
         return ThresholdResult(
-            threshold=0.0,
-            recall=float(prf.recall),
-            precision=float(prf.precision),
+            threshold=result.threshold,
+            recall=result.recall,
+            precision=result.precision,
             target_met=False,
             reason="unsupported",
             gold_span_count=total_gold,
             doc_count=doc_count,
-            group_recalls=gr,
-            wilson_lower=w_lower,
-            wilson_upper=w_upper,
+            group_recalls=result.group_recalls,
+            wilson_lower=result.wilson_lower,
+            wilson_upper=result.wilson_upper,
         )
 
+    # Iterate candidates from highest to lowest; break at the first hit (= highest valid threshold).
+    # Group recalls and Wilson are computed only for the returned result.
     candidates = sorted(list(scores), reverse=True)
-
-    best: ThresholdResult | None = None
-    recall_at_0: ThresholdResult | None = None
+    fallback_prf: Any = None
+    fallback_pred_docs: list[list[Span]] = []
 
     for t in candidates:
         pred_docs = [[sp for sp, sc in doc_preds if sc >= t] for doc_preds in raw_preds]
         prf = corpus_entity_metrics(gold_docs, pred_docs, match=match)
-        target_met = prf.recall >= target_recall
 
-        tp = round(prf.recall * total_gold)
-        w_lower, w_upper = wilson_interval(tp, total_gold)
-        gr = _compute_group_recalls(gold_docs, pred_docs, match)
+        if abs(t) < 1e-9:
+            # Save 0.0 stats for fallback if no threshold meets the target
+            fallback_prf = prf
+            fallback_pred_docs = pred_docs
 
-        result = ThresholdResult(
-            threshold=float(t),
-            recall=float(prf.recall),
-            precision=float(prf.precision),
-            target_met=target_met,
-            reason=None if target_met else "target_not_met",
+        if prf.recall >= target_recall:
+            # First (= highest) threshold that meets the target — return immediately
+            return _make_result(
+                t, prf, pred_docs, gold_docs, total_gold, doc_count, match, target_recall
+            )
+
+    # No threshold met target — report recall at 0.0
+    if fallback_prf is not None:
+        result = _make_result(
+            0.0,
+            fallback_prf,
+            fallback_pred_docs,
+            gold_docs,
+            total_gold,
+            doc_count,
+            match,
+            target_recall,
+        )
+        return ThresholdResult(
+            threshold=0.0,
+            recall=result.recall,
+            precision=result.precision,
+            target_met=False,
+            reason="target_not_met",
             gold_span_count=total_gold,
             doc_count=doc_count,
-            group_recalls=gr,
-            wilson_lower=w_lower,
-            wilson_upper=w_upper,
+            group_recalls=result.group_recalls,
+            wilson_lower=result.wilson_lower,
+            wilson_upper=result.wilson_upper,
         )
 
-        if abs(t - 0.0) < 1e-9:
-            recall_at_0 = result
-
-        if target_met and (best is None or t > best.threshold):
-            best = result
-
-    if best is not None:
-        return best
-
-    # No threshold meets target — return result at threshold 0.0
-    if recall_at_0 is not None:
-        return recall_at_0
-
-    # Fallback: empty docs, no candidates
+    # Absolute fallback: empty docs
     return ThresholdResult(0.0, 0.0, 0.0, False, "target_not_met", total_gold, doc_count)
 
 
-def _write_model_card(
-    config_path: Path,
-    result: ThresholdResult,
-    target_recall: float,
-    match_mode: str,
-) -> None:
-    """Write (or update) the '## Kalibracja progu' section in MODEL_CARD.md."""
+# ---------------------------------------------------------------------------
+# MODEL_CARD writing
+# ---------------------------------------------------------------------------
+
+
+def _get_output_dir(config_path: Path) -> Path:
+    """Resolve output_dir from config YAML relative to the config file's directory."""
     out_val = (yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}).get(
         "output_dir", "training/out"
     )
     output_dir = Path(str(out_val))
     if not output_dir.is_absolute():
         output_dir = (config_path.parent / output_dir).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    model_card_path = output_dir / "MODEL_CARD.md"
+    return output_dir
 
+
+def _success_section(result: ThresholdResult, target_recall: float, match_mode: str) -> str:
+    """Build the full ## Kalibracja progu section text for a successful calibration."""
+    today = date.today().isoformat()
     lines: list[str] = [
-        "\n## Kalibracja progu\n",
+        "## Kalibracja progu\n",
+        f"\n- **Data kalibracji:** {today}",
         f"\n- **Próg (Threshold):** {result.threshold}",
         f"\n- **Recall:** {result.recall:.4f}",
         f"\n- **Precision:** {result.precision:.4f}",
         f"\n- **Target Recall:** {target_recall}",
-        f"\n- **Target Met:** {result.target_met}",
         f"\n- **Match Mode:** {match_mode}",
         f"\n- **Liczba spanów gold:** {result.gold_span_count}",
         f"\n- **Liczba dokumentów:** {result.doc_count}",
@@ -291,33 +330,102 @@ def _write_model_card(
             f"[{result.wilson_lower:.4f}, {result.wilson_upper:.4f}]"
         ),
     ]
-    if result.reason is not None:
-        lines.append(f"\n- **Reason:** {result.reason}")
     if result.group_recalls:
         lines.append("\n\n### Recall per grupa ryzyka\n")
         for gr in result.group_recalls:
             if gr.span_count > 0:
                 lines.append(f"\n- **{gr.group}:** recall={gr.recall:.4f}, spans={gr.span_count}")
+    return "".join(lines) + "\n"
 
-    section = "".join(lines) + "\n"
 
-    if model_card_path.exists():
-        content = model_card_path.read_text(encoding="utf-8")
-        if "## Kalibracja progu" in content:
-            parts = content.split("## Kalibracja progu")
-            base = parts[0].rstrip()
-            rest = parts[1]
-            next_sections = rest.split("\n## ")
-            remainder = "\n## ".join(next_sections[1:]) if len(next_sections) > 1 else ""
-            new_content = (
-                base + "\n\n" + section.strip() + ("\n\n## " + remainder if remainder else "\n")
-            )
+def _failure_subsection(result: ThresholdResult, match_mode: str) -> str:
+    """Build a ### Nieudana próba subsection for a failed calibration."""
+    today = date.today().isoformat()
+    reason = result.reason or "unknown"
+    lines: list[str] = [
+        f"\n### Nieudana próba kalibracji ({today})\n",
+        f"\n- **Próg:** nie zapisano ({reason})",
+        f"\n- **Recall:** {result.recall:.4f}",
+        f"\n- **Match Mode:** {match_mode}",
+        f"\n- **Liczba spanów gold:** {result.gold_span_count}",
+        f"\n- **Liczba dokumentów:** {result.doc_count}",
+        (
+            f"\n- **Przedział ufności Wilsona 95%:** "
+            f"[{result.wilson_lower:.4f}, {result.wilson_upper:.4f}]"
+        ),
+    ]
+    if result.group_recalls:
+        for gr in result.group_recalls:
+            if gr.span_count > 0:
+                lines.append(f"\n- **{gr.group}:** recall={gr.recall:.4f}, spans={gr.span_count}")
+    return "".join(lines) + "\n"
+
+
+def _write_model_card(
+    config_path: Path,
+    result: ThresholdResult,
+    target_recall: float,
+    match_mode: str,
+) -> None:
+    """Write (or update) the '## Kalibracja progu' section in MODEL_CARD.md.
+
+    On success (reason is None): overwrites the section with the new threshold and date.
+    On failure: keeps the existing section intact (preserving the last successful threshold)
+    and appends a failure sub-section.  Never shows a numeric threshold on failure.
+    """
+    output_dir = _get_output_dir(config_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    model_card_path = output_dir / "MODEL_CARD.md"
+
+    if result.reason is None:
+        # SUCCESS: overwrite the section with new data
+        section = _success_section(result, target_recall, match_mode)
+        if model_card_path.exists():
+            content = model_card_path.read_text(encoding="utf-8")
+            if "## Kalibracja progu" in content:
+                parts = content.split("## Kalibracja progu")
+                base = parts[0].rstrip()
+                rest = parts[1]
+                next_sections = rest.split("\n## ")
+                remainder = "\n## ".join(next_sections[1:]) if len(next_sections) > 1 else ""
+                new_content = (
+                    base + "\n\n" + section.strip() + ("\n\n## " + remainder if remainder else "\n")
+                )
+            else:
+                new_content = content.rstrip() + "\n\n" + section.strip() + "\n"
         else:
-            new_content = content.rstrip() + "\n\n" + section.strip() + "\n"
+            new_content = f"# Model Card\n\n{section.strip()}\n"
+        model_card_path.write_text(new_content, encoding="utf-8")
     else:
-        new_content = f"# Model Card\n\n{section.strip()}\n"
-
-    model_card_path.write_text(new_content, encoding="utf-8")
+        # FAILURE: preserve the existing ## Kalibracja progu section; append failure subsection.
+        # If no section exists yet, create a minimal one that only shows the failure.
+        failure = _failure_subsection(result, match_mode)
+        if model_card_path.exists():
+            content = model_card_path.read_text(encoding="utf-8")
+            if "## Kalibracja progu" in content:
+                # Insert failure sub-section before the next top-level ## heading
+                parts = content.split("## Kalibracja progu")
+                base = parts[0]
+                rest = parts[1]
+                next_sections = rest.split("\n## ")
+                section_body = next_sections[0].rstrip()
+                remainder = "\n## ".join(next_sections[1:]) if len(next_sections) > 1 else ""
+                new_content = (
+                    base
+                    + "## Kalibracja progu"
+                    + section_body
+                    + "\n\n"
+                    + failure.strip()
+                    + ("\n\n## " + remainder if remainder else "\n")
+                )
+            else:
+                # No success section yet: create failure-only section
+                new_content = (
+                    content.rstrip() + "\n\n## Kalibracja progu\n\n" + failure.strip() + "\n"
+                )
+        else:
+            new_content = f"# Model Card\n\n## Kalibracja progu\n\n{failure.strip()}\n"
+        model_card_path.write_text(new_content, encoding="utf-8")
 
 
 def write_threshold(
@@ -363,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not argv:
         print(
-            "Usage: python -m training.calibrate <config.yaml> [predictions.jsonl]",
+            "Usage: python -m training.calibrate <config.yaml>",
             file=sys.stderr,
         )
         return 2
@@ -384,95 +492,35 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    predictions_path = Path(argv[1]) if len(argv) > 1 else config.output_dir / "predictions.jsonl"
+    # Always run the predictor on calibration_file (UC-145: eval_file is never read here)
+    cal_records = read_jsonl(config.calibration_file)
 
-    if predictions_path.exists() and len(argv) > 1:
-        raw_docs = read_jsonl(predictions_path)
-        docs: list[DocPrediction] = []
-        for r in raw_docs:
-            gold = [
-                Span(
-                    s["start"],
-                    s["end"],
-                    to_label(s["label"]),
-                    s.get("source", "gold"),
-                    s.get("score"),
-                    s.get("status", "valid"),
-                )
-                for s in r.get("gold", [])
-            ]
-            pred = [
-                Span(
-                    p["start"],
-                    p["end"],
-                    to_label(p["label"]),
-                    p.get("source", "pred"),
-                    p.get("score", 1.0),
-                    p.get("status", "valid"),
-                )
-                for p in r.get("pred", [])
-            ]
-            docs.append(DocPrediction(gold=gold, pred=pred))
-    else:
-        # Run predictor on calibration_file (not eval_file) — UC-145
-        cal_records = read_jsonl(config.calibration_file)
+    checkpoint = config.base_checkpoint
+    if config.output_dir.exists():
+        checkpoints = list(config.output_dir.glob("checkpoint-*"))
+        if checkpoints:
+            checkpoints.sort(key=lambda p: int(p.name.split("-")[-1]))
+            checkpoint = checkpoints[-1]
+        elif (config.output_dir / "config.json").exists():
+            checkpoint = config.output_dir
 
-        checkpoint = config.base_checkpoint
-        if config.output_dir.exists():
-            checkpoints = list(config.output_dir.glob("checkpoint-*"))
-            if checkpoints:
-                checkpoints.sort(key=lambda p: int(p.name.split("-")[-1]))
-                checkpoint = checkpoints[-1]
-            elif (config.output_dir / "config.json").exists():
-                checkpoint = config.output_dir
+    predictor = NerPredictor(checkpoint=checkpoint, threshold=0.0)
 
-        predictor = NerPredictor(checkpoint=checkpoint, threshold=0.0)
-
-        docs = []
-        predictions_output: list[dict[str, Any]] = []
-        for r in cal_records:
-            gold_spans = [
-                Span(
-                    s["start"],
-                    s["end"],
-                    to_label(s["label"]),
-                    s.get("source", "gold"),
-                    s.get("score"),
-                    s.get("status", "valid"),
-                )
-                for s in r.get("spans", r.get("gold", []))
-            ]
-            pred_spans = predictor.predict(r["text"])
-            docs.append(DocPrediction(gold=gold_spans, pred=pred_spans))
-
-            pred_item: dict[str, Any] = {
-                "gold": [
-                    {
-                        "start": s.start,
-                        "end": s.end,
-                        "label": s.label.name if isinstance(s.label, Label) else s.label,
-                    }
-                    for s in gold_spans
-                ],
-                "pred": [
-                    {
-                        "start": s.start,
-                        "end": s.end,
-                        "label": s.label.name if isinstance(s.label, Label) else s.label,
-                        "score": s.score,
-                    }
-                    for s in pred_spans
-                ],
-            }
-            if r.get("id") is not None:
-                pred_item["id"] = r.get("id")
-            predictions_output.append(pred_item)
-
-        config.output_dir.mkdir(parents=True, exist_ok=True)
-        predictions_path.write_text(
-            "\n".join(json.dumps(d, ensure_ascii=False) for d in predictions_output) + "\n",
-            encoding="utf-8",
-        )
+    docs: list[DocPrediction] = []
+    for r in cal_records:
+        gold_spans = [
+            Span(
+                s["start"],
+                s["end"],
+                to_label(s["label"]),
+                s.get("source", "gold"),
+                s.get("score"),
+                s.get("status", "valid"),
+            )
+            for s in r.get("spans", r.get("gold", []))
+        ]
+        pred_spans = predictor.predict(r["text"])
+        docs.append(DocPrediction(gold=gold_spans, pred=pred_spans))
 
     result = calibrate_threshold(
         docs,

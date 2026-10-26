@@ -16,8 +16,14 @@ Conventions for the code live in `.claude/rules/python.md`.
    **Never load `bench/**/test/`** (CLAUDE.md invariant 7).
 4. **Hardware:** train on the RTX 3090 Ti (bf16). Never combine it with the RTX 3080 in
    one DDP/FSDP job, because the smaller card caps both. Use the 3080 for inference and evaluation.
-5. **Calibrate the threshold** on `dev/` so recall reaches at least 0.98, then write the threshold
-   into the run config and the model card. Threshold choice is recall-first, not F1-optimal.
+5. **Calibrate the threshold** on a dedicated **calibration split** (not `dev/`).
+   Set `calibration_file` in the run config to the calibration JSONL; without it
+   `python -m training.calibrate` exits 2.  The split must not overlap `bench/**/test/`,
+   `eval_file`, or `train_file`.  Set `calibration_min_support` (default 100 gold spans)
+   and `calibration_target_recall` (default 0.98).  The calibration writes the threshold
+   into the config and MODEL_CARD **only on success**; a failed run leaves both unchanged.
+   Threshold choice is recall-first; use `calibration_match: partial` when the target
+   is not achievable under strict matching.
 6. **Export** to ONNX with INT8 quantisation (Optimum). Re-score the INT8 model on `dev/` and
    record the F1 and recall deltas against FP32. A recall drop beyond the spec's tolerance
    blocks the export.
@@ -48,6 +54,7 @@ Run the verification block from `.claude/rules/python.md`, plus
 
 ## Done when
 
-The run config is committed, the threshold is calibrated on `dev/` only, INT8 deltas are
+The run config is committed, `calibration_file` points to the calibration split,
+the threshold is calibrated on the dedicated split (not `dev/`), INT8 deltas are
 recorded, the model card is complete, the upload command has been printed (not run), and
 the verification block is green.

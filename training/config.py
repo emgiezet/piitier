@@ -144,10 +144,26 @@ def load_config(path: Path) -> TrainingConfig:
         _check_test_split(calibration_file)
         if calibration_file == eval_file:
             raise ConfigError("calibration_file must not be the same file as eval_file")
+        if calibration_file == train_file:
+            raise ConfigError("calibration_file must not be the same file as train_file")
 
-    calibration_target_recall = float(data.get("calibration_target_recall", 0.98))
+    try:
+        calibration_target_recall = float(data.get("calibration_target_recall", 0.98))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            "calibration_target_recall must be a number, "
+            f"got {data.get('calibration_target_recall')!r}"
+        ) from exc
     calibration_match = str(data.get("calibration_match", "strict"))
-    calibration_min_support = int(data.get("calibration_min_support", 100))
+    _raw_min_support = data.get("calibration_min_support", 100)
+    try:
+        calibration_min_support = int(_raw_min_support)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            f"calibration_min_support must be an integer, got {_raw_min_support!r}"
+        ) from exc
+    if isinstance(_raw_min_support, float) and not float(_raw_min_support).is_integer():
+        raise ConfigError(f"calibration_min_support must be an integer, got {_raw_min_support!r}")
 
     _check_test_split(train_file)
     _check_test_split(eval_file)
