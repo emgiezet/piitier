@@ -10,7 +10,7 @@ Playbook `pipeline-core.md`: jeden etap pipeline'u na zadanie.
 
 | Slice | Etap | Zależy od | Status |
 |---|---|---|---|
-| PII-6-a | `fusion` + podpięcie NER do API i CLI (walking skeleton) | — | spec: draft |
+| PII-6-a | `fusion` + podpięcie NER do API i CLI (walking skeleton) | — | spec: approved |
 | PII-6-b | `coref` — numeracja `[OSOBA_1]` po lematach (Morfeusz 2), ten sam IBAN → ten sam indeks | a | do napisania |
 | PII-6-c | renderer `pseudonymize` — mapa szyfrowana AES-GCM, klucz ze środowiska, TTL, round-trip | b | do napisania |
 

@@ -1,7 +1,7 @@
 ---
 ticket: PII-6-a
 title: Fuzja spanów reguł i modelu NER w API i CLI
-status: draft
+status: approved
 stacks: [python]
 ---
 
