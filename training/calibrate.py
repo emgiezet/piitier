@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -17,12 +18,19 @@ if "eval.metrics" not in sys.modules:
         sys.modules["eval.metrics"] = _metrics_mod
         _spec_m.loader.exec_module(_metrics_mod)
 
-from eval.metrics import corpus_entity_metrics
+from eval.metrics import (
+    GROUP_WEIGHTS,
+    _entity_counts,
+    corpus_entity_metrics,
+    group_for_label,
+)
 from piitier.labels import Label
 from piitier.ner.inference import NerPredictor
 from piitier.spans import Span
 from training.config import load_config
 from training.train import read_jsonl
+
+_MatchMode = Literal["strict", "partial"]
 
 
 def to_label(val: str | Label) -> Label:
@@ -38,11 +46,26 @@ def to_label(val: str | Label) -> Label:
 
 
 @dataclass(frozen=True)
+class GroupRecall:
+    """Per-risk-group recall with span count."""
+
+    group: str
+    recall: float
+    span_count: int
+
+
+@dataclass(frozen=True)
 class ThresholdResult:
     threshold: float
     recall: float
     precision: float
     target_met: bool
+    reason: str | None = None  # None = success; "unsupported"; "target_not_met"
+    gold_span_count: int = 0
+    doc_count: int = 0
+    group_recalls: tuple[GroupRecall, ...] = field(default_factory=tuple)
+    wilson_lower: float = 0.0
+    wilson_upper: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -51,18 +74,85 @@ class DocPrediction:
     pred: list[Span]
 
 
+def wilson_interval(tp: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score confidence interval for recall (tp successes out of n total).
+
+    Returns (lower, upper) both clamped to [0, 1].
+    Returns (0.0, 0.0) when n == 0.
+    """
+    if n == 0:
+        return (0.0, 0.0)
+    p = tp / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = (p + z2 / (2 * n)) / denom
+    margin = (z / denom) * math.sqrt(p * (1.0 - p) / n + z2 / (4.0 * n * n))
+    return (max(0.0, center - margin), min(1.0, center + margin))
+
+
+def _as_match_mode(s: str) -> _MatchMode:
+    """Convert a validated string to the Literal match mode type."""
+    if s == "partial":
+        return "partial"
+    return "strict"
+
+
+def _compute_group_recalls(
+    gold_docs: list[list[Span]],
+    pred_docs: list[list[Span]],
+    match: _MatchMode,
+) -> tuple[GroupRecall, ...]:
+    """Compute per-risk-group recall over the corpus at a fixed threshold."""
+    group_tp: dict[str, int] = {g: 0 for g in GROUP_WEIGHTS}
+    group_fn: dict[str, int] = {g: 0 for g in GROUP_WEIGHTS}
+
+    for gold_doc, pred_doc in zip(gold_docs, pred_docs):
+        for group in GROUP_WEIGHTS:
+            g = [s for s in gold_doc if group_for_label(s.label) == group]
+            p = [s for s in pred_doc if group_for_label(s.label) == group]
+            if not g and not p:
+                continue
+            tp, _fp, fn = _entity_counts(g, p, match)
+            group_tp[group] += tp
+            group_fn[group] += fn
+
+    results: list[GroupRecall] = []
+    for group in GROUP_WEIGHTS:
+        tp = group_tp[group]
+        fn = group_fn[group]
+        span_count = tp + fn
+        recall = tp / span_count if span_count > 0 else 0.0
+        results.append(GroupRecall(group=group, recall=recall, span_count=span_count))
+    return tuple(results)
+
+
 def calibrate_threshold(
     docs: list[dict[str, Any] | DocPrediction],
     target_recall: float = 0.98,
+    match: _MatchMode = "strict",
+    min_support: int = 0,
 ) -> ThresholdResult:
     """Calibrate detection threshold targeting recall >= target_recall.
+
     Candidates: 0.0 + sorted unique prediction scores (descending).
-    For threshold t: predicted spans with score >= t; strict PRF via corpus_entity_metrics.
+    For threshold t: predicted spans with score >= t; PRF via corpus_entity_metrics.
     Matching is per-document (a prediction from doc B cannot match gold from doc A).
     Chooses the highest threshold with recall >= target_recall.
-    If no threshold meets target, returns ThresholdResult(0.0, recall@0.0, precision@0.0, False).
+
+    Args:
+        min_support: minimum number of gold spans required; 0 = no minimum.
+            When total gold spans < min_support, returns reason="unsupported".
+        match: "strict" (exact [start,end)) or "partial" (any overlap, same label).
+
+    Returns:
+        ThresholdResult with reason=None on success, or reason in
+        {"unsupported", "target_not_met"} on failure.  Config is only written
+        by the caller when reason is None.
     """
-    scores = {0.0}
+    doc_count = len(docs)
+
+    # Collect all prediction scores as threshold candidates
+    scores: set[float] = {0.0}
     for doc in docs:
         p_list = doc["pred"] if isinstance(doc, dict) else doc.pred
         for p in p_list:
@@ -70,99 +160,146 @@ def calibrate_threshold(
             if score is not None:
                 scores.add(float(score))
 
-    candidates = sorted(list(scores), reverse=True)
+    # Build per-doc gold span lists and scored pred lists (done once, not per threshold)
+    gold_docs: list[list[Span]] = []
+    raw_preds: list[list[tuple[Span, float]]] = []
+    for doc in docs:
+        g = doc["gold"] if isinstance(doc, dict) else doc.gold
+        p_list = doc["pred"] if isinstance(doc, dict) else doc.pred
 
-    results: list[ThresholdResult] = []
-    for t in candidates:
-        gold_docs: list[list[Span]] = []
-        pred_docs: list[list[Span]] = []
-        for doc in docs:
-            g = doc["gold"] if isinstance(doc, dict) else doc.gold
-            p_list = doc["pred"] if isinstance(doc, dict) else doc.pred
-
-            gold_spans = [
-                Span(
-                    start=item.start if isinstance(item, Span) else item["start"],
-                    end=item.end if isinstance(item, Span) else item["end"],
-                    label=to_label(item.label if isinstance(item, Span) else item["label"]),
-                    source=item.source if isinstance(item, Span) else item.get("source", "gold"),
-                    score=item.score if isinstance(item, Span) else item.get("score"),
-                    status=item.status if isinstance(item, Span) else item.get("status", "valid"),
-                )
-                for item in g
-            ]
-            pred_spans = []
-            for item in p_list:
-                span_obj = Span(
-                    start=item.start if isinstance(item, Span) else item["start"],
-                    end=item.end if isinstance(item, Span) else item["end"],
-                    label=to_label(item.label if isinstance(item, Span) else item["label"]),
-                    source=item.source if isinstance(item, Span) else item.get("source", "pred"),
-                    score=item.score if isinstance(item, Span) else item.get("score", 1.0),
-                    status=item.status if isinstance(item, Span) else item.get("status", "valid"),
-                )
-                item_score = span_obj.score if span_obj.score is not None else 1.0
-                if item_score >= t:
-                    pred_spans.append(span_obj)
-            gold_docs.append(gold_spans)
-            pred_docs.append(pred_spans)
-
-        prf = corpus_entity_metrics(gold_docs, pred_docs, match="strict")
-        target_met = prf.recall >= target_recall
-        results.append(
-            ThresholdResult(
-                threshold=float(t),
-                recall=float(prf.recall),
-                precision=float(prf.precision),
-                target_met=target_met,
+        gold_spans = [
+            Span(
+                start=item.start if isinstance(item, Span) else item["start"],
+                end=item.end if isinstance(item, Span) else item["end"],
+                label=to_label(item.label if isinstance(item, Span) else item["label"]),
+                source=item.source if isinstance(item, Span) else item.get("source", "gold"),
+                score=item.score if isinstance(item, Span) else item.get("score"),
+                status=item.status if isinstance(item, Span) else item.get("status", "valid"),
             )
+            for item in g
+        ]
+        scored_preds: list[tuple[Span, float]] = []
+        for item in p_list:
+            span_obj = Span(
+                start=item.start if isinstance(item, Span) else item["start"],
+                end=item.end if isinstance(item, Span) else item["end"],
+                label=to_label(item.label if isinstance(item, Span) else item["label"]),
+                source=item.source if isinstance(item, Span) else item.get("source", "pred"),
+                score=item.score if isinstance(item, Span) else item.get("score", 1.0),
+                status=item.status if isinstance(item, Span) else item.get("status", "valid"),
+            )
+            item_score = span_obj.score if span_obj.score is not None else 1.0
+            scored_preds.append((span_obj, float(item_score)))
+        gold_docs.append(gold_spans)
+        raw_preds.append(scored_preds)
+
+    # Count total gold spans for support check
+    total_gold = sum(len(gold) for gold in gold_docs)
+
+    # Unsupported: not enough gold spans
+    if min_support > 0 and total_gold < min_support:
+        pred_docs_at_0 = [[sp for sp, _sc in doc_preds] for doc_preds in raw_preds]
+        prf = corpus_entity_metrics(gold_docs, pred_docs_at_0, match=match)
+        tp_at_0 = round(prf.recall * total_gold)
+        w_lower, w_upper = wilson_interval(tp_at_0, total_gold)
+        gr = _compute_group_recalls(gold_docs, pred_docs_at_0, match)
+        return ThresholdResult(
+            threshold=0.0,
+            recall=float(prf.recall),
+            precision=float(prf.precision),
+            target_met=False,
+            reason="unsupported",
+            gold_span_count=total_gold,
+            doc_count=doc_count,
+            group_recalls=gr,
+            wilson_lower=w_lower,
+            wilson_upper=w_upper,
         )
 
-    valid = [r for r in results if r.target_met]
-    if valid:
-        valid.sort(key=lambda r: r.threshold, reverse=True)
-        return valid[0]
-    else:
-        zero_res = [r for r in results if abs(r.threshold - 0.0) < 1e-9]
-        if zero_res:
-            return ThresholdResult(
-                threshold=0.0,
-                recall=zero_res[0].recall,
-                precision=zero_res[0].precision,
-                target_met=False,
-            )
-        else:
-            return ThresholdResult(0.0, 0.0, 0.0, False)
+    candidates = sorted(list(scores), reverse=True)
+
+    best: ThresholdResult | None = None
+    recall_at_0: ThresholdResult | None = None
+
+    for t in candidates:
+        pred_docs = [[sp for sp, sc in doc_preds if sc >= t] for doc_preds in raw_preds]
+        prf = corpus_entity_metrics(gold_docs, pred_docs, match=match)
+        target_met = prf.recall >= target_recall
+
+        tp = round(prf.recall * total_gold)
+        w_lower, w_upper = wilson_interval(tp, total_gold)
+        gr = _compute_group_recalls(gold_docs, pred_docs, match)
+
+        result = ThresholdResult(
+            threshold=float(t),
+            recall=float(prf.recall),
+            precision=float(prf.precision),
+            target_met=target_met,
+            reason=None if target_met else "target_not_met",
+            gold_span_count=total_gold,
+            doc_count=doc_count,
+            group_recalls=gr,
+            wilson_lower=w_lower,
+            wilson_upper=w_upper,
+        )
+
+        if abs(t - 0.0) < 1e-9:
+            recall_at_0 = result
+
+        if target_met and (best is None or t > best.threshold):
+            best = result
+
+    if best is not None:
+        return best
+
+    # No threshold meets target — return result at threshold 0.0
+    if recall_at_0 is not None:
+        return recall_at_0
+
+    # Fallback: empty docs, no candidates
+    return ThresholdResult(0.0, 0.0, 0.0, False, "target_not_met", total_gold, doc_count)
 
 
-def write_threshold(
+def _write_model_card(
     config_path: Path,
     result: ThresholdResult,
-    target_recall: float = 0.98,
-    doc_count: int = 0,
+    target_recall: float,
+    match_mode: str,
 ) -> None:
-    """Updates `threshold` in config YAML and updates/creates MODEL_CARD.md in output_dir."""
-    config_text = config_path.read_text(encoding="utf-8")
-    data = yaml.safe_load(config_text) or {}
-    data["threshold"] = result.threshold
-    config_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-
-    out_val = data.get("output_dir", "training/out")
-    output_dir = Path(out_val)
+    """Write (or update) the '## Kalibracja progu' section in MODEL_CARD.md."""
+    out_val = (yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}).get(
+        "output_dir", "training/out"
+    )
+    output_dir = Path(str(out_val))
     if not output_dir.is_absolute():
         output_dir = (config_path.parent / output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     model_card_path = output_dir / "MODEL_CARD.md"
 
-    section = (
-        f"\n## Kalibracja progu\n\n"
-        f"- **Próg (Threshold):** {result.threshold}\n"
-        f"- **Recall:** {result.recall:.4f}\n"
-        f"- **Precision:** {result.precision:.4f}\n"
-        f"- **Target Recall:** {target_recall}\n"
-        f"- **Target Met:** {result.target_met}\n"
-        f"- **Liczba dokumentów:** {doc_count}\n"
-    )
+    lines: list[str] = [
+        "\n## Kalibracja progu\n",
+        f"\n- **Próg (Threshold):** {result.threshold}",
+        f"\n- **Recall:** {result.recall:.4f}",
+        f"\n- **Precision:** {result.precision:.4f}",
+        f"\n- **Target Recall:** {target_recall}",
+        f"\n- **Target Met:** {result.target_met}",
+        f"\n- **Match Mode:** {match_mode}",
+        f"\n- **Liczba spanów gold:** {result.gold_span_count}",
+        f"\n- **Liczba dokumentów:** {result.doc_count}",
+        (
+            f"\n- **Przedział ufności Wilsona 95%:** "
+            f"[{result.wilson_lower:.4f}, {result.wilson_upper:.4f}]"
+        ),
+    ]
+    if result.reason is not None:
+        lines.append(f"\n- **Reason:** {result.reason}")
+    if result.group_recalls:
+        lines.append("\n\n### Recall per grupa ryzyka\n")
+        for gr in result.group_recalls:
+            if gr.span_count > 0:
+                lines.append(f"\n- **{gr.group}:** recall={gr.recall:.4f}, spans={gr.span_count}")
+
+    section = "".join(lines) + "\n"
 
     if model_card_path.exists():
         content = model_card_path.read_text(encoding="utf-8")
@@ -183,13 +320,51 @@ def write_threshold(
     model_card_path.write_text(new_content, encoding="utf-8")
 
 
+def write_threshold(
+    config_path: Path,
+    result: ThresholdResult,
+    target_recall: float = 0.98,
+    doc_count: int = 0,
+    match_mode: str = "strict",
+) -> None:
+    """Write threshold to config YAML (only when result.reason is None) and update MODEL_CARD.md.
+
+    The MODEL_CARD section is always written.  The config threshold is written
+    only on success (reason is None), leaving the config byte-identical on failure.
+    """
+    # Merge doc_count: prefer result.doc_count; fall back to the parameter for backward compat.
+    if result.doc_count == 0 and doc_count > 0:
+        result = ThresholdResult(
+            threshold=result.threshold,
+            recall=result.recall,
+            precision=result.precision,
+            target_met=result.target_met,
+            reason=result.reason,
+            gold_span_count=result.gold_span_count,
+            doc_count=doc_count,
+            group_recalls=result.group_recalls,
+            wilson_lower=result.wilson_lower,
+            wilson_upper=result.wilson_upper,
+        )
+
+    # Write config threshold only on success
+    if result.reason is None:
+        config_text = config_path.read_text(encoding="utf-8")
+        data = yaml.safe_load(config_text) or {}
+        data["threshold"] = result.threshold
+        config_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    _write_model_card(config_path, result, target_recall=target_recall, match_mode=match_mode)
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
     if not argv:
         print(
-            "Usage: python -m training.calibrate <config.yaml> [predictions.jsonl]", file=sys.stderr
+            "Usage: python -m training.calibrate <config.yaml> [predictions.jsonl]",
+            file=sys.stderr,
         )
         return 2
 
@@ -200,11 +375,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error loading config: {e}", file=sys.stderr)
         return 1
 
+    # UC-141: calibration_file must be present in config
+    if config.calibration_file is None:
+        print(
+            "calibration_file is not set in config; cannot calibrate. "
+            "Set the 'calibration_file' key in the config YAML.",
+            file=sys.stderr,
+        )
+        return 2
+
     predictions_path = Path(argv[1]) if len(argv) > 1 else config.output_dir / "predictions.jsonl"
 
     if predictions_path.exists() and len(argv) > 1:
         raw_docs = read_jsonl(predictions_path)
-        docs = []
+        docs: list[DocPrediction] = []
         for r in raw_docs:
             gold = [
                 Span(
@@ -230,7 +414,8 @@ def main(argv: list[str] | None = None) -> int:
             ]
             docs.append(DocPrediction(gold=gold, pred=pred))
     else:
-        eval_records = read_jsonl(config.eval_file)
+        # Run predictor on calibration_file (not eval_file) — UC-145
+        cal_records = read_jsonl(config.calibration_file)
 
         checkpoint = config.base_checkpoint
         if config.output_dir.exists():
@@ -244,8 +429,8 @@ def main(argv: list[str] | None = None) -> int:
         predictor = NerPredictor(checkpoint=checkpoint, threshold=0.0)
 
         docs = []
-        predictions_output = []
-        for r in eval_records:
+        predictions_output: list[dict[str, Any]] = []
+        for r in cal_records:
             gold_spans = [
                 Span(
                     s["start"],
@@ -260,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
             pred_spans = predictor.predict(r["text"])
             docs.append(DocPrediction(gold=gold_spans, pred=pred_spans))
 
-            pred_item = {
+            pred_item: dict[str, Any] = {
                 "gold": [
                     {
                         "start": s.start,
@@ -289,15 +474,35 @@ def main(argv: list[str] | None = None) -> int:
             encoding="utf-8",
         )
 
-    result = calibrate_threshold(docs, target_recall=0.98)
-    write_threshold(config_path, result, target_recall=0.98, doc_count=len(docs))
-
-    print(
-        "Calibration completed: threshold="
-        f"{result.threshold}, recall={result.recall:.4f}, "
-        f"precision={result.precision:.4f}, target_met={result.target_met}"
+    result = calibrate_threshold(
+        docs,
+        target_recall=config.calibration_target_recall,
+        match=_as_match_mode(config.calibration_match),
+        min_support=config.calibration_min_support,
     )
-    return 0
+
+    write_threshold(
+        config_path,
+        result,
+        target_recall=config.calibration_target_recall,
+        match_mode=config.calibration_match,
+    )
+
+    if result.reason is None:
+        print(
+            f"Calibration completed: threshold={result.threshold}, "
+            f"recall={result.recall:.4f}, precision={result.precision:.4f}, "
+            f"gold_spans={result.gold_span_count}, docs={result.doc_count}, "
+            f"wilson=[{result.wilson_lower:.4f}, {result.wilson_upper:.4f}]"
+        )
+        return 0
+    else:
+        print(
+            f"Calibration failed: reason={result.reason}, "
+            f"recall={result.recall:.4f}, gold_spans={result.gold_span_count}",
+            file=sys.stderr,
+        )
+        return 1
 
 
 if __name__ == "__main__":

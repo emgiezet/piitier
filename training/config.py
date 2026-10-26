@@ -24,6 +24,10 @@ class TrainingConfig:
     int8_recall_tolerance: float = 0.01
     base_license: str | None = None
     bf16: bool = False
+    calibration_file: Path | None = None
+    calibration_target_recall: float = 0.98
+    calibration_match: str = "strict"
+    calibration_min_support: int = 100
 
 
 class ConfigError(Exception):
@@ -50,6 +54,10 @@ _OPTIONAL_KEYS = {
     "int8_recall_tolerance",
     "base_license",
     "bf16",
+    "calibration_file",
+    "calibration_target_recall",
+    "calibration_match",
+    "calibration_min_support",
 }
 
 
@@ -127,6 +135,20 @@ def load_config(path: Path) -> TrainingConfig:
     if not eval_file.exists():
         raise ConfigError(f"eval_file does not exist: {eval_file}")
 
+    # calibration_file: optional, resolved like eval_file
+    calibration_file: Path | None = None
+    if data.get("calibration_file") is not None:
+        calibration_file = resolve_file_path(data["calibration_file"])
+        if not calibration_file.exists():
+            raise ConfigError(f"calibration_file does not exist: {calibration_file}")
+        _check_test_split(calibration_file)
+        if calibration_file == eval_file:
+            raise ConfigError("calibration_file must not be the same file as eval_file")
+
+    calibration_target_recall = float(data.get("calibration_target_recall", 0.98))
+    calibration_match = str(data.get("calibration_match", "strict"))
+    calibration_min_support = int(data.get("calibration_min_support", 100))
+
     _check_test_split(train_file)
     _check_test_split(eval_file)
 
@@ -140,6 +162,16 @@ def load_config(path: Path) -> TrainingConfig:
         raise ConfigError(f"max_length must be between 1 and 8192, got {max_length}")
     if threshold is not None and not (0 <= threshold <= 1):
         raise ConfigError(f"threshold must be between 0 and 1, got {threshold}")
+    if calibration_match not in {"strict", "partial"}:
+        raise ConfigError(
+            f"calibration_match must be 'strict' or 'partial', got {calibration_match!r}"
+        )
+    if not (0 < calibration_target_recall <= 1):
+        raise ConfigError(
+            f"calibration_target_recall must be in (0, 1], got {calibration_target_recall}"
+        )
+    if calibration_min_support < 1:
+        raise ConfigError(f"calibration_min_support must be >= 1, got {calibration_min_support}")
 
     return TrainingConfig(
         run=run,
@@ -158,4 +190,8 @@ def load_config(path: Path) -> TrainingConfig:
         int8_recall_tolerance=int8_recall_tolerance,
         base_license=base_license,
         bf16=bf16,
+        calibration_file=calibration_file,
+        calibration_target_recall=calibration_target_recall,
+        calibration_match=calibration_match,
+        calibration_min_support=calibration_min_support,
     )
