@@ -241,3 +241,125 @@ def test_uc41_binary_file_with_nul_byte(tmp_path: Path) -> None:
     assert exit_code == 2
     assert b"binary content:" in stderr_bytes
     assert stdout_bytes == b""
+
+
+# ---------------------------------------------------------------------------
+# UC-109: nonexistent --model dir → exit 2, no traceback, no doc text
+# ---------------------------------------------------------------------------
+
+
+def test_uc109_nonexistent_model_exits_2() -> None:
+    """UC-109: piitier mask <file> --model /nie/istnieje exits 2."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
+        f.write("PESEL: 90051512340\n")
+        tmp_path = Path(f.name)
+    try:
+        exit_code, stdout_bytes, stderr_bytes = run_piitier_mask(
+            ["mask", str(tmp_path), "--model", "/nie/istnieje"]
+        )
+        assert exit_code == 2
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def test_uc109_stderr_contains_model_path() -> None:
+    """UC-109: stderr names the nonexistent model path."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
+        f.write("PESEL: 90051512340\n")
+        tmp_path = Path(f.name)
+    try:
+        _, _, stderr_bytes = run_piitier_mask(["mask", str(tmp_path), "--model", "/nie/istnieje"])
+        assert b"/nie/istnieje" in stderr_bytes
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def test_uc109_stderr_no_traceback_no_doc_text() -> None:
+    """UC-109: stderr contains no traceback and no document text."""
+    import tempfile
+
+    doc_content = "PESEL: 90051512340\n"
+    with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
+        f.write(doc_content)
+        tmp_path = Path(f.name)
+    try:
+        _, stdout_bytes, stderr_bytes = run_piitier_mask(
+            ["mask", str(tmp_path), "--model", "/nie/istnieje"]
+        )
+        assert b"Traceback" not in stderr_bytes
+        assert b"90051512340" not in stderr_bytes
+        assert stdout_bytes == b""
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def test_uc109_nothing_written_to_output_file(tmp_path: Path) -> None:
+    """UC-109: nothing written to -o when model path is invalid."""
+    in_file = tmp_path / "in.txt"
+    out_file = tmp_path / "out.txt"
+    in_file.write_text("PESEL: 90051512340\n", encoding="utf-8")
+
+    run_piitier_mask(["mask", str(in_file), "-o", str(out_file), "--model", "/nie/istnieje"])
+    assert not out_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# UC-108: piitier mask --model <tiny-checkpoint> (integration)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def tiny_checkpoint(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Save the tiny HF checkpoint to a local directory (downloaded once per session)."""
+    from transformers import AutoModelForTokenClassification, AutoTokenizer
+
+    model_name = "hf-internal-testing/tiny-random-BertForTokenClassification"
+    ckpt_dir = tmp_path_factory.mktemp("tiny_bert")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForTokenClassification.from_pretrained(model_name)
+    tokenizer.save_pretrained(str(ckpt_dir))
+    model.save_pretrained(str(ckpt_dir))
+    return ckpt_dir
+
+
+@pytest.mark.integration
+def test_uc108_mask_with_model_exits_0(tmp_path: Path, tiny_checkpoint: Path) -> None:
+    """UC-108: piitier mask <file> --model <dir> --threshold 0.5 exits 0."""
+    in_file = tmp_path / "in.txt"
+    in_file.write_text("PESEL: 90051512340, tel.", encoding="utf-8")
+
+    exit_code, _out, _err = run_piitier_mask(
+        ["mask", str(in_file), "--model", str(tiny_checkpoint), "--threshold", "0.5"]
+    )
+    assert exit_code == 0
+
+
+@pytest.mark.integration
+def test_uc108_mask_with_model_contains_pesel_placeholder(
+    tmp_path: Path, tiny_checkpoint: Path
+) -> None:
+    """UC-108: output contains [PESEL] placeholder (detected by rules regardless of NER)."""
+    in_file = tmp_path / "in.txt"
+    in_file.write_text("PESEL: 90051512340, tel.", encoding="utf-8")
+
+    _, stdout_bytes, _ = run_piitier_mask(
+        ["mask", str(in_file), "--model", str(tiny_checkpoint), "--threshold", "0.5"]
+    )
+    assert b"[PESEL]" in stdout_bytes
+    assert b"90051512340" not in stdout_bytes
+
+
+@pytest.mark.integration
+def test_uc108_without_model_byte_identical(tmp_path: Path, tiny_checkpoint: Path) -> None:
+    """UC-108: without --model the output is byte-identical to current piitier mask."""
+    in_file = tmp_path / "in.txt"
+    in_file.write_text("PESEL: 90051512340, tel.", encoding="utf-8")
+
+    _, out_with_model, _ = run_piitier_mask(["mask", str(in_file), "--model", str(tiny_checkpoint)])
+    _, out_without_model, _ = run_piitier_mask(["mask", str(in_file)])
+
+    assert out_with_model == out_without_model
