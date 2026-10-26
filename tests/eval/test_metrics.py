@@ -78,10 +78,22 @@ def test_uc79_entity_metrics() -> None:
     assert res_partial.f1 == pytest.approx(0.8)
 
     res_zeropred = entity_metrics(gold, [], "strict")
-    assert res_zeropred == EntityPRF(0.0, 0.0, 0.0)
+    # No predictions: precision undefined (TP+FP=0), recall=0.0, F1=0.0 (PII-9)
+    assert res_zeropred.precision is None
+    assert res_zeropred.recall == 0.0
+    assert res_zeropred.f1 == 0.0
+    assert res_zeropred.tp == 0
+    assert res_zeropred.fp == 0
+    assert res_zeropred.fn == 3
 
     res_bothzero = entity_metrics([], [], "strict")
-    assert res_bothzero == EntityPRF(0.0, 0.0, 0.0)
+    # No gold, no pred: all denominators zero → all undefined (PII-9)
+    assert res_bothzero.precision is None
+    assert res_bothzero.recall is None
+    assert res_bothzero.f1 is None
+    assert res_bothzero.tp == 0
+    assert res_bothzero.fp == 0
+    assert res_bothzero.fn == 0
 
     by_lbl = entity_metrics_by_label(gold, pred_strict, "strict")
     assert Label.PESEL in by_lbl
@@ -89,7 +101,10 @@ def test_uc79_entity_metrics() -> None:
     assert by_lbl[Label.PESEL].precision == 0.5
     assert by_lbl[Label.PESEL].recall == 0.5
     assert by_lbl[Label.PESEL].f1 == 0.5
-    assert by_lbl[Label.NIP] == EntityPRF(0.0, 0.0, 0.0)
+    # NIP: gold=1 span, pred=0 NIP spans → precision=None, recall=0.0, f1=0.0 (PII-9)
+    assert by_lbl[Label.NIP].precision is None
+    assert by_lbl[Label.NIP].recall == 0.0
+    assert by_lbl[Label.NIP].f1 == 0.0
 
 
 def test_uc80_risk_weighted_recall() -> None:
@@ -117,7 +132,8 @@ def test_uc80_risk_weighted_recall() -> None:
 
     rwr = risk_weighted_recall(gold, pred)
     assert rwr == pytest.approx(1.6 / 2.6)
-    assert risk_weighted_recall([], pred) == 0.0
+    # Empty gold → zero denominator → undefined/None (PII-9 contract change)
+    assert risk_weighted_recall([], pred) is None
 
     taxonomy_path = Path(__file__).parents[2] / "docs" / "TAXONOMY.md"
     assert taxonomy_path.exists(), f"TAXONOMY.md not found at {taxonomy_path}"

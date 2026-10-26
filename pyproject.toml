@@ -41,6 +41,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "integration: marks tests that require an installed package or network (deselect with '-m \"not integration\"')",
 ]

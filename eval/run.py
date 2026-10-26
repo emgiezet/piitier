@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -201,9 +203,16 @@ def run_benchmark(
 # ---------------------------------------------------------------------------
 
 
-def _prf_dict(prf: EntityPRF) -> dict[str, float]:
-    """Serialize an EntityPRF to a plain dict."""
-    return {"p": prf.precision, "r": prf.recall, "f1": prf.f1}
+def _prf_dict(prf: EntityPRF) -> dict[str, object]:
+    """Serialize an EntityPRF to a JSON-safe dict (None → JSON null for undefined)."""
+    return {
+        "p": prf.precision,
+        "r": prf.recall,
+        "f1": prf.f1,
+        "tp": prf.tp,
+        "fp": prf.fp,
+        "fn": prf.fn,
+    }
 
 
 def _by_doc_type_metrics(
@@ -232,6 +241,33 @@ def _by_doc_type_metrics(
             "partial_by_label": corpus_entity_metrics_by_label(g_docs, p_docs, match="partial"),
         }
     return out
+
+
+def _get_git_commit() -> str:
+    """Return 40-char HEAD SHA or 'unknown' if git is unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            commit = result.stdout.strip()
+            if len(commit) == 40 and all(c in "0123456789abcdef" for c in commit):
+                return commit
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _sha256_file(path: Path) -> str:
+    """Compute SHA-256 hex digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +345,17 @@ def main(argv: list[str] | None = None) -> int:
         bench_label = args.bench
         split_label = args.split
 
+    # ------------------------------------------------------------------
+    # Provenance: git commit and bench file SHA-256
+    # ------------------------------------------------------------------
+    git_commit = _get_git_commit()
+    bench_sha256: dict[str, str] = {}
+    if use_docs:
+        bench_sha256[docs_path.name] = _sha256_file(docs_path)
+    else:
+        for _bpath in sorted(bench_dir.glob("*.jsonl")):
+            bench_sha256[_bpath.name] = _sha256_file(_bpath)
+
     if not docs:
         print("Error: no documents found.", file=sys.stderr)
         return 1
@@ -357,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
 
     total_fidelity = sum(
         fidelity(orig, rend, spans)
-        for orig, rend, spans in zip(result.originals, result.rendered, result.gold_spans_per_doc)
+        for orig, rend, spans in zip(result.originals, result.rendered, result.pred_spans_per_doc)
     )
 
     numbered_labels = {lbl for lbl in Label if lbl.numbered}
@@ -453,6 +500,8 @@ def main(argv: list[str] | None = None) -> int:
         is_final=(not use_docs and args.split == "test"),
         comparable_labels=comparable_labels,
         by_doc_type=by_doc_type,
+        git_commit=git_commit,
+        bench_sha256=bench_sha256,
     )
 
     # ------------------------------------------------------------------
@@ -476,6 +525,8 @@ def main(argv: list[str] | None = None) -> int:
     report_json: dict[str, object] = {
         "system": args.system,
         "system_version": str(system_version),
+        "git_commit": git_commit,
+        "bench_sha256": bench_sha256,
         "bench": bench_label,
         "split": split_label,
         "source": args.docs if use_docs else f"bench/{args.bench}/{args.split}",
@@ -502,9 +553,18 @@ def main(argv: list[str] | None = None) -> int:
         "leak_rate": {
             "docs_leaked": leak.docs_leaked,
             "docs_total": leak.docs_total,
+            "docs_with_direct_id": leak.docs_with_direct_id,
             "values_leaked": leak.values_leaked,
             "values_total": leak.values_total,
             "leaked_doc_ids": leak.leaked_doc_ids,
+            "doc_leak_rate": (
+                leak.docs_leaked / leak.docs_with_direct_id
+                if leak.docs_with_direct_id > 0
+                else None
+            ),
+            "value_leak_rate": (
+                leak.values_leaked / leak.values_total if leak.values_total > 0 else None
+            ),
         },
         "fidelity": total_fidelity,
         "throughput": {

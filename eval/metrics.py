@@ -18,9 +18,12 @@ from piitier.spans import Span
 
 @dataclass(frozen=True)
 class EntityPRF:
-    precision: float
-    recall: float
-    f1: float
+    precision: float | None  # None = undefined (zero denominator)
+    recall: float | None  # None = undefined (zero denominator)
+    f1: float | None  # None = undefined (zero denominator)
+    tp: int = 0
+    fp: int = 0
+    fn: int = 0
 
 
 def _spans_match(g: Span, p: Span, match: Literal["strict", "partial"]) -> bool:
@@ -69,13 +72,13 @@ def entity_metrics(
 
     strict: same label and identical [start, end).
     partial: same label and any non-empty overlap [start, end).
-    Zero-gold and zero-pred -> P/R/F1 = 0.0.
+    Zero denominator -> corresponding metric is None (undefined).
     """
     tp, fp, fn = _entity_counts(gold, pred, match)
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0.0 else 0.0
-    return EntityPRF(precision=precision, recall=recall, f1=f1)
+    precision = tp / (tp + fp) if (tp + fp) > 0 else None
+    recall = tp / (tp + fn) if (tp + fn) > 0 else None
+    f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else None
+    return EntityPRF(precision=precision, recall=recall, f1=f1, tp=tp, fp=fp, fn=fn)
 
 
 def corpus_entity_metrics(
@@ -87,6 +90,7 @@ def corpus_entity_metrics(
 
     Matching is performed only within each document (per-document).
     Raises ValueError if gold_docs and pred_docs differ in length.
+    Zero denominator -> corresponding metric is None (undefined).
     """
     if len(gold_docs) != len(pred_docs):
         raise ValueError(
@@ -99,10 +103,21 @@ def corpus_entity_metrics(
         total_tp += tp
         total_fp += fp
         total_fn += fn
-    precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
-    recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0.0 else 0.0
-    return EntityPRF(precision=precision, recall=recall, f1=f1)
+    precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else None
+    recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else None
+    f1 = (
+        2 * total_tp / (2 * total_tp + total_fp + total_fn)
+        if (2 * total_tp + total_fp + total_fn) > 0
+        else None
+    )
+    return EntityPRF(
+        precision=precision,
+        recall=recall,
+        f1=f1,
+        tp=total_tp,
+        fp=total_fp,
+        fn=total_fn,
+    )
 
 
 def entity_metrics_by_label(
@@ -236,25 +251,25 @@ def _risk_weight_counts(gold: list[Span], pred: list[Span]) -> tuple[float, floa
     return (matched_weight, total_weight)
 
 
-def risk_weighted_recall(gold: list[Span], pred: list[Span]) -> float:
-    """Compute risk-weighted recall (strict match). Zero-gold -> 0.0."""
+def risk_weighted_recall(gold: list[Span], pred: list[Span]) -> float | None:
+    """Compute risk-weighted recall (strict match). Zero-gold -> None (undefined)."""
     if not gold:
-        return 0.0
+        return None
     matched_weight, total_weight = _risk_weight_counts(gold, pred)
     if total_weight == 0.0:
-        return 0.0
+        return None
     return matched_weight / total_weight
 
 
 def corpus_risk_weighted_recall(
     gold_docs: list[list[Span]],
     pred_docs: list[list[Span]],
-) -> float:
+) -> float | None:
     """Compute risk-weighted recall micro-aggregated over a corpus of documents.
 
     Matching is performed only within each document (per-document).
     Raises ValueError if gold_docs and pred_docs differ in length.
-    Returns 0.0 when all documents have no gold spans.
+    Returns None when all documents have no gold spans (undefined).
     """
     if len(gold_docs) != len(pred_docs):
         raise ValueError(
@@ -268,7 +283,7 @@ def corpus_risk_weighted_recall(
         matched_weight += mw
         total_weight += tw
     if total_weight == 0.0:
-        return 0.0
+        return None
     return matched_weight / total_weight
 
 
@@ -305,6 +320,7 @@ class LeakRate:
     values_leaked: int
     values_total: int
     leaked_doc_ids: list[str]
+    docs_with_direct_id: int = 0  # docs containing at least one direct-identifier gold span
 
 
 def leak_rate(
@@ -322,9 +338,13 @@ def leak_rate(
     values_leaked = 0
     docs_leaked = 0
     leaked_doc_ids: list[str] = []
+    docs_with_direct_id = 0
 
     for orig, spans, rend, doc_id in zip(originals, gold_spans, rendered, doc_ids):
         doc_has_direct_leak = False
+        doc_has_direct_id = any(s.label in DIRECT_IDENTIFIERS for s in spans)
+        if doc_has_direct_id:
+            docs_with_direct_id += 1
         for span in spans:
             values_total += 1
             if span.start < 0 or span.end > len(orig) or span.start >= span.end:
@@ -348,6 +368,7 @@ def leak_rate(
         values_leaked=values_leaked,
         values_total=values_total,
         leaked_doc_ids=leaked_doc_ids,
+        docs_with_direct_id=docs_with_direct_id,
     )
 
 

@@ -1,4 +1,4 @@
-"""Report writer module (eval/report.py) — PII-4-f."""
+"""Report writer module (eval/report.py) — PII-4-f, PII-9."""
 
 from __future__ import annotations
 
@@ -16,6 +16,44 @@ else:
     BenchResult = object
 
 
+# ---------------------------------------------------------------------------
+# Formatting helpers
+# ---------------------------------------------------------------------------
+
+
+def _fmt_prf(v: float | None) -> str:
+    """Format a precision/recall/F1 value; None → 'undefined (0/0)'."""
+    if v is None:
+        return "undefined (0/0)"
+    return f"{v:.4f}"
+
+
+def _fmt_rwr(v: float | None) -> str:
+    """Format a risk-weighted recall value; None → 'undefined (0/0)'."""
+    if v is None:
+        return "undefined (0/0)"
+    return f"{v:.4f}"
+
+
+def _fmt_doc_leak(leak: LeakRate) -> str:
+    """Format docs-leaked fraction; undefined when no docs with direct ID."""
+    if leak.docs_with_direct_id == 0:
+        return "undefined (0/0)"
+    return f"{leak.docs_leaked}/{leak.docs_with_direct_id}"
+
+
+def _fmt_val_leak(leak: LeakRate) -> str:
+    """Format values-leaked fraction; undefined when no gold values."""
+    if leak.values_total == 0:
+        return "undefined (0/0)"
+    return f"{leak.values_leaked}/{leak.values_total}"
+
+
+# ---------------------------------------------------------------------------
+# Report writer
+# ---------------------------------------------------------------------------
+
+
 def write_report(
     path: Path,
     *,
@@ -29,6 +67,8 @@ def write_report(
     is_final: bool = False,
     comparable_labels: frozenset[Label] | None = None,
     by_doc_type: dict[str, dict[str, object]] | None = None,
+    git_commit: str = "unknown",
+    bench_sha256: dict[str, str] | None = None,
 ) -> Path:
     """Generate Markdown evaluation report with required sections in mandatory order.
 
@@ -44,6 +84,8 @@ def write_report(
         is_final: When ``True`` the split label is annotated as final.
         comparable_labels: Optional subset of labels for the comparable-subset block.
         by_doc_type: Optional per-doc_type metric dicts from ``_by_doc_type_metrics``.
+        git_commit: Git commit SHA (40 hex chars) or ``"unknown"``.
+        bench_sha256: Mapping of bench filename → SHA-256 hex digest.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -66,7 +108,7 @@ def write_report(
     strict_by_label = cast(dict[Label, EntityPRF], metrics.get("strict_by_label", {}))
     partial_micro = cast(EntityPRF, metrics.get("partial_micro", EntityPRF(0.0, 0.0, 0.0)))
     partial_by_label = cast(dict[Label, EntityPRF], metrics.get("partial_by_label", {}))
-    rwr = cast(float, metrics.get("risk_weighted_recall", 0.0))
+    rwr = cast(float | None, metrics.get("risk_weighted_recall", None))
     leak = cast(
         LeakRate,
         metrics.get("leak_rate", LeakRate(0, doc_count, 0, gold_count, [])),
@@ -78,6 +120,11 @@ def write_report(
     leaked_ids_str = ", ".join(leak.leaked_doc_ids) if leak.leaked_doc_ids else "brak"
     split_str = f"{split} (final numbers)" if is_final else split
 
+    sha256_lines: list[str] = []
+    if bench_sha256:
+        for fname, digest in sorted(bench_sha256.items()):
+            sha256_lines.append(f"  - {fname}: {digest}")
+
     lines = [
         f"# Raport: {system_name} na bench/{bench_version}/{split}",
         "",
@@ -87,45 +134,70 @@ def write_report(
         f"- Data: {date_str}",
         f"- Próg: {threshold_str}",
         "",
-        "## Benchmark",
-        f"- Wersja: {bench_version}",
+        "## Metadane",
+        f"- Commit: {git_commit}",
+        f"- Dokumenty: {doc_count}",
         f"- Split: {split_str}",
-        f"- Liczba dokumentów: {doc_count}",
-        f"- Liczba spanów gold: {gold_count}",
-        "",
-        "## Sprzęt",
-        f"- Platforma: {platform.platform()}",
-        f"- Procesor: {platform.processor() or 'N/A'}",
-        f"- GPU: {gpu_name}",
-        f"- Peak RAM: {peak_ram} bytes",
-        "",
-        "## Encje (strict)",
-        f"- Micro Precision: {strict_micro.precision:.4f}",
-        f"- Micro Recall: {strict_micro.recall:.4f}",
-        f"- Micro F1: {strict_micro.f1:.4f}",
-        "",
-        "| Etykieta | Precision | Recall | F1 |",
-        "|---|---|---|---|",
+        f"- Próg: {threshold_str}",
     ]
 
+    if sha256_lines:
+        lines.append("- SHA-256 bench:")
+        lines.extend(sha256_lines)
+    else:
+        lines.append("- SHA-256 bench: (brak pliku bench lub dane syntetyczne)")
+
+    lines.extend(
+        [
+            "",
+            "## Benchmark",
+            f"- Wersja: {bench_version}",
+            f"- Split: {split_str}",
+            f"- Liczba dokumentów: {doc_count}",
+            f"- Liczba spanów gold: {gold_count}",
+            "",
+            "## Sprzęt",
+            f"- Platforma: {platform.platform()}",
+            f"- Procesor: {platform.processor() or 'N/A'}",
+            f"- GPU: {gpu_name}",
+            f"- Peak RAM: {peak_ram} bytes",
+            "",
+            "## Encje (strict)",
+            f"- Micro Precision: {_fmt_prf(strict_micro.precision)}"
+            f" (TP={strict_micro.tp}, FP={strict_micro.fp}, FN={strict_micro.fn})",
+            f"- Micro Recall: {_fmt_prf(strict_micro.recall)}",
+            f"- Micro F1: {_fmt_prf(strict_micro.f1)}",
+            "",
+            "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
+            "|---|---|---|---|---|---|---|",
+        ]
+    )
+
     for lbl, prf in sorted(strict_by_label.items(), key=lambda x: x[0].name):
-        lines.append(f"| {lbl.name} | {prf.precision:.4f} | {prf.recall:.4f} | {prf.f1:.4f} |")
+        lines.append(
+            f"| {lbl.name} | {_fmt_prf(prf.precision)} | {_fmt_prf(prf.recall)}"
+            f" | {_fmt_prf(prf.f1)} | {prf.tp} | {prf.fp} | {prf.fn} |"
+        )
 
     lines.extend(
         [
             "",
             "## Encje (partial)",
-            f"- Micro Precision: {partial_micro.precision:.4f}",
-            f"- Micro Recall: {partial_micro.recall:.4f}",
-            f"- Micro F1: {partial_micro.f1:.4f}",
+            f"- Micro Precision: {_fmt_prf(partial_micro.precision)}"
+            f" (TP={partial_micro.tp}, FP={partial_micro.fp}, FN={partial_micro.fn})",
+            f"- Micro Recall: {_fmt_prf(partial_micro.recall)}",
+            f"- Micro F1: {_fmt_prf(partial_micro.f1)}",
             "",
-            "| Etykieta | Precision | Recall | F1 |",
-            "|---|---|---|---|",
+            "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
+            "|---|---|---|---|---|---|---|",
         ]
     )
 
     for lbl, prf in sorted(partial_by_label.items(), key=lambda x: x[0].name):
-        lines.append(f"| {lbl.name} | {prf.precision:.4f} | {prf.recall:.4f} | {prf.f1:.4f} |")
+        lines.append(
+            f"| {lbl.name} | {_fmt_prf(prf.precision)} | {_fmt_prf(prf.recall)}"
+            f" | {_fmt_prf(prf.f1)} | {prf.tp} | {prf.fp} | {prf.fn} |"
+        )
 
     # ------------------------------------------------------------------
     # Comparable subset block
@@ -143,17 +215,17 @@ def write_report(
                 "",
                 "## Porównywalna podtaksonomia (bardsai_v2)",
                 f"- Etykiety: {label_names}",
-                f"- Strict Micro Precision: {_comparable_strict.precision:.4f}",
-                f"- Strict Micro Recall: {_comparable_strict.recall:.4f}",
-                f"- Strict Micro F1: {_comparable_strict.f1:.4f}",
+                f"- Strict Micro Precision: {_fmt_prf(_comparable_strict.precision)}",
+                f"- Strict Micro Recall: {_fmt_prf(_comparable_strict.recall)}",
+                f"- Strict Micro F1: {_fmt_prf(_comparable_strict.f1)}",
             ]
         )
         if _comparable_partial is not None:
             lines.extend(
                 [
-                    f"- Partial Micro Precision: {_comparable_partial.precision:.4f}",
-                    f"- Partial Micro Recall: {_comparable_partial.recall:.4f}",
-                    f"- Partial Micro F1: {_comparable_partial.f1:.4f}",
+                    f"- Partial Micro Precision: {_fmt_prf(_comparable_partial.precision)}",
+                    f"- Partial Micro Recall: {_fmt_prf(_comparable_partial.recall)}",
+                    f"- Partial Micro F1: {_fmt_prf(_comparable_partial.f1)}",
                 ]
             )
 
@@ -161,11 +233,13 @@ def write_report(
         [
             "",
             "## Recall ważony ryzykiem",
-            f"- Risk-weighted recall: {rwr:.4f}",
+            f"- Risk-weighted recall: {_fmt_rwr(rwr)}",
             "",
             "## Leak rate",
-            f"- Docs leaked: {leak.docs_leaked} / {leak.docs_total}",
-            f"- Values leaked: {leak.values_leaked} / {leak.values_total}",
+            f"- Docs leaked: {_fmt_doc_leak(leak)}"
+            f" (docs_with_direct_id={leak.docs_with_direct_id},"
+            f" docs_total={leak.docs_total})",
+            f"- Values leaked: {_fmt_val_leak(leak)}",
             f"- Leaked doc IDs: {leaked_ids_str}",
             "",
             "## Wierność",
@@ -200,17 +274,19 @@ def write_report(
             lines.extend(
                 [
                     f"### {dt}",
-                    f"- Strict Micro Precision: {sm.precision:.4f}",
-                    f"- Strict Micro Recall: {sm.recall:.4f}",
-                    f"- Strict Micro F1: {sm.f1:.4f}",
+                    f"- Strict Micro Precision: {_fmt_prf(sm.precision)}"
+                    f" (TP={sm.tp}, FP={sm.fp}, FN={sm.fn})",
+                    f"- Strict Micro Recall: {_fmt_prf(sm.recall)}",
+                    f"- Strict Micro F1: {_fmt_prf(sm.f1)}",
                     "",
-                    "| Etykieta | Precision | Recall | F1 |",
-                    "|---|---|---|---|",
+                    "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
+                    "|---|---|---|---|---|---|---|",
                 ]
             )
             for lbl, prf in sorted(sbl.items(), key=lambda x: x[0].name):
                 lines.append(
-                    f"| {lbl.name} | {prf.precision:.4f} | {prf.recall:.4f} | {prf.f1:.4f} |"
+                    f"| {lbl.name} | {_fmt_prf(prf.precision)} | {_fmt_prf(prf.recall)}"
+                    f" | {_fmt_prf(prf.f1)} | {prf.tp} | {prf.fp} | {prf.fn} |"
                 )
             lines.append("")
 
