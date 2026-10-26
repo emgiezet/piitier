@@ -17,13 +17,13 @@ from eval.baselines import System, get_system
 from eval.metrics import (
     EntityPRF,
     NumberingStats,
-    entity_metrics,
-    entity_metrics_by_label,
+    corpus_entity_metrics,
+    corpus_entity_metrics_by_label,
+    corpus_risk_weighted_recall,
     fidelity,
     leak_rate,
     numbering_consistency,
     peak_ram_bytes,
-    risk_weighted_recall,
     throughput_stats,
 )
 from piitier.labels import Label
@@ -40,8 +40,6 @@ class BenchDoc:
 
 @dataclass(frozen=True)
 class BenchResult:
-    gold_spans: list[Span]
-    pred_spans: list[Span]
     gold_spans_per_doc: list[list[Span]]
     pred_spans_per_doc: list[list[Span]]
     originals: list[str]
@@ -162,8 +160,6 @@ def run_benchmark(
     threshold: float | None = None,
 ) -> BenchResult:
     """Run benchmark evaluation across documents."""
-    gold_spans_flat: list[Span] = []
-    pred_spans_flat: list[Span] = []
     gold_spans_per_doc: list[list[Span]] = []
     pred_spans_per_doc: list[list[Span]] = []
     originals: list[str] = []
@@ -177,7 +173,6 @@ def run_benchmark(
         doc_types.append(doc.doc_type)
         originals.append(doc.text)
         gold_spans_per_doc.append(doc.gold)
-        gold_spans_flat.extend(doc.gold)
 
         t0 = time.perf_counter()
         pred = system.predict(doc.text)
@@ -185,14 +180,11 @@ def run_benchmark(
         latencies.append(t1 - t0)
 
         pred_spans_per_doc.append(pred)
-        pred_spans_flat.extend(pred)
 
         rend = piitier.render.mask(doc.text, pred)
         rendered.append(rend)
 
     return BenchResult(
-        gold_spans=gold_spans_flat,
-        pred_spans=pred_spans_flat,
         gold_spans_per_doc=gold_spans_per_doc,
         pred_spans_per_doc=pred_spans_per_doc,
         originals=originals,
@@ -214,32 +206,30 @@ def _prf_dict(prf: EntityPRF) -> dict[str, float]:
     return {"p": prf.precision, "r": prf.recall, "f1": prf.f1}
 
 
-def _filter_spans(spans: list[Span], labels: frozenset[Label]) -> list[Span]:
-    """Keep only spans whose label is in *labels*."""
-    return [s for s in spans if s.label in labels]
-
-
 def _by_doc_type_metrics(
     result: BenchResult,
 ) -> dict[str, dict[str, object]]:
-    """Compute entity_metrics per doc_type (strict and partial)."""
-    dt_gold: dict[str, list[Span]] = {}
-    dt_pred: dict[str, list[Span]] = {}
+    """Compute corpus_entity_metrics per doc_type (strict and partial).
+
+    Matching is per-document within each doc_type group.
+    """
+    dt_gold: dict[str, list[list[Span]]] = {}
+    dt_pred: dict[str, list[list[Span]]] = {}
     for dt, g_spans, p_spans in zip(
         result.doc_types, result.gold_spans_per_doc, result.pred_spans_per_doc
     ):
-        dt_gold.setdefault(dt, []).extend(g_spans)
-        dt_pred.setdefault(dt, []).extend(p_spans)
+        dt_gold.setdefault(dt, []).append(g_spans)
+        dt_pred.setdefault(dt, []).append(p_spans)
 
     out: dict[str, dict[str, object]] = {}
     for dt in sorted(dt_gold):
-        g = dt_gold[dt]
-        p = dt_pred.get(dt, [])
+        g_docs = dt_gold[dt]
+        p_docs = dt_pred.get(dt, [[] for _ in g_docs])
         out[dt] = {
-            "strict_micro": entity_metrics(g, p, match="strict"),
-            "strict_by_label": entity_metrics_by_label(g, p, match="strict"),
-            "partial_micro": entity_metrics(g, p, match="partial"),
-            "partial_by_label": entity_metrics_by_label(g, p, match="partial"),
+            "strict_micro": corpus_entity_metrics(g_docs, p_docs, match="strict"),
+            "strict_by_label": corpus_entity_metrics_by_label(g_docs, p_docs, match="strict"),
+            "partial_micro": corpus_entity_metrics(g_docs, p_docs, match="partial"),
+            "partial_by_label": corpus_entity_metrics_by_label(g_docs, p_docs, match="partial"),
         }
     return out
 
@@ -350,13 +340,19 @@ def main(argv: list[str] | None = None) -> int:
     # ------------------------------------------------------------------
     # Metrics — full taxonomy
     # ------------------------------------------------------------------
-    strict_micro = entity_metrics(result.gold_spans, result.pred_spans, match="strict")
-    strict_by_label = entity_metrics_by_label(result.gold_spans, result.pred_spans, match="strict")
-    partial_micro = entity_metrics(result.gold_spans, result.pred_spans, match="partial")
-    partial_by_label = entity_metrics_by_label(
-        result.gold_spans, result.pred_spans, match="partial"
+    strict_micro = corpus_entity_metrics(
+        result.gold_spans_per_doc, result.pred_spans_per_doc, match="strict"
     )
-    rwr = risk_weighted_recall(result.gold_spans, result.pred_spans)
+    strict_by_label = corpus_entity_metrics_by_label(
+        result.gold_spans_per_doc, result.pred_spans_per_doc, match="strict"
+    )
+    partial_micro = corpus_entity_metrics(
+        result.gold_spans_per_doc, result.pred_spans_per_doc, match="partial"
+    )
+    partial_by_label = corpus_entity_metrics_by_label(
+        result.gold_spans_per_doc, result.pred_spans_per_doc, match="partial"
+    )
+    rwr = corpus_risk_weighted_recall(result.gold_spans_per_doc, result.pred_spans_per_doc)
     leak = leak_rate(result.originals, result.gold_spans_per_doc, result.rendered, result.doc_ids)
 
     total_fidelity = sum(
@@ -403,10 +399,14 @@ def main(argv: list[str] | None = None) -> int:
     comparable_strict_micro: EntityPRF | None = None
     comparable_partial_micro: EntityPRF | None = None
     if comparable_labels:
-        cg = _filter_spans(result.gold_spans, comparable_labels)
-        cp = _filter_spans(result.pred_spans, comparable_labels)
-        comparable_strict_micro = entity_metrics(cg, cp, match="strict")
-        comparable_partial_micro = entity_metrics(cg, cp, match="partial")
+        cg_docs = [
+            [s for s in g if s.label in comparable_labels] for g in result.gold_spans_per_doc
+        ]
+        cp_docs = [
+            [s for s in p if s.label in comparable_labels] for p in result.pred_spans_per_doc
+        ]
+        comparable_strict_micro = corpus_entity_metrics(cg_docs, cp_docs, match="strict")
+        comparable_partial_micro = corpus_entity_metrics(cg_docs, cp_docs, match="partial")
 
     # ------------------------------------------------------------------
     # Metrics — per-doc_type
@@ -483,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
         "threshold": args.threshold,
         "device": args.device,
         "docs": len(docs),
-        "gold_spans": len(result.gold_spans),
+        "gold_spans": sum(len(g) for g in result.gold_spans_per_doc),
         "strict_micro": _prf_dict(strict_micro),
         "strict_by_label": {lbl.name: _prf_dict(prf) for lbl, prf in strict_by_label.items()},
         "partial_micro": _prf_dict(partial_micro),
