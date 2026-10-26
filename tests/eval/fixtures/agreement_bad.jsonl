@@ -1,0 +1,1 @@
+{"id": "disagree_01", "doc_type": "polisa", "text": "Nowak", "spans": [], "annotations": [{"annotator": "ann_a", "spans": [{"start": 0, "end": 5, "label": "NAZWISKO", "text": "Nowak"}]}, {"annotator": "ann_b", "spans": []}], "adjudicated_by": "curator_01", "twin_of": null, "notes": "annotators completely disagree: ann_a labels whole text NAZWISKO, ann_b sees nothing"}
