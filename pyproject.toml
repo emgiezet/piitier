@@ -28,6 +28,7 @@ dev = [
     "onnxruntime==1.31.0",
     "onnxscript==0.7.2",
     "optimum==2.3.0",
+    "pre-commit==4.7.0",
     "presidio-analyzer==2.2.364",
     "pytest==9.1.1",
     "pyyaml==6.0.3",

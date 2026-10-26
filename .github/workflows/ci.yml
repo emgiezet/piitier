@@ -1,0 +1,35 @@
+name: ci
+
+# Gates every pull request and every push to main with the same checks as the local hooks
+# (.pre-commit-config.yaml) plus the unit tests. Integration tests are not run here: they download
+# checkpoints from the Hugging Face Hub and are meant for the GPU workstation.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Hooks (secrets, private keys, ruff, mypy, piitier scan)
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+      - name: Unit tests
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: uv run pytest -q -m "not integration"
