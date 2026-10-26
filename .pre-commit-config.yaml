@@ -1,0 +1,54 @@
+# Commit hooks: secrets, private keys, large files, formatting, lint, types and checksum-valid
+# identifiers. Pytest runs before every push. Python tools run through `uv run`, so their
+# versions come from uv.lock rather than from this file.
+#
+#   uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+#   uv run pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, markdown]
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy src
+        entry: uv run mypy src
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: piitier-scan
+        name: piitier scan (checksum-valid identifiers)
+        # A checksum-valid PESEL/NIP/REGON/IBAN/ID card/payment card fails the commit unless its
+        # fingerprint is in .pii-allowlist (synthetic values only). Generated files are excluded:
+        # uv.lock hashes and report floats contain Luhn-valid 16-digit runs.
+        entry: uv run piitier scan --allowlist .pii-allowlist
+        language: system
+        types: [text]
+        exclude: ^(uv\.lock|eval/reports/.*\.json)$
+      - id: pytest
+        name: pytest (unit)
+        entry: uv run pytest -q -m "not integration"
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

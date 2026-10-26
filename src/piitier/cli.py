@@ -1,12 +1,14 @@
-"""Command-line interface for piitier mask <file>.
+"""Command-line interface for piitier.
 
-Entry point: piitier mask <path> [-o <out>] [--model <dir>] [--threshold T]
+Entry points:
 
-- Reads a .txt, .md, .csv, or text-layer .pdf file
-- Masks PII using piitier.mask() (rules only, default) or
-  piitier.Anonymizer (rules + NER when --model is given)
-- Writes masked content to stdout (default) or file (-o <out>)
-- Exit 0 on success, 2 on usage/input error, 3 on PDF with no text layer
+- ``piitier mask <path> [-o <out>] [--model <dir>] [--threshold T]`` reads a .txt, .md, .csv or
+  text-layer .pdf file and masks PII with ``piitier.mask()`` (rules only, default) or
+  ``piitier.Anonymizer`` (rules + NER when --model is given). Output goes to stdout or ``-o``.
+  Exit 0 on success, 2 on usage/input error, 3 on a PDF with no text layer.
+- ``piitier scan [--allowlist F] [--write-allowlist F] <path>...`` reports checksum-valid
+  identifiers as ``path:line:column: LABEL`` (never the value). Exit 0 when nothing outside the
+  allowlist is found, 1 when something is, 2 on a missing path or allowlist.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from pathlib import Path
 
 import piitier
 from piitier.loaders import PdfNoTextError, get_loader
+from piitier.scan import Finding, read_allowlist, scan_file
 
 
 def mask_file(
@@ -102,6 +105,43 @@ def mask_file(
     return 0
 
 
+def scan_files(paths: list[Path], allowlist: Path | None, write_allowlist: Path | None) -> int:
+    """Scan *paths* for checksum-valid identifiers; see the module docstring for exit codes."""
+    allowed: frozenset[str] = frozenset()
+    if allowlist is not None:
+        if not allowlist.is_file():
+            print(f"allowlist not found: {allowlist}", file=sys.stderr)
+            return 2
+        allowed = read_allowlist(allowlist)
+
+    findings: list[Finding] = []
+    for path in paths:
+        if not path.is_file():
+            print(f"not found: {path}", file=sys.stderr)
+            return 2
+        found = scan_file(path)
+        if found is not None:
+            findings.extend(found)
+
+    if write_allowlist is not None:
+        fingerprints = sorted({f.fingerprint for f in findings} | allowed)
+        header = '# sha256("<LABEL>:<value>") of synthetic identifiers allowed in this repo.\n'
+        write_allowlist.write_text(header + "".join(fp + "\n" for fp in fingerprints), "utf-8")
+        return 0
+
+    unexpected = [f for f in findings if f.fingerprint not in allowed]
+    for f in unexpected:
+        print(f"{f.path}:{f.line}:{f.column}: {f.label.name}")
+    if unexpected:
+        print(
+            f"{len(unexpected)} checksum-valid identifier(s) not in the allowlist. If they are "
+            "synthetic, add them with --write-allowlist; real data must not be committed.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def main() -> int:
     """Main entry point for the piitier CLI."""
     parser = ArgumentParser(
@@ -143,10 +183,31 @@ def main() -> int:
         help="Minimum NER span score to keep (default: 0.0); ignored without --model",
     )
 
+    scan_parser = subparsers.add_parser(
+        "scan",
+        help="Report checksum-valid identifiers by position (never by value)",
+    )
+    scan_parser.add_argument("paths", type=Path, nargs="+", help="Files to scan")
+    scan_parser.add_argument(
+        "--allowlist",
+        type=Path,
+        default=None,
+        help="File of allowed fingerprints (sha256 of '<LABEL>:<value>'), one per line",
+    )
+    scan_parser.add_argument(
+        "--write-allowlist",
+        type=Path,
+        dest="write_allowlist",
+        default=None,
+        help="Write the fingerprints of every finding (plus --allowlist entries) and exit 0",
+    )
+
     args = parser.parse_args()
 
     if args.command == "mask":
         return mask_file(args.input, args.output, args.model, args.threshold)
+    if args.command == "scan":
+        return scan_files(args.paths, args.allowlist, args.write_allowlist)
 
     return 1
 
