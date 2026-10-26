@@ -28,7 +28,9 @@ def _ensure_module(name: str, rel: str) -> None:
 
 
 for _name, _rel in (
+    ("eval", "eval/__init__.py"),
     ("eval.metrics", "eval/metrics.py"),
+    ("eval.run", "eval/run.py"),
     ("training.config", "training/config.py"),
     ("training.train", "training/train.py"),
     ("training.calibrate", "training/calibrate.py"),
@@ -179,6 +181,131 @@ def test_uc156_unsupported_sweep_records_zero_candidate(tmp_path: Path) -> None:
     ]
 
 
+def test_uc158_privacy_guard_selects_highest_safe_strict_threshold(tmp_path: Path) -> None:
+    calibration = [cal.DocPrediction(gold=[_span(0, 1.0, "gold")], pred=[_span(0, 0.9)])]
+    safety = [
+        cal.SafetyDoc(
+            text="alpha",
+            gold=[Span(0, 5, Label.OSOBA, "gold", 1.0, "valid")],
+            pred=[Span(0, 5, Label.OSOBA, "pred", 0.4, "valid")],
+        )
+    ]
+    result = cal.calibrate_threshold(calibration, safety_docs=safety, min_support=1)
+    assert result.reason is None
+    assert result.threshold == pytest.approx(0.4)
+    assert result.recall == 1.0
+    cfg = _config(tmp_path, calibration_safety_bench=str(tmp_path / "dev"))
+    cal.write_threshold(cfg, result)
+    assert yaml.safe_load(cfg.read_text(encoding="utf-8"))["threshold"] == pytest.approx(0.4)
+    sweep = json.loads((tmp_path / "out/calibration_sweep.json").read_text(encoding="utf-8"))
+    assert next(p for p in sweep["points"] if p["threshold"] == 0.9)["leaked_values"] == 1
+    assert sweep["points"][-1]["leaked_values"] == 0
+
+
+def test_uc162_threshold_before_window_merge_prevents_false_safety_result() -> None:
+    low = Span(0, 3, Label.OSOBA, "pred", 0.4, "valid")
+    high = Span(2, 5, Label.OSOBA, "pred", 0.9, "valid")
+    result = cal.calibrate_threshold(
+        [cal.DocPrediction(gold=[Span(0, 5, Label.OSOBA, "gold", 1.0, "valid")], pred=[low, high])],
+        safety_docs=[
+            cal.SafetyDoc(
+                text="abcde",
+                gold=[Span(0, 2, Label.OSOBA, "gold", 1.0, "valid")],
+                pred=[low, high],
+            )
+        ],
+        min_support=1,
+        raw_window_preds=True,
+    )
+    assert result.threshold == pytest.approx(0.4)
+    assert result.recall == 1.0
+    assert result.safety_leaks[-1] == 0
+    assert result.sweep[0].threshold == 1.0
+    assert result.sweep[10].threshold == pytest.approx(0.9)
+    assert result.safety_leaks[10] == 1
+
+
+def test_uc162_main_thresholds_safety_windows_before_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    safety_dir = tmp_path / "dev"
+    safety_dir.mkdir()
+    (safety_dir / "docs.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "safe",
+                "doc_type": "note",
+                "text": "abcde",
+                "spans": [{"start": 0, "end": 2, "label": "OSOBA", "text": "ab"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cfg = _config(tmp_path, calibration_safety_bench=str(safety_dir))
+
+    class Predictor:
+        def __init__(self, checkpoint: str | Path, threshold: float, device: str) -> None:
+            pass
+
+        def predict_window_spans(self, text: str) -> list[Span]:
+            if text == "xxxx":
+                return [_span(0, 0.9)]
+            return [
+                Span(0, 3, Label.OSOBA, "pred", 0.4, "valid"),
+                Span(2, 5, Label.OSOBA, "pred", 0.9, "valid"),
+            ]
+
+    monkeypatch.setattr(cal, "NerPredictor", Predictor)
+    assert cal.main([str(cfg)]) == 0
+    assert yaml.safe_load(cfg.read_text(encoding="utf-8"))["threshold"] == pytest.approx(0.4)
+    sweep = json.loads((tmp_path / "out/calibration_sweep.json").read_text(encoding="utf-8"))
+    assert (
+        next(point for point in sweep["points"] if point["threshold"] == 0.9)["leaked_values"] == 1
+    )
+
+
+def test_uc159_privacy_guard_refuses_threshold_if_any_value_always_leaks(tmp_path: Path) -> None:
+    safety = [
+        cal.SafetyDoc(
+            text="alpha",
+            gold=[Span(0, 5, Label.OSOBA, "gold", 1.0, "valid")],
+            pred=[],
+        )
+    ]
+    result = cal.calibrate_threshold(
+        [cal.DocPrediction(gold=[_span(0, 1.0, "gold")], pred=[_span(0, 0.9)])],
+        safety_docs=safety,
+        min_support=1,
+    )
+    assert result.reason == "privacy_gate_not_met"
+    cfg = _config(tmp_path)
+    before = cfg.read_bytes()
+    cal.write_threshold(cfg, result)
+    assert cfg.read_bytes() == before
+    sweep = json.loads((tmp_path / "out/calibration_sweep.json").read_text(encoding="utf-8"))
+    assert sweep["chosen_threshold"] is None
+    assert sweep["points"][-1]["leaked_values"] == 1
+    with pytest.raises(ValueError, match="Safety benchmark must contain documents"):
+        cal.calibrate_threshold(
+            [cal.DocPrediction(gold=[_span(0, 1.0, "gold")], pred=[_span(0, 0.9)])],
+            safety_docs=[],
+        )
+
+
+def test_uc160_safety_bench_must_be_nonempty_dev_directory(tmp_path: Path) -> None:
+    with pytest.raises(config.ConfigError, match="calibration_safety_bench"):
+        config.load_config(_config(tmp_path, calibration_safety_bench=str(tmp_path / "missing")))
+    empty_dir = tmp_path / "dev"
+    empty_dir.mkdir()
+    with pytest.raises(config.ConfigError, match="non-empty dev directory"):
+        config.load_config(_config(tmp_path, calibration_safety_bench=str(empty_dir)))
+    test_dir = tmp_path / "bench/test"
+    test_dir.mkdir(parents=True)
+    with pytest.raises(config.ConfigError, match="test split"):
+        config.load_config(_config(tmp_path, calibration_safety_bench=str(test_dir)))
+
+
 def test_uc157_default_device_cpu(tmp_path: Path) -> None:
     assert config.load_config(_config(tmp_path)).calibration_device == "cpu"
 
@@ -197,9 +324,51 @@ def test_uc157_main_uses_configured_device(tmp_path: Path, monkeypatch: pytest.M
         def __init__(self, checkpoint: str | Path, threshold: float, device: str) -> None:
             devices.append(device)
 
-        def predict(self, text: str) -> list[Span]:
+        def predict_window_spans(self, text: str) -> list[Span]:
             return [_span(0, 0.9)]
 
     monkeypatch.setattr(cal, "NerPredictor", Predictor)
     assert cal.main([str(cfg)]) == 0
     assert devices == ["cuda"]
+
+
+@pytest.mark.integration
+def test_uc161_local_checkpoint_meets_strict_target_and_masks_safety_dev() -> None:
+    """Run only where the deliberately untracked model and calibration split exist."""
+    checkpoint = _root / "training/out/pii-5-v4/model.safetensors"
+    calibration = _root / "data/synthetic/v0.3-cal/dev.jsonl"
+    if not checkpoint.is_file() or not calibration.is_file():
+        pytest.skip("pii-5-v4 checkpoint and historical calibration data are local-only")
+
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("pii-5-v4 local integration check requires CUDA")
+
+    from eval.run import read_bench, read_docs
+
+    cfg = config.load_config(_root / "training/configs/pii-5-v4.yaml")
+    assert cfg.calibration_file == calibration
+    assert cfg.calibration_safety_bench is not None
+    assert cfg.threshold is not None
+    sweep = json.loads((cfg.output_dir / "calibration_sweep.json").read_text(encoding="utf-8"))
+    assert sweep["chosen_threshold"] == cfg.threshold
+    assert sweep["match"] == "strict"
+
+    predictor = cal.NerPredictor(cfg.output_dir, threshold=cfg.threshold, device="cuda")
+    docs = read_docs(calibration)
+    gold = [doc.gold for doc in docs]
+    assert len(docs) == 1031
+    assert sum(len(spans) for spans in gold) == 14766
+    actual = cal.corpus_entity_metrics(
+        gold, [predictor.predict(doc.text) for doc in docs], match="strict"
+    )
+    assert actual.recall >= cfg.calibration_target_recall
+
+    safety = read_bench(cfg.calibration_safety_bench)
+    assert sum(len(doc.gold) for doc in safety) == 40
+    leaked = cal.leak_rate(
+        [doc.text for doc in safety],
+        [doc.gold for doc in safety],
+        [cal.mask(doc.text, predictor.predict(doc.text)) for doc in safety],
+    )
+    assert leaked.values_leaked == 0

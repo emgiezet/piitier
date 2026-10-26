@@ -24,9 +24,11 @@ from eval.metrics import (
     _entity_counts,
     corpus_entity_metrics,
     group_for_label,
+    leak_rate,
 )
 from piitier.labels import Label
-from piitier.ner.inference import NerPredictor
+from piitier.ner.inference import NerPredictor, merge_windows
+from piitier.render import mask
 from piitier.spans import Span
 from training.config import load_config
 from training.train import read_jsonl
@@ -71,17 +73,25 @@ class ThresholdResult:
     recall: float
     precision: float
     target_met: bool
-    reason: str | None = None  # None = success; "unsupported"; "target_not_met"
+    reason: str | None = None  # Failure reason; absent on success.
     gold_span_count: int = 0
     doc_count: int = 0
     group_recalls: tuple[GroupRecall, ...] = field(default_factory=tuple)
     wilson_lower: float = 0.0
     wilson_upper: float = 0.0
     sweep: tuple[SweepPoint, ...] = ()
+    safety_leaks: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
 class DocPrediction:
+    gold: list[Span]
+    pred: list[Span]
+
+
+@dataclass(frozen=True)
+class SafetyDoc:
+    text: str
     gold: list[Span]
     pred: list[Span]
 
@@ -148,6 +158,7 @@ def _make_result(
     match: _MatchMode,
     target_recall: float,
     sweep: tuple[SweepPoint, ...] = (),
+    safety_leaks: tuple[int, ...] = (),
 ) -> ThresholdResult:
     """Compute Wilson interval and group recalls for one candidate threshold."""
     target_met = prf.recall >= target_recall
@@ -166,6 +177,7 @@ def _make_result(
         wilson_lower=w_lower,
         wilson_upper=w_upper,
         sweep=sweep,
+        safety_leaks=safety_leaks,
     )
 
 
@@ -174,6 +186,8 @@ def calibrate_threshold(
     target_recall: float = 0.98,
     match: _MatchMode = "strict",
     min_support: int = 0,
+    safety_docs: list[SafetyDoc] | None = None,
+    raw_window_preds: bool = False,
 ) -> ThresholdResult:
     """Calibrate detection threshold targeting recall >= target_recall.
 
@@ -181,6 +195,9 @@ def calibrate_threshold(
     For threshold t: predicted spans with score >= t; PRF via corpus_entity_metrics.
     Matching is per-document (a prediction from doc B cannot match gold from doc A).
     Returns the highest threshold with recall >= target_recall (early exit on first hit).
+    With safety_docs, also requires zero leaked gold values after masking every safety doc.
+    When raw_window_preds=True, threshold each window before merging overlapping spans,
+    matching NerPredictor.predict at the chosen threshold.
     Wilson interval and group recalls are computed only for the returned result.
 
     Args:
@@ -190,9 +207,11 @@ def calibrate_threshold(
 
     Returns:
         ThresholdResult with reason=None on success, or reason in
-        {"unsupported", "target_not_met"} on failure.  Config is only written
-        by the caller when reason is None.
+        {"unsupported", "target_not_met", "privacy_gate_not_met"} on failure.
+        Config is only written by the caller when reason is None.
     """
+    if safety_docs is not None and not safety_docs:
+        raise ValueError("Safety benchmark must contain documents")
     doc_count = len(docs)
 
     # Bound candidates at 101. Correct multiplication rounding at exact decimal
@@ -209,6 +228,8 @@ def calibrate_threshold(
             threshold = bucket / 100
             scores.add(threshold if threshold <= bounded else (bucket - 1) / 100)
 
+    if safety_docs is not None:
+        scores.update(i / 100 for i in range(101))
     # Build per-doc gold span lists and scored pred lists (done once, not per threshold)
     gold_docs: list[list[Span]] = []
     raw_preds: list[list[tuple[Span, float]]] = []
@@ -248,6 +269,8 @@ def calibrate_threshold(
     # Unsupported: not enough gold spans
     if min_support > 0 and total_gold < min_support:
         pred_docs_at_0 = [[sp for sp, _sc in doc_preds] for doc_preds in raw_preds]
+        if raw_window_preds:
+            pred_docs_at_0 = [merge_windows(spans) for spans in pred_docs_at_0]
         prf = corpus_entity_metrics(gold_docs, pred_docs_at_0, match=match)
         result = _make_result(
             0.0, prf, pred_docs_at_0, gold_docs, total_gold, doc_count, match, target_recall
@@ -272,18 +295,35 @@ def calibrate_threshold(
     fallback_prf: Any = None
     fallback_pred_docs: list[list[Span]] = []
     sweep: list[SweepPoint] = []
+    safety_leaks: list[int] = []
 
     for t in candidates:
         pred_docs = [[sp for sp, sc in doc_preds if sc >= t] for doc_preds in raw_preds]
+        if raw_window_preds:
+            pred_docs = [merge_windows(spans) for spans in pred_docs]
         prf = corpus_entity_metrics(gold_docs, pred_docs, match=match)
         sweep.append(SweepPoint(t, prf.recall, prf.precision, prf.tp, prf.fp, prf.fn))
+        if safety_docs is not None:
+            safety_pred = [
+                [p for p in doc.pred if (p.score if p.score is not None else 1.0) >= t]
+                for doc in safety_docs
+            ]
+            if raw_window_preds:
+                safety_pred = [merge_windows(spans) for spans in safety_pred]
+            safety_leaks.append(
+                leak_rate(
+                    [doc.text for doc in safety_docs],
+                    [doc.gold for doc in safety_docs],
+                    [mask(doc.text, pred) for doc, pred in zip(safety_docs, safety_pred)],
+                ).values_leaked
+            )
 
         if abs(t) < 1e-9:
             # Save 0.0 stats for fallback if no threshold meets the target
             fallback_prf = prf
             fallback_pred_docs = pred_docs
 
-        if prf.recall >= target_recall:
+        if prf.recall >= target_recall and (safety_docs is None or safety_leaks[-1] == 0):
             # First (= highest) threshold that meets the target — return immediately
             return _make_result(
                 t,
@@ -295,6 +335,7 @@ def calibrate_threshold(
                 match,
                 target_recall,
                 tuple(sweep),
+                tuple(safety_leaks),
             )
 
     # No threshold met target — report recall at 0.0
@@ -309,19 +350,21 @@ def calibrate_threshold(
             match,
             target_recall,
             tuple(sweep),
+            tuple(safety_leaks),
         )
         return ThresholdResult(
             threshold=0.0,
             recall=result.recall,
             precision=result.precision,
             target_met=False,
-            reason="target_not_met",
+            reason="privacy_gate_not_met" if result.recall >= target_recall else "target_not_met",
             gold_span_count=total_gold,
             doc_count=doc_count,
             group_recalls=result.group_recalls,
             wilson_lower=result.wilson_lower,
             wilson_upper=result.wilson_upper,
             sweep=tuple(sweep),
+            safety_leaks=tuple(safety_leaks),
         )
 
     # Absolute fallback: empty docs
@@ -371,6 +414,8 @@ def _success_section(result: ThresholdResult, target_recall: float, match_mode: 
             f"[{result.wilson_lower:.4f}, {result.wilson_upper:.4f}]"
         ),
     ]
+    if result.safety_leaks:
+        lines.append("\n- **Leak na zbiorze bezpieczeństwa:** 0 wartości")
     if result.group_recalls:
         lines.append("\n\n### Recall per grupa ryzyka\n")
         for gr in result.group_recalls:
@@ -495,28 +540,33 @@ def write_threshold(
             wilson_lower=result.wilson_lower,
             wilson_upper=result.wilson_upper,
             sweep=result.sweep,
+            safety_leaks=result.safety_leaks,
         )
 
     data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     output_dir = _get_output_dir(config_path)
     output_dir.mkdir(parents=True, exist_ok=True)
+    sweep_data: dict[str, Any] = {
+        "run": data.get("run"),
+        "match": match_mode,
+        "target_recall": target_recall,
+        "min_support": data.get("calibration_min_support", 100),
+        "gold_spans": result.gold_span_count,
+        "docs": result.doc_count,
+        "chosen_threshold": result.threshold if result.reason is None else None,
+        "reason": result.reason,
+        "stopped_early": result.reason is None,
+        "points": [
+            {**asdict(point), "leaked_values": result.safety_leaks[i]}
+            if result.safety_leaks
+            else asdict(point)
+            for i, point in enumerate(result.sweep)
+        ],
+    }
+    if data.get("calibration_safety_bench"):
+        sweep_data["safety_bench"] = data["calibration_safety_bench"]
     (output_dir / "calibration_sweep.json").write_text(
-        json.dumps(
-            {
-                "run": data.get("run"),
-                "match": match_mode,
-                "target_recall": target_recall,
-                "min_support": data.get("calibration_min_support", 100),
-                "gold_spans": result.gold_span_count,
-                "docs": result.doc_count,
-                "chosen_threshold": result.threshold if result.reason is None else None,
-                "reason": result.reason,
-                "stopped_early": result.reason is None,
-                "points": [asdict(point) for point in result.sweep],
-            },
-            indent=2,
-        )
-        + "\n",
+        json.dumps(sweep_data, indent=2) + "\n",
         encoding="utf-8",
     )
     # Write config threshold only on success
@@ -581,14 +631,33 @@ def main(argv: list[str] | None = None) -> int:
             )
             for s in r.get("spans", r.get("gold", []))
         ]
-        pred_spans = predictor.predict(r["text"])
+        pred_spans = predictor.predict_window_spans(r["text"])
         docs.append(DocPrediction(gold=gold_spans, pred=pred_spans))
+
+    safety_docs: list[SafetyDoc] | None = None
+    if config.calibration_safety_bench is not None:
+        from eval.run import read_bench
+
+        try:
+            safety_bench = read_bench(config.calibration_safety_bench)
+        except (OSError, ValueError):
+            print("Invalid calibration safety benchmark", file=sys.stderr)
+            return 2
+        if not safety_bench or not any(doc.gold for doc in safety_bench):
+            print("Calibration safety benchmark has no gold spans", file=sys.stderr)
+            return 2
+        safety_docs = [
+            SafetyDoc(doc.text, doc.gold, predictor.predict_window_spans(doc.text))
+            for doc in safety_bench
+        ]
 
     result = calibrate_threshold(
         docs,
         target_recall=config.calibration_target_recall,
         match=_as_match_mode(config.calibration_match),
         min_support=config.calibration_min_support,
+        safety_docs=safety_docs,
+        raw_window_preds=True,
     )
 
     write_threshold(

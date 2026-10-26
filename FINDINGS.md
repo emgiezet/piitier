@@ -1,4 +1,4 @@
-# Findings so far (as of 2026-10-26)
+# Findings so far (as of 2026-10-27)
 
 Results and decisions in one place. Detailed documents are linked, not repeated.
 
@@ -6,13 +6,14 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 
 | Finding | Evidence |
 |---|---|
-| `pii-5-v3` (fine-tuned `bardsai/eu-pii-anonimization-multilang-v2`) leaks **0/40** gold values on `bench/v1/dev`; the base model leaks 2/40 | [`eval/reports/2026-10-25-trening-pii-5.md`](eval/reports/2026-10-25-trening-pii-5.md) |
+| `pii-5-v3` at its uncalibrated threshold 0.0 leaks **0/40** gold values on `bench/v1/dev`; the base model leaks 2/40 | [`eval/reports/2026-10-25-trening-pii-5.md`](eval/reports/2026-10-25-trening-pii-5.md) |
 | `pii-5-v1` was rejected: 100% augmented (uppercased) training text leaked 22/40 on the hand-written bench while looking perfect on synthetic dev | same report |
 | Synthetic dev is not a substitute for the gold set: strict F1 there is ~0.9, against ~0.6 on `bench/v1/dev` | same report |
 | FP32 ONNX on synthetic dev (2 363 docs, per-document matching): F1 0.912, recall 0.944 | `training.export_onnx` run, PII-7 |
 | **Dynamic INT8 quantisation is not usable as is:** recall 0.926 (−0.018 > tolerance 0.01), so the export is blocked | PII-7, [`specs/PII-7/spec.md`](specs/PII-7/spec.md) |
 | Threshold calibration with a strict-recall target of 0.98 cannot succeed for `pii-5-v3` (best strict recall 0.944 synthetic, 0.636 bench); no threshold is written. Partial recall on synthetic dev is 0.982 | PII-7 investigation; PII-10 write-on-success |
 | Dedicated calibration split (1 031 synthetic documents, 14 766 gold spans; 25 duplicate zero-gold rows removed against v0.3 train/dev): strict recall at threshold 0.0 is **0.9446** (13 948 TP, 818 FN), precision 0.8846 (1 819 FP). Target 0.98 not met; config unchanged | `training/out/pii-5-v3/calibration_sweep.json` (77 evaluated thresholds, local-only); `data/synthetic/v0.3-cal/dev.jsonl` (gitignored; built from local historical v0.3 templates with seed 900042) |
+| `pii-5-v4` uses six new **training-only** medical templates; the original calibration split and strict metric are unchanged. Privacy-gated calibration selects **0.78**: synthetic strict recall **0.9866** (14 568 TP, 198 FN), precision **0.9711** (433 FP), Wilson 95% [0.9846, 0.9883]. Synthetic person-identification group recall remains **0.9509**. On handwritten `bench/v1/dev`, strict recall is **30/40** and leaked values **0/40**. Without the safety gate, threshold 0.98 leaked 8/40 values despite passing synthetic recall. | [`eval/reports/pii-5-v4/calibration_sweep.json`](eval/reports/pii-5-v4/calibration_sweep.json), `training/configs/pii-5-v4.yaml`, [`eval/reports/pii-5-v4/2026-10-27-ner-benchv1-dev.md`](eval/reports/pii-5-v4/2026-10-27-ner-benchv1-dev.md); weights and training corpus stay local-only |
 | The decoder can split one word across two entity types (`Wiśniew` NAZWISKO + `ska` OSOBA) | local tracker issue #2 |
 
 ## Pipeline
@@ -105,6 +106,85 @@ PY
 uv run python -m piitier.datagen check data/synthetic/v0.3-cal/
 ```
 
+### Rebuild `pii-5-v4` locally
+
+Restore the gitignored v0.3 train/dev and v0.3-cal dev files using the recipe above,
+and the original local `training/out/pii-5-v3` checkpoint. The six added templates
+live in `training/templates/`, outside the packaged v0.3/calibration template set.
+The first four train a broader medical context; the last two contrast adjacent
+facility and city spans. Neither held-out medical template is copied into training.
+
+Generate 4 000 documents per stage and append only to the original **train** file.
+The text-hash check prevents accidental overlap with the unchanged dev/calibration
+splits and prior training rows. The resulting files and weights are gitignored:
+
+```bash
+uv run python - <<'PY'
+from hashlib import sha256
+import json
+from pathlib import Path
+from shutil import copy2
+from tempfile import TemporaryDirectory
+
+from piitier.datagen.build import build, check
+
+root = Path("data/synthetic")
+source = Path("training/templates/wypis_szpitalny")
+train = root / "v0.3/train.jsonl"
+held_out = (root / "v0.3/dev.jsonl", root / "v0.3-cal/dev.jsonl")
+used = set()
+for path in (train, *held_out):
+    with path.open(encoding="utf-8") as rows:
+        used.update(sha256(json.loads(line)["text"].encode()).digest() for line in rows)
+
+with TemporaryDirectory(prefix="piitier-v4-") as temporary:
+    for numbers, seed, version, prefix in (
+        (range(1, 5), 781007, "v0.3-medical", "extra_medical"),
+        (range(5, 7), 891007, "v0.3-medical-contrast", "extra_contrast"),
+    ):
+        stage = Path(temporary) / version
+        templates = stage / "templates/wypis_szpitalny"
+        templates.mkdir(parents=True)
+        for number in numbers:
+            name = f"wypis_szpitalny_training_{number:02d}.txt"
+            copy2(source / name, templates / name)
+        generated = stage / "generated"
+        build(stage / "templates", 4000, seed, generated, augment=True, augment_fraction=0.25)
+        assert check(generated)[0] == 0
+        assert not (generated / "dev.jsonl").read_text(encoding="utf-8")
+        output = root / version / "train.jsonl"
+        assert not output.exists()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("w", encoding="utf-8") as combined:
+            with train.open(encoding="utf-8") as previous:
+                for line in previous:
+                    combined.write(line)
+            with (generated / "train.jsonl").open(encoding="utf-8") as extra:
+                for index, line in enumerate(extra):
+                    row = json.loads(line)
+                    digest = sha256(row["text"].encode()).digest()
+                    assert digest not in used
+                    used.add(digest)
+                    row["id"] = f"{prefix}_{index:07d}"
+                    combined.write(json.dumps(row, ensure_ascii=False) + "\n")
+        train = output
+PY
+CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 \
+  uv run python -m training.train training/configs/pii-5-v4a.yaml
+CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 \
+  uv run python -m training.train training/configs/pii-5-v4.yaml
+CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=0 \
+  uv run python -m training.calibrate training/configs/pii-5-v4.yaml
+```
+
+Calibration filters each window's spans at the candidate threshold **before**
+merging windows, matching `NerPredictor.predict` for both strict recall and
+safety evaluation. The safety gate checks only `bench/v1/dev`, not the protected
+test split. This 40-span benchmark is used to choose a threshold, so its
+leak-free observation is **not** independent evidence of generalization. The
+0.98 strict-recall target is measured on the unchanged, separate 14 766-span
+synthetic calibration set.
+
 ## Process
 
 | Finding | Consequence |
@@ -123,7 +203,7 @@ coding-agent tool calls, not a span anonymiser. What piitier adopted and what is
 |---|---|---|
 | Licence files, CI on every PR, pre-commit with gitleaks and `piitier scan` | PII-8 | done |
 | Evaluation protocol: counts with every metric, zero denominator = undefined, control systems `none` / `mask-all`, report provenance | PII-9, [`docs/bench/PROTOCOL.md`](docs/bench/PROTOCOL.md) | done |
-| Calibration on a separate split, minimum support, Wilson interval, write-on-success | PII-10, PII-13 | done for local `pii-5-v3`: `data/synthetic/v0.3-cal/dev.jsonl` built from historical templates (see build command in run config); strict target 0.98 not met, so no threshold written |
+| Calibration on a separate split, minimum support, Wilson interval, write-on-success | PII-10, PII-13 | `pii-5-v3` failed strict 0.98; `pii-5-v4` passes strict 0.9866 at threshold 0.78 with zero observed leaks on handwritten dev. The sweep is committed; weights and historical corpus remain local-only, so a clean clone must rebuild them. |
 | Labelling guidelines, gold-set schema v2 with two annotators and twins, agreement with a kappa floor of 0.7 | PII-11, [`docs/labelling/GUIDELINES.md`](docs/labelling/GUIDELINES.md) | tooling done; writing and double-labelling the documents needs human annotators |
 | CONTRIBUTING and PR template | PII-12 | done |
 | Gate evaluators that refuse undefined metrics (the INT8 gate computes deltas from 0.0) | PROTOCOL.md, rule 1 | open |

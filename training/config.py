@@ -29,6 +29,7 @@ class TrainingConfig:
     calibration_match: str = "strict"
     calibration_min_support: int = 100
     calibration_device: str = "cpu"
+    calibration_safety_bench: Path | None = None
 
 
 class ConfigError(Exception):
@@ -60,6 +61,7 @@ _OPTIONAL_KEYS = {
     "calibration_match",
     "calibration_min_support",
     "calibration_device",
+    "calibration_safety_bench",
 }
 
 
@@ -148,6 +150,16 @@ def load_config(path: Path) -> TrainingConfig:
             raise ConfigError("calibration_file must not be the same file as eval_file")
         if calibration_file == train_file:
             raise ConfigError("calibration_file must not be the same file as train_file")
+    calibration_safety_bench: Path | None = None
+    if data.get("calibration_safety_bench") is not None:
+        calibration_safety_bench = resolve_file_path(data["calibration_safety_bench"])
+        _check_test_split(calibration_safety_bench)
+        if (
+            calibration_safety_bench.name != "dev"
+            or not calibration_safety_bench.is_dir()
+            or not any(calibration_safety_bench.glob("*.jsonl"))
+        ):
+            raise ConfigError("calibration_safety_bench must be a non-empty dev directory")
 
     try:
         calibration_target_recall = float(data.get("calibration_target_recall", 0.98))
@@ -217,5 +229,6 @@ def load_config(path: Path) -> TrainingConfig:
         calibration_target_recall=calibration_target_recall,
         calibration_match=calibration_match,
         calibration_min_support=calibration_min_support,
+        calibration_safety_bench=calibration_safety_bench,
         calibration_device=calibration_device,
     )

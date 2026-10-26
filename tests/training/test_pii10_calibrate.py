@@ -120,7 +120,7 @@ class _StubPredictor:
         self._preds = per_record
         self._idx = 0
 
-    def predict(self, text: str) -> list[Span]:
+    def predict_window_spans(self, text: str) -> list[Span]:
         spans = self._preds[self._idx % len(self._preds)]
         self._idx += 1
         return spans

@@ -288,6 +288,10 @@ class NerPredictor:
 
     def predict(self, text: str) -> list[Span]:
         """Predict PII spans in text using sliding windows."""
+        return merge_windows(self.predict_window_spans(text, self.threshold))
+
+    def predict_window_spans(self, text: str, threshold: float = 0.0) -> list[Span]:
+        """Decode each window before merging, for threshold calibration."""
         if not text:
             return []
 
@@ -320,8 +324,8 @@ class NerPredictor:
                 offset_mapping=offset_mappings[w],
                 probs=probs[w],
                 id2label=self.id2label,
-                threshold=self.threshold,
+                threshold=threshold,
             )
             all_spans.extend(window_spans)
 
-        return merge_windows(all_spans)
+        return all_spans
