@@ -58,7 +58,10 @@ jobs:
           echo "PESEL 44051401359" > /tmp/smoke_input.txt
           /tmp/smoke/bin/piitier mask /tmp/smoke_input.txt | grep -q '\[PESEL\]'
       - name: Upload dist
+        # Account artifact storage quota can be exhausted; the wheel is a convenience, not a gate.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
+          retention-days: 7
