@@ -28,6 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Evaluation protocol: per-document span matching, undefined-metric guards, control systems `none`/`mask-all`, report provenance. ([PII-9](https://github.com/emgiezet/piitier/pull/14))
 - CONTRIBUTING and PR template. ([PII-12](https://github.com/emgiezet/piitier/pull/17))
 - Dataset card (`docs/DATASET_CARD.md`) with Hugging Face front matter and per-corpus counts. ([d4ee335](https://github.com/emgiezet/piitier/commit/d4ee335), [#20](https://github.com/emgiezet/piitier/pull/20))
+- Coreference numbering (`src/piitier/coref.py`): OSOBA, IMIE, NAZWISKO, ADRES and LEKARZ spans now carry a per-label entity index (`[OSOBA_1]`, `[OSOBA_2]`, etc.); same entity -- same index; mention matching uses Morfeusz 2 lemmas; a lone surname or initial+surname is merged with an earlier entity only when exactly one candidate exists. Labels without `numbered` (PESEL, IBAN, ...) are unaffected; rules-only `piitier.mask` output is unchanged. (PII-6-b)
 
 ### Changed
 
@@ -51,7 +52,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `uv.lock` is excluded from `piitier scan` because NIP/PESEL/REGON rules fire inside package hashes; no fix yet.
 - No frozen `bench/v1/test` split: the full test set needs human annotators.
-- Coreference numbering (PII-6-b) and pseudonymize mode (PII-6-c) are not implemented.
 - INT8 export gate is blocked (recall −0.018 exceeds 0.01 tolerance); INT8 model is not distributed.
 - Hub upload of `emgiezet/piitier-pl` weights is manual and has not been performed; data-licence sign-off is pending.
 - Polish TUI button labels (upstream Textual limitation; tracked but not fixed).

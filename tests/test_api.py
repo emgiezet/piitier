@@ -165,16 +165,16 @@ def test_uc106_anonymizer_stub_predictor_masks_name_and_pesel() -> None:
     Text: "Jan 90051512340"
     Stub returns IMIE [0,3) score=0.9 (>= 0.5 → kept).
     Rules detect PESEL [4,15).
-    Expected: "[IMIĘ_n] [PESEL]"; zero changed characters outside spans.
+    Expected: "[IMIĘ_1] [PESEL]" (IMIE is a numbered label; one occurrence → index 1).
     """
     text = "Jan 90051512340"
     anon = piitier.Anonymizer(predictor=_StubPredictor(), threshold=0.5)
     result = anon.mask(text)
 
-    assert "[IMIĘ_n]" in result
+    assert "[IMIĘ_1]" in result
     assert "[PESEL]" in result
     # The space between name and PESEL must be preserved (outside any span)
-    assert result == "[IMIĘ_n] [PESEL]"
+    assert result == "[IMIĘ_1] [PESEL]"
 
 
 def test_uc106_anonymizer_detect_returns_fused_spans() -> None:

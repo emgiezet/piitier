@@ -14,9 +14,9 @@ more.
 ```text
 $ piitier mask zgloszenie.txt --model training/out/pii-5-v4 --threshold 0.78
 Zgłoszenie szkody z dnia 12.03.2025.
-Poszkodowana [IMIĘ_n] [NAZWISKO_n], zam. [ADRES_n], PESEL [PESEL],
+Poszkodowana [IMIĘ_1] [NAZWISKO_1], zam. [ADRES_1], PESEL [PESEL],
 tel. [TELEFON], e-mail [EMAIL]. Rozpoznanie: [ROZPOZNANIE].
-Kwota roszczenia: [KWOTA]. Lekarz prowadzący: [LEKARZ_n].
+Kwota roszczenia: [KWOTA]. Lekarz prowadzący: [LEKARZ_1].
 ```
 
 > **Status: 0.1.0.** Library, CLI, TUI, training and evaluation pipeline are complete.
@@ -109,7 +109,7 @@ piitier.detect(text)
 
 anon = piitier.Anonymizer(model="training/out/pii-5-v4", threshold=0.78)  # local directory
 anon.mask(text)
-# -> 'Poszkodowana [IMIĘ_n] [NAZWISKO_n], PESEL [PESEL].'
+# -> 'Poszkodowana [IMIĘ_1] [NAZWISKO_1], PESEL [PESEL].'
 
 hub_anon = piitier.Anonymizer(
     model="emgiezet/piitier-pl",  # Hugging Face Hub repo id; requires piitier[ner]
@@ -117,7 +117,7 @@ hub_anon = piitier.Anonymizer(
     threshold=0.78,
 )
 hub_anon.mask(text)
-# -> 'Poszkodowana [IMIĘ_n] [NAZWISKO_n], PESEL [PESEL].'
+# -> 'Poszkodowana [IMIĘ_1] [NAZWISKO_1], PESEL [PESEL].'
 
 piitier.mask_csv(csv_text, skip_columns=["ID"], delimiter=";")  # column-aware CSV masking
 
@@ -132,9 +132,19 @@ flowchart LR
     A --> C[NER model<br/>ModernBERT 307M]
     B --> D[Fusion<br/>rules win on identifiers,<br/>then risk weight, then length]
     C --> D
-    D --> E[Renderer<br/>placeholders, 0 chars changed outside spans]
+    D --> G[Coreference<br/>merge mentions, assign<br/>per-label entity index]
+    G --> E[Renderer<br/>placeholders, 0 chars changed outside spans]
     E --> F[Masked document]
 ```
+
+After fusion, a coreference stage walks the spans in document order and assigns a numeric
+index to each entity. Labels marked `numbered` in the taxonomy (OSOBA, IMIE, NAZWISKO,
+ADRES, LEKARZ) get indexed placeholders: the first distinct entity encountered for a label
+becomes `_1`, the next new entity `_2`, and so on. Mention matching uses Morfeusz 2 lemmas
+for names and case-folded collapsed text for addresses; a lone surname or initial+surname
+is merged into an earlier entity of the same label only when exactly one candidate matches.
+Labels without `numbered` (PESEL, IBAN, etc.) are passed through unchanged.
+
 
 Four invariants the code is built around (`CLAUDE.md`):
 
@@ -245,13 +255,15 @@ design rationale and roadmap.
 | Load models by Hub id (`--model owner/name`, `--revision`) | done |
 | Publish `pii-5-v4` on the Hugging Face Hub with a model card | in progress — weights upload is a manual step |
 | Frozen `bench/v1/test` split, 300–500 double-annotated documents | planned |
-| Numbered coreference placeholders (`[OSOBA_1]`, `[OSOBA_2]`) | planned |
+| Numbered coreference placeholders (`[OSOBA_1]`, `[OSOBA_2]`) | done |
 | Reversible `pseudonymize` mode with an encrypted mapping | planned |
 | INT8 ONNX once the recall gate passes | blocked on quantisation quality |
 
 ## Known limitations
 
-- Placeholders are not numbered yet: every mention of a person renders as `[OSOBA_n]` / `[IMIĘ_n]`.
+- Pronoun coreference ("ona", "jego") is not resolved; pronouns are not masked.
+- A lone surname or initial+surname with two or more plausible candidates receives a new index rather than being merged.
+- Coreference is per-document only; numbered indices are not consistent across separate `mask` calls.
 - `bench/v1` has 6 documents; the `test/` split does not exist yet.
 - `pip install piitier` without extras gives rules-only masking; NER requires `pip install 'piitier[ner]'`.
 - Quasi-identifiers (job title, employer, event dates) and colloquial health descriptions are outside the

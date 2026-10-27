@@ -29,6 +29,7 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 | Payment-card rule no longer matches Luhn-valid digit runs embedded in decimals (`0.9937050359712231`) or lock-file hashes — **fixed** in 0.1.0 | `src/piitier/rules/payment_card.py`, `tests/rules/test_payment_card.py`; commit d4ee335 |
 | `uv.lock` remains excluded from the `piitier scan` hook because NIP/PESEL/REGON rules still fire inside package hashes; no fix yet | `src/piitier/scan.py`, `.pre-commit-config.yaml`; commit d4ee335 |
 | Hub resolution order: local directory wins over a Hub repo id (`owner/name`); `--revision` selects branch/tag/commit for Hub downloads only; Hub support requires the `ner` extra | `src/piitier/ner/hub.py`; commit d4ee335 |
+| Lone-surname / initial+surname merge rule: a mention is merged with an existing entity only when exactly one candidate shares the same surname lemma (and a compatible initial when present); zero or two-plus candidates get a new index | Two people sharing a surname must not be silently collapsed -- the exactly-one-candidate rule prevents false merges; `src/piitier/coref.py`, `specs/PII-6-b/spec.md` |
 
 ## Data
 
@@ -219,6 +220,6 @@ The following items are open going into the stable release:
 - **Frozen test split**: `bench/v1/test` does not exist yet; the full held-out set needs human annotators and double-labelling with kappa ≥ 0.7 (PII-11 tooling done).
 - **Data-licence sign-off**: the training corpus is derived from internal templates; distribution of the model weights requires explicit sign-off before Hub upload.
 - **Hub upload**: `emgiezet/piitier-pl` weights have not been pushed; the publish checklist is at `training/model_cards/pii-5-v4/PUBLISH.md`.
-- **PII-6-b coreference numbering**: re-identified entities are not numbered across a document; tracked but not specced.
+- **PII-6-b coreference numbering**: implemented in 0.1.0 (see Pipeline table above).
 - **PII-6-c pseudonymize mode**: consistent replacement with synthetic values (name → name, PESEL → valid PESEL) is not implemented.
 - **INT8 export gate**: dynamic INT8 quantisation recall is −0.018 below FP32 (exceeds the 0.01 tolerance); the gate blocks export and the INT8 model is not distributed.

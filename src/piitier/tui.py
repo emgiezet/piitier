@@ -36,9 +36,14 @@ def _column_after(fragment: str, column: int) -> int:
 
 
 def build_diff(
-    text: str, spans: list[Span], active: int
+    text: str,
+    spans: list[Span],
+    active: int,
+    numbering: dict[tuple[int, int], int] | None = None,
 ) -> tuple[Text, Text, list[tuple[int, int, int, int]]]:
     """Render both sides and record corresponding line/column targets."""
+    from piitier.render import _resolve_placeholder
+
     before = Text()
     after = Text()
     lines: list[tuple[int, int, int, int]] = []
@@ -54,7 +59,15 @@ def build_diff(
         lines.append((before_line, after_line, before_col, after_col))
 
         original = text[span.start : span.end]
-        replacement = span.label.placeholder
+        if numbering is not None and span.label.numbered:
+            idx = numbering.get((span.start, span.end))
+            replacement = (
+                _resolve_placeholder(span.label.placeholder, idx)
+                if idx is not None
+                else span.label.placeholder
+            )
+        else:
+            replacement = span.label.placeholder
         before.append(original, style="bold white on red" if index == active else "bold red")
         after.append(replacement, style="bold black on green" if index == active else "bold green")
         before_line += original.count("\n")
@@ -127,6 +140,8 @@ class CsvSelectionScreen(Screen[None]):
             app.spans = sorted(
                 filter_spans(app.detector(app.text), ranges), key=lambda span: span.start
             )
+            if app._numbering_fn is not None:
+                app._numbering = app._numbering_fn(app.text, app.spans)
         except (OSError, ValueError, ImportError):
             self.query_one("#csv-error", Static).update("Nie udało się uruchomić anonimizacji")
             return
@@ -170,6 +185,8 @@ class AnonymizationDiffApp(App[None]):
         *,
         csv_path: Path | None = None,
         detector: Callable[[str], list[Span]] | None = None,
+        numbering: dict[tuple[int, int], int] | None = None,
+        numbering_fn: Callable[[str, list[Span]], dict[tuple[int, int], int]] | None = None,
     ) -> None:
         super().__init__()
         self.text = text
@@ -177,6 +194,8 @@ class AnonymizationDiffApp(App[None]):
         self.active = 0
         self.csv_path = csv_path
         self.detector = detector
+        self._numbering = numbering
+        self._numbering_fn = numbering_fn
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -240,7 +259,7 @@ class AnonymizationDiffApp(App[None]):
                 raw.decode(encoding)
             except UnicodeDecodeError:
                 encoding = "cp1250"
-            data = render_mask(self.text, self.spans).encode(encoding)
+            data = render_mask(self.text, self.spans, self._numbering).encode(encoding)
             with target.open("xb") as output:
                 output.write(data)
         except FileExistsError:
@@ -251,7 +270,7 @@ class AnonymizationDiffApp(App[None]):
             status.update("Zapisano plik CSV")
 
     def _show_selection(self) -> None:
-        before, after, lines = build_diff(self.text, self.spans, self.active)
+        before, after, lines = build_diff(self.text, self.spans, self.active, self._numbering)
         before_pane = self.query_one("#before", RichLog)
         after_pane = self.query_one("#after", RichLog)
         before_pane.clear().write(before)
@@ -311,9 +330,17 @@ def compare_file(
     try:
         anonymizer = Anonymizer(model=model, revision=revision, threshold=threshold, device=device)
         if input_path.suffix.lower() == ".csv":
-            app = AnonymizationDiffApp(text, [], csv_path=input_path, detector=anonymizer.detect)
+            app = AnonymizationDiffApp(
+                text,
+                [],
+                csv_path=input_path,
+                detector=anonymizer.detect,
+                numbering_fn=anonymizer.assign,
+            )
         else:
-            app = AnonymizationDiffApp(text, anonymizer.detect(text))
+            spans = anonymizer.detect(text)
+            numbering = anonymizer.assign(text, spans)
+            app = AnonymizationDiffApp(text, spans, numbering=numbering)
     except (OSError, ValueError, ImportError) as e:
         print(f"model error: {e}", file=sys.stderr)
         return 2

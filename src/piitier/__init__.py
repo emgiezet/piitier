@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Protocol, runtime_checkable
 
 from piitier import rules as _rules
+from piitier.coref import Coreferencer as _Coreferencer
 from piitier.csvskip import filter_spans, parse_csv_field_ranges, plan_skips, sniff_delimiter
 from piitier.fusion import fuse as _fuse
 from piitier.render import mask as _render_mask
@@ -148,6 +149,9 @@ class Anonymizer:
             # fusion applies the threshold inside fuse().
             self._predictor = NerPredictor(checkpoint=model_path, threshold=0.0, device=device)
 
+        # One Coreferencer (one Morfeusz instance) per Anonymizer (PII-6-b).
+        self._coref = _Coreferencer()
+
     def detect(self, text: str) -> list[Span]:
         """Return fused PII spans for *text* (rules + NER).
 
@@ -162,8 +166,38 @@ class Anonymizer:
         ner_spans: list[Span] = self._predictor.predict(text)
         return _fuse(rule_spans, ner_spans, threshold=self.threshold)
 
+    def assign(self, text: str, spans: list[Span]) -> dict[tuple[int, int], int]:
+        """Return the entity-index mapping for *spans* produced by coreference.
+
+        Only numbered-label spans appear in the result.
+
+        Args:
+            text: The original input string (needed to read span tokens).
+            spans: Non-overlapping spans (e.g. from :meth:`detect`).
+
+        Returns:
+            Mapping from ``(start, end)`` to entity index (1-based, per label).
+        """
+        return self._coref.assign(text, spans)
+
+    def render(self, text: str, spans: list[Span]) -> str:
+        """Return *text* with numbered placeholders, applying coreference numbering.
+
+        Args:
+            text: The original input string.
+            spans: Non-overlapping spans (e.g. from :meth:`detect`).
+
+        Returns:
+            The anonymised string with numbered placeholders (``[OSOBA_1]`` etc.).
+        """
+        numbering = self._coref.assign(text, spans)
+        return _render_mask(text, spans, numbering)
+
     def mask(self, text: str) -> str:
         """Return *text* with every fused PII span replaced by its placeholder.
+
+        Numbered labels receive a coreference-assigned index suffix
+        (``[OSOBA_1]``, ``[ADRES_2]``, …).
 
         Args:
             text: Input text to anonymise.
@@ -172,4 +206,6 @@ class Anonymizer:
             The anonymised string.  Characters outside detected spans are
             unchanged.
         """
-        return _render_mask(text, self.detect(text))
+        spans = self.detect(text)
+        numbering = self._coref.assign(text, spans)
+        return _render_mask(text, spans, numbering)
