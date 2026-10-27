@@ -5,6 +5,16 @@ Candidate patterns:
 - Contiguous runs of 13-15 or 17-19 digits that pass the Luhn check.
 
 The span covers separators when they are present.
+
+Context boundaries (false-positive suppression):
+- Rejected when directly preceded by ``digit + [.,]`` (part of a longer decimal number,
+  e.g. ``0.9937050359712231``).
+- Rejected when directly followed by ``[.,] + digit`` (similarly, the tail end of a
+  decimal, e.g. the ``1111`` in ``11111111.11111111``).
+- Rejected when directly adjacent to a letter (part of a hex hash or alphanumeric
+  token, e.g. ``cc4111111111111111ff``).
+- A trailing sentence period (``4111111111111111.``) is accepted because the ``.`` is
+  not followed by a digit.
 """
 
 from __future__ import annotations
@@ -14,19 +24,38 @@ import re
 from piitier.labels import Label
 from piitier.spans import Span
 
-# Pattern: 16 digits with optional separators (spaces or dashes) in groups of 4
-# Lookbehind/lookahead: not preceded/followed by a digit
+# Pattern: 16 digits with optional separators (spaces or dashes) in groups of 4.
+#
+# Boundary guards (left side — four conditions, all must hold):
+#   (?<!\d)       not preceded by a digit (existing guard)
+#   (?<!\d[.,])   not part of a longer decimal: the two chars before the match must not
+#                 be <digit><dot-or-comma>  (e.g. "0.XXXX")
+#   (?<![a-zA-Z]) not preceded by a letter  (e.g. a hex hash or identifier token)
+#
+# Boundary guards (right side):
+#   (?!\d)        not followed by a digit (existing guard)
+#   (?![.,]\d)    not part of a longer decimal: the two chars after the match must not
+#                 be <dot-or-comma><digit>
+#   (?![a-zA-Z])  not followed by a letter
 _CARD_16_RE = re.compile(
     r"(?<!\d)"
+    r"(?<!\d[.,])"
+    r"(?<![a-zA-Z])"
     r"(\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4})"
     r"(?!\d)"
+    r"(?![.,]\d)"
+    r"(?![a-zA-Z])"
 )
 
-# Pattern: 13-15 or 17-19 contiguous digits
+# Pattern: 13-15 or 17-19 contiguous digits — same boundary guards as above.
 _CARD_LONG_RE = re.compile(
     r"(?<!\d)"
+    r"(?<!\d[.,])"
+    r"(?<![a-zA-Z])"
     r"(\d{13,15}|\d{17,19})"
     r"(?!\d)"
+    r"(?![.,]\d)"
+    r"(?![a-zA-Z])"
 )
 
 

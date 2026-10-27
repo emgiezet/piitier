@@ -1,3 +1,7 @@
+# lineage: bardsai/eu-pii-anonimization-multilang-v2 rev 5e61416e77675881185767fc0c67759d48b35592 (base)
+#   → pii-5-v3  sha256:model.safetensors=40831fbc24d6e0a5ad35c6cda7604b44b44d465b6cbb7ae305baf67ec5716f6b
+#   → pii-5-v4a sha256:model.safetensors=<not distributed; local-only checkpoint, v4a missing at release>
+# base_revision is "main" because base_checkpoint is a local directory, not a Hub repo.
 # First v4 training stage. Build the local-only train file as described in FINDINGS.md.
 # 19 637 v0.3 train docs + 4 000 new, train-only medical docs (seed 781007).
 # Resume from the local pii-5-v3 weights; do not train on v0.3 dev or calibration.

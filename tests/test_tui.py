@@ -137,7 +137,7 @@ def test_compare_rejects_missing_model_without_printing_document(tmp_path: Path)
     )
 
     assert result.returncode == 2
-    assert "model not found" in result.stderr
+    assert "not found" in result.stderr
     assert "PRIVATE TEST TEXT" not in result.stderr + result.stdout
 
 

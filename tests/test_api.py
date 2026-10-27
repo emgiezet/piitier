@@ -8,6 +8,9 @@ All PESEL numbers are synthetic, computed for this spec.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 import piitier
@@ -326,3 +329,147 @@ def test_uc110_nonexistent_model_no_torch_import() -> None:
     assert result.returncode == 0, (
         f"subprocess failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
+
+
+# ---------------------------------------------------------------------------
+# PII-5-v4: resolve_checkpoint — hub.py unit tests (offline, monkeypatched)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_checkpoint_local_dir_returns_path(tmp_path: Path) -> None:
+    """resolve_checkpoint on an existing dir returns that dir (local always wins)."""
+    import piitier.ner.hub as hub
+
+    assert hub.resolve_checkpoint(tmp_path) == tmp_path
+
+
+def test_resolve_checkpoint_local_dir_beats_repo_id(tmp_path: Path) -> None:
+    """A path that both is a local dir AND matches owner/name returns the local dir."""
+    import piitier.ner.hub as hub
+
+    # Build a directory whose string representation matches 'owner/name'.
+    owner_dir = tmp_path / "owner"
+    owner_dir.mkdir()
+    ckpt_dir = owner_dir / "name"
+    ckpt_dir.mkdir()
+
+    assert hub.resolve_checkpoint(ckpt_dir) == ckpt_dir
+
+
+def test_resolve_checkpoint_hub_id_calls_seam(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hub repo id calls _snapshot_download with repo_id and revision; returns its path."""
+    import piitier.ner.hub as hub
+
+    fake_path = str(tmp_path)
+
+    def fake_download(*, repo_id: str, revision: str | None = None) -> str:
+        assert repo_id == "emgiezet/piitier-pl"
+        assert revision == "abc123"
+        return fake_path
+
+    monkeypatch.setattr(hub, "_snapshot_download", fake_download)
+    result = hub.resolve_checkpoint("emgiezet/piitier-pl", revision="abc123")
+    assert result == tmp_path
+
+
+def test_resolve_checkpoint_hub_id_no_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hub resolve with revision=None passes None through to the seam."""
+    import piitier.ner.hub as hub
+
+    fake_path = str(tmp_path)
+    calls: list[dict[str, object]] = []
+
+    def fake_download(*, repo_id: str, revision: str | None = None) -> str:
+        calls.append({"repo_id": repo_id, "revision": revision})
+        return fake_path
+
+    monkeypatch.setattr(hub, "_snapshot_download", fake_download)
+    hub.resolve_checkpoint("emgiezet/piitier-pl")
+    assert calls == [{"repo_id": "emgiezet/piitier-pl", "revision": None}]
+
+
+def test_resolve_checkpoint_non_dir_non_id_raises_valueerror() -> None:
+    """Non-dir, non-id string raises ValueError with the path in the message."""
+    import piitier.ner.hub as hub
+
+    with pytest.raises(ValueError, match="model checkpoint not found"):
+        hub.resolve_checkpoint("/absolutely/nonexistent/path/xyz")
+
+
+def test_resolve_checkpoint_non_dir_non_id_message_contains_path() -> None:
+    """ValueError message for an unrecognised path names the path."""
+    import piitier.ner.hub as hub
+
+    bad = "/no/such/dir"
+    with pytest.raises(ValueError, match=re.escape(bad)):
+        hub.resolve_checkpoint(bad)
+
+
+def test_resolve_checkpoint_seam_raising_wraps_as_could_not_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the seam raises, resolve_checkpoint raises ValueError 'could not download'."""
+    import piitier.ner.hub as hub
+
+    def boom(*, repo_id: str, revision: str | None = None) -> str:
+        raise OSError("network unreachable")
+
+    monkeypatch.setattr(hub, "_snapshot_download", boom)
+    with pytest.raises(ValueError, match="could not download emgiezet/piitier-pl"):
+        hub.resolve_checkpoint("emgiezet/piitier-pl")
+
+
+def test_resolve_checkpoint_import_error_mentions_ner_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ImportError from huggingface_hub produces ValueError mentioning piitier[ner]."""
+    import piitier.ner.hub as hub
+
+    # Force _snapshot_download to None so _load_snapshot_download tries to import.
+    monkeypatch.setattr(hub, "_snapshot_download", None)
+
+    # Patch builtins.__import__ so that importing huggingface_hub raises ImportError.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def patched_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "huggingface_hub":
+            raise ImportError("No module named 'huggingface_hub'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", patched_import)
+    with pytest.raises(ValueError, match="piitier\\[ner\\]"):
+        hub.resolve_checkpoint("emgiezet/piitier-pl")
+
+
+def test_anonymizer_revision_passed_to_resolve_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Anonymizer(model='owner/name', revision='rev') passes revision to resolve_checkpoint."""
+    import piitier.ner.hub as hub
+    from piitier.spans import Span
+
+    class _FakePredictor:
+        def predict(self, text: str) -> list[Span]:
+            return []
+
+    calls: list[dict[str, object]] = []
+    fake_path = str(tmp_path)
+
+    def fake_download(*, repo_id: str, revision: str | None = None) -> str:
+        calls.append({"repo_id": repo_id, "revision": revision})
+        return fake_path
+
+    monkeypatch.setattr(hub, "_snapshot_download", fake_download)
+
+    # NerPredictor will fail to load (empty dir) — catch that separately.
+    with pytest.raises((ValueError, OSError, Exception)):
+        piitier.Anonymizer(model="emgiezet/piitier-pl", revision="v0.1.0")
+
+    # The seam was called with the correct arguments.
+    assert calls == [{"repo_id": "emgiezet/piitier-pl", "revision": "v0.1.0"}]

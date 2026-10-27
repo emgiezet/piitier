@@ -518,3 +518,74 @@ def test_uc171_tab_delimiter_escape(tmp_path: Path) -> None:
     assert rc == 0
     assert out == b"ID\tNotes\n90051512340\t[PESEL]\n"
     assert err == b""
+
+
+# ---------------------------------------------------------------------------
+# PII-5-v4: --version flag
+# ---------------------------------------------------------------------------
+
+
+def test_version_flag_exits_0_and_prints_version() -> None:
+    """piitier --version prints 'piitier <version>' and exits 0."""
+    import piitier
+
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert f"piitier {piitier.__version__}" in result.stdout + result.stderr
+
+
+# ---------------------------------------------------------------------------
+# PII-5-v4: --revision flag passes through to resolve_checkpoint
+# ---------------------------------------------------------------------------
+
+
+def test_revision_passed_through_to_seam(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """mask_file(..., revision='abc') passes revision to the hub seam (in-process)."""
+    import piitier.ner.hub as hub
+    from piitier.cli import mask_file
+
+    in_file = tmp_path / "in.txt"
+    in_file.write_text("PESEL: 90051512340\n", encoding="utf-8")
+    ckpt_dir = tmp_path / "ckpt"
+    ckpt_dir.mkdir()
+
+    calls: list[dict[str, object]] = []
+
+    def fake_download(*, repo_id: str, revision: str | None = None) -> str:
+        calls.append({"repo_id": repo_id, "revision": revision})
+        return str(ckpt_dir)
+
+    monkeypatch.setattr(hub, "_snapshot_download", fake_download)
+
+    # The seam returns an empty directory; NerPredictor will fail with ValueError/OSError.
+    # We only care that the seam was called with the right args.
+    mask_file(in_file, None, model="emgiezet/piitier-pl", revision="abc")
+    assert calls == [{"repo_id": "emgiezet/piitier-pl", "revision": "abc"}]
+
+
+# ---------------------------------------------------------------------------
+# PII-5-v4: repo-id with HF_HUB_OFFLINE → exit 2 'could not download'
+# ---------------------------------------------------------------------------
+
+
+def test_hub_repo_id_offline_exits_2_could_not_download(tmp_path: Path) -> None:
+    """mask --model no/such-repo exits 2 with 'model error: could not download' when offline."""
+    import os
+
+    in_file = tmp_path / "in.txt"
+    in_file.write_text("PESEL: 90051512340\n", encoding="utf-8")
+
+    env = {**os.environ, "HF_HUB_OFFLINE": "1"}
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask", str(in_file), "--model", "no/such-repo"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 2
+    assert "could not download" in result.stderr
+    assert "no/such-repo" in result.stderr

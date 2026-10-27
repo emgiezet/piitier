@@ -1,3 +1,20 @@
+---
+license: cc-by-4.0
+language:
+  - pl
+task_categories:
+  - token-classification
+tags:
+  - pii
+  - anonymization
+  - gdpr
+  - synthetic
+  - polish
+pretty_name: piitier synthetic Polish PII corpus
+size_categories:
+  - 10K<n<100K
+---
+
 # Dataset card: synthetic Polish PII corpus (piitier)
 
 ## Dataset purpose
@@ -63,21 +80,66 @@ The dataset is fully deterministic. Using the same seed (`seed`), version of the
 
 Split rule: `sha256(template_id) % 10 == 0 → dev`, all others → `train`. Additional guarantee: if all templates of a given document type would be assigned to `dev`, the entire type is force-redirected to `train` (training-coverage guarantee). Types for which this correction was applied are recorded in `manifest.json` under the key `split_forced_train`. The mechanism is deterministic and independent of the `n` and `seed` parameters.
 
-## Full run (orchestrator instructions)
-To run a full production build (20,000 template documents + 2,000 hard negatives, fractional augmentation):
+## Run statistics
 
-```bash
-python -m piitier.datagen build \
-  --templates src/piitier/datagen/templates \
-  --n 20000 \
-  --seed 42 \
-  --augment \
-  --augment-fraction 0.25 \
-  --hard-negatives 2000 \
-  --out data/synthetic/v0.3/
-```
+### Corpus versions
 
-## Run statistics (full run, piitier 0.1.0, seed 42)
-> - Documents: 22,000 total (20,000 template-based + 2,000 hard negatives), split: `train` 21,283, `dev` 717; `augment: true`.
-> - `span_counts`: KWOTA 38920, OSOBA 28428, PESEL 18466, IBAN 17056, NR_POLISY 16725, NIP 11388, NR_DOWODU 11143, REGON 6771, ADRES 6003, NR_KARTY 4455, NR_REJESTRACYJNY 3252, MIEJSCOWOSC 3020, NAZWISKO 2840, IMIE 2705, KOD_POCZTOWY 2653, TELEFON 2468, VIN 2283, PLACOWKA 2222, LEKARZ 2222, NPWZ 2222, LEK 2222, EMAIL 1451, DATA_URODZENIA 1259, NR_SZKODY 1205, NR_UMOWY 1111, NR_KW 1111, ROZPOZNANIE 1111, ICD10 1111.
-> - SHA-256: `train.jsonl` `1530afd5a5f5a2efb116cd3a12742165c88cdadd6cc878b5967b1ea9554c1a98`, `dev.jsonl` `36c757419e978b2ed8d1cf8450bb52edc95676d32a9778528316bc7b4df9c752`; offsets verified (`check` → 0).
+| Corpus | Role | Documents | Train / Dev split | Seed | Command |
+|---|---|---|---|---|---|
+| `v0.1` | training (rejected) | 22 000 (20 000 templates + 2 000 HN) | 21 283 / 717 | 42 | `--n 20000 --hard-negatives 2000 --augment` (100%) |
+| `v0.2` | training (superseded) | 22 000 (20 000 templates + 2 000 HN) | 21 283 / 717 | 42 | `--n 20000 --hard-negatives 2000` (no augmentation) |
+| `v0.3` | training + dev | 22 000 (20 000 templates + 2 000 HN) | **19 637 / 2 363** | 42 | `--n 20000 --hard-negatives 2000 --augment --augment-fraction 0.25` |
+| `v0.3-cal` | calibration only | 9 900 built → **1 031 dev docs after dedup** | n/a (dev only) | 900042 | `--n 9000 --hard-negatives 900 --augment --augment-fraction 0.25`; 25 zero-gold hard-negative rows that duplicate `v0.3` text are removed |
+| `v0.3-medical` | training extension (pii-5-v4) | 4 000 (training only, no dev) | 4 000 / 0 | 781007 | 4 new `wypis_szpitalny` templates; appended to `v0.3` train |
+| `v0.3-medical-contrast` | training extension (pii-5-v4) | 4 000 (training only, no dev) | 4 000 / 0 | 891007 | 2 facility/city contrast templates; appended after `v0.3-medical` |
+
+The split numbers differ across corpus versions because the `sha256(template_id) % 10 == 0 → dev`
+rule interacts with the template set used for each run; v0.1 and v0.2 used the same 338-template
+set (218 policy + 81 table + others), producing the 21 283 / 717 split, while v0.3 used a
+different set (32 prose templates added), producing 19 637 / 2 363.
+
+### v0.3 span inventory (train + dev, seed 42)
+
+> Span counts from the historical `v0.3` build (local-only, gitignored). Source file checksums:
+> `train.jsonl` SHA-256 `1530afd5a5f5a2efb116cd3a12742165c88cdadd6cc878b5967b1ea9554c1a98`,
+> `dev.jsonl` SHA-256 `36c757419e978b2ed8d1cf8450bb52edc95676d32a9778528316bc7b4df9c752`;
+> offsets verified (`check` → 0). A clean-clone rebuild will differ because the derived
+> private templates are not redistributed (see Redistribution below).
+>
+> KWOTA 38920, OSOBA 28428, PESEL 18466, IBAN 17056, NR_POLISY 16725, NIP 11388, NR_DOWODU 11143,
+> REGON 6771, ADRES 6003, NR_KARTY 4455, NR_REJESTRACYJNY 3252, MIEJSCOWOSC 3020, NAZWISKO 2840,
+> IMIE 2705, KOD_POCZTOWY 2653, TELEFON 2468, VIN 2283, PLACOWKA 2222, LEKARZ 2222, NPWZ 2222,
+> LEK 2222, EMAIL 1451, DATA_URODZENIA 1259, NR_SZKODY 1205, NR_UMOWY 1111, NR_KW 1111,
+> ROZPOZNANIE 1111, ICD10 1111.
+
+### v0.3-cal calibration split statistics (seed 900042)
+
+> Source: `training/out/pii-5-v3/calibration_sweep.json` and `FINDINGS.md`.
+>
+> 1 031 dev documents, 14 766 gold spans (25 zero-gold hard-negative rows removed by text-hash
+> deduplication against `v0.3`). Used to calibrate the `pii-5-v4` threshold; not used in training.
+
+## Redistribution
+
+Three categories of artefact exist in this project; only the first is distributed in the repository:
+
+1. **Hand-written templates** (`src/piitier/datagen/templates/`) — committed to git under CC BY 4.0.
+   These cover 9 document types (polisa, umowa_kredytowa, wypis_szpitalny, mail_klienta, wyciag,
+   skierowanie, zgloszenie_szkody, transkrypcja_infolinii, raport_towarzystwa) with fully fictional
+   layout and no real personal data.
+
+2. **Templates derived from private documents** (insurance-policy PDFs, commission-statement
+   XLSX/CSV) — local only, gitignored, never redistributed. They are produced by
+   `python -m piitier.datagen templatize` / `templatize-tables` from source documents that were
+   approved for training by the data owner but cannot be published. The derivation tool replaces
+   every PII value with a `{{LABEL}}` placeholder; the acceptance gate rejects fragments that
+   retain anything shaped like a PII value. Because these templates are absent from a clean clone,
+   a rebuilt corpus will differ from the historical `data/synthetic/v0.3`.
+
+3. **Generated corpora** (`data/synthetic/v0.3`, `v0.3-cal`, `v0.3-medical`, `v0.3-medical-contrast`)
+   — gitignored, rebuildable. Corpora generated from the hand-written templates only can be
+   reproduced with the commands documented in **Full run** above and in `FINDINGS.md`
+   ("Rebuild the local calibration split"). They will not be byte-identical to the historical
+   `v0.3` because the private derived templates are excluded. The CC BY 4.0 licence applies to
+   any corpus you build from the committed templates.
+

@@ -39,12 +39,14 @@ repos:
       - id: piitier-scan
         name: piitier scan (checksum-valid identifiers)
         # A checksum-valid PESEL/NIP/REGON/IBAN/ID card/payment card fails the commit unless its
-        # fingerprint is in .pii-allowlist (synthetic values only). Generated files are excluded:
-        # uv.lock hashes and report floats contain Luhn-valid 16-digit runs.
+        # fingerprint is in .pii-allowlist (synthetic values only). uv.lock is excluded because
+        # package hash strings contain NIP/PESEL/REGON-valid digit runs and would need hundreds of
+        # allowlist entries (the payment-card false positives in eval/reports were the original
+        # reason for the JSON exclusion; context-boundary fixes in the card rule removed them).
         entry: uv run piitier scan --allowlist .pii-allowlist
         language: system
         types: [text]
-        exclude: ^(uv\.lock|eval/reports/.*\.json)$
+        exclude: ^uv\.lock$
       - id: pytest
         name: pytest (unit)
         entry: uv run pytest -q -m "not integration"

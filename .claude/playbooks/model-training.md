@@ -27,16 +27,24 @@ Conventions for the code live in `.claude/rules/python.md`.
 6. **Export** to ONNX with INT8 quantisation (Optimum). Re-score the INT8 model on `dev/` and
    record the F1 and recall deltas against FP32. A recall drop beyond the spec's tolerance
    blocks the export.
-7. **Publish** to the Hugging Face Hub. Prepare `training/out/<run>/` with the weights, the
-   ONNX variants, and `README.md` (the model card):
+7. **Publish** to the Hugging Face Hub. The model card source lives in
+   `training/model_cards/<run>/README.md` (committed to git). Before uploading, copy it
+   into the output directory:
+   ```bash
+   cp training/model_cards/<run>/README.md training/out/<run>/README.md
+   ```
+   Then upload (human-run only — the agent never pushes to the Hub):
+   ```bash
+   hf upload emgiezet/piitier-pl training/out/<run> . --repo-type model
+   ```
+   (`--repo-type dataset` for the synthetic corpus or PL-PII-Bench.)
+   The card must contain:
    - Metrics per entity type and per domain, taken from the evaluation report on the frozen
      test split (produced by the evaluation task, not here).
    - Intended use, known limitations (quasi-identifiers, colloquial art. 9 data), base model
      and licence, calibrated threshold.
    - The sentence "This is not a certificate of anonymisation."
-   **The agent never pushes to the Hub.** It prints the command for a human to run:
-   `hf upload <namespace>/<repo> training/out/<run> . --repo-type model`
-   (`--repo-type dataset` for the synthetic corpus or PL-PII-Bench).
+   See `training/model_cards/<run>/PUBLISH.md` for the pre-upload checklist.
 
 ## Test requirements
 

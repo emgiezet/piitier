@@ -9,3 +9,11 @@ training/out/
 __pycache__/
 *.egg-info/
 .hypothesis/
+dist/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.safetensors
+*.onnx
+*.bin

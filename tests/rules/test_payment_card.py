@@ -297,3 +297,97 @@ def test_uc27_luhn_invalid_15_digit_no_match() -> None:
     spans = find("111111111111111")
     # Should not find any payment card (fails Luhn)
     assert not any(s.label is Label.NR_KARTY for s in spans)
+
+
+# ---------------------------------------------------------------------------
+# Context-boundary: false-positive suppression (FP-1, FP-2, FP-3, FP-4)
+# ---------------------------------------------------------------------------
+
+
+def test_fp1_decimal_16digit_not_detected() -> None:
+    """FP-1: Luhn-valid 16-digit run inside a float literal is not detected.
+
+    '0.8888888888888888' contains 16 consecutive 8s that are Luhn-valid; the run
+    is directly preceded by digit + '.' so the context-boundary guard rejects it.
+    """
+    # 8888888888888888 passes Luhn, but is inside a float
+    spans = [s for s in find("0.8888888888888888") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp2_decimal_17digit_not_detected() -> None:
+    """FP-2: Luhn-valid 17-digit run inside a float literal is not detected.
+
+    '0.28571428571428575' (a benchmark F1 score) contains a 17-digit run preceded
+    by digit + '.'; context boundary rejects it.
+    """
+    spans = [s for s in find("0.28571428571428575") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp3_float_in_json_context_not_detected() -> None:
+    """FP-3: Float metric embedded in JSON is not detected."""
+    spans = [s for s in find('  "f1": 0.28571428571428575,') if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp4_hex_token_adjacent_not_detected() -> None:
+    """FP-4: Luhn-valid digit run surrounded by hex letters is not detected.
+
+    'cc4111111111111111ff' embeds the known Visa test card between hex letters; the
+    letter-adjacency guard on both sides rejects it.
+    """
+    spans = [s for s in find("cc4111111111111111ff") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp4b_hex_token_left_adjacent_not_detected() -> None:
+    """FP-4b: Digit run preceded by a letter (only) is not detected."""
+    spans = [s for s in find("abc4111111111111111") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp4c_hex_token_right_adjacent_not_detected() -> None:
+    """FP-4c: Digit run followed by a letter (only) is not detected."""
+    spans = [s for s in find("4111111111111111xyz") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_card_followed_by_sentence_period_detected() -> None:
+    """Context-boundary: card at end of sentence ('4111111111111111.') is still detected.
+
+    A trailing '.' not followed by a digit is a sentence period, not a decimal; the
+    right-side guard '(?![.,]\\d)' does not fire.
+    """
+    spans = find("Karta: 4111111111111111.")
+    nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
+    assert len(nr_karty) == 1
+    assert nr_karty[0].status == "valid"
+
+
+def test_spaced_card_still_detected_after_boundary_fix() -> None:
+    """Context-boundary: space-separated format '4111 1111 1111 1111' is still detected."""
+    spans = find("4111 1111 1111 1111")
+    nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
+    assert len(nr_karty) == 1
+    assert nr_karty[0].status == "valid"
+
+
+def test_dashed_card_still_detected_after_boundary_fix() -> None:
+    """Context-boundary: dash-separated format '4111-1111-1111-1111' is still detected."""
+    spans = find("4111-1111-1111-1111")
+    nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
+    assert len(nr_karty) == 1
+    assert nr_karty[0].status == "valid"
+
+
+def test_suspect_in_normal_context_not_dropped_after_boundary_fix() -> None:
+    """Context-boundary: Luhn-invalid 16-digit run in plain text is still reported as suspect.
+
+    The context-boundary guards do not suppress suspect spans; the invariant that a
+    checksum-invalid candidate in a 'card-shaped' context is never silently dropped holds.
+    """
+    spans = find(f"numer: {VISA_WRONG_CHECK} koniec")
+    nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
+    assert len(nr_karty) == 1
+    assert nr_karty[0].status == "suspect"

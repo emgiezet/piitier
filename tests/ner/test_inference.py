@@ -1,4 +1,4 @@
-"""Tests for NER inference module (UC-67..UC-71, UC-95..UC-97)."""
+"""Tests for NER inference module (UC-67..UC-71, UC-95..UC-97, UC-99..UC-100, UC-169..UC-170)."""
 
 from __future__ import annotations
 
@@ -408,3 +408,55 @@ def test_uc100_decode_spans_o_content_token_between_entities_keeps_two_spans() -
     assert text[pesel_span.start : pesel_span.end] == "44051401359"
     # Leading space stripped from NIP span start.
     assert text[nip_span.start : nip_span.end] == "526-10-81-912"
+
+
+def test_uc169_decode_spans_word_consistent_split_subtokens_yield_one_span() -> None:
+    """UC-169: word_ids forces a split word onto a single label (first subtoken wins).
+
+    Simulates "Wiśniewska" tokenised as two subtokens where the model assigns
+    NAZWISKO to the first (Wiśniew) and OSOBA to the second (ska).  With word-level
+    consistency the whole word receives NAZWISKO and the span covers [0, 10].
+    """
+    text = "Wiśniewska"
+    tag_names = bio_tag_names()
+    tag_to_id = {name: i for i, name in enumerate(tag_names)}
+    id2label = {i: name for name, i in tag_to_id.items()}
+
+    # Two subtokens that share word_id=0 (same word).
+    offset_mapping: list[tuple[int, int]] = [(0, 7), (7, 10)]
+    word_ids: list[int | None] = [0, 0]
+
+    probs = [[0.0] * len(tag_names), [0.0] * len(tag_names)]
+    probs[0][tag_to_id["B-NAZWISKO"]] = 0.90  # first subtoken → NAZWISKO
+    probs[1][tag_to_id["B-OSOBA"]] = 0.85  # second subtoken → OSOBA (ignored)
+
+    spans = decode_spans(text, offset_mapping, probs, id2label, threshold=0.0, word_ids=word_ids)
+    assert len(spans) == 1, f"expected 1 span, got {spans}"
+    assert spans[0].label == Label.NAZWISKO
+    assert spans[0].start == 0
+    assert spans[0].end == 10
+    assert text[spans[0].start : spans[0].end] == "Wiśniewska"
+
+
+def test_uc170_decode_spans_word_consistent_below_threshold_yields_nothing() -> None:
+    """UC-170: threshold applies on the first subtoken's score; if it fails the whole word
+    is dropped even when a continuation subtoken's score would have passed.
+
+    First subtoken of the word predicts NAZWISKO with score 0.50 (below threshold=0.70).
+    Second subtoken predicts OSOBA with score 0.92 (would pass), but with word-level
+    consistency it is treated as a continuation and its score is ignored.
+    """
+    text = "Wiśniewska"
+    tag_names = bio_tag_names()
+    tag_to_id = {name: i for i, name in enumerate(tag_names)}
+    id2label = {i: name for name, i in tag_to_id.items()}
+
+    offset_mapping: list[tuple[int, int]] = [(0, 7), (7, 10)]
+    word_ids: list[int | None] = [0, 0]
+
+    probs = [[0.0] * len(tag_names), [0.0] * len(tag_names)]
+    probs[0][tag_to_id["B-NAZWISKO"]] = 0.50  # below threshold
+    probs[1][tag_to_id["B-OSOBA"]] = 0.92  # above threshold, but continuation → ignored
+
+    spans = decode_spans(text, offset_mapping, probs, id2label, threshold=0.70, word_ids=word_ids)
+    assert spans == [], f"expected no spans, got {spans}"

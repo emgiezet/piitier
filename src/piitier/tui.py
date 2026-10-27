@@ -282,11 +282,14 @@ class AnonymizationDiffApp(App[None]):
         )
 
 
-def compare_file(input_path: Path, model: Path, threshold: float, device: str) -> int:
+def compare_file(
+    input_path: Path,
+    model: str | Path,
+    threshold: float,
+    device: str,
+    revision: str | None = None,
+) -> int:
     """Detect once, display locally, and keep document text out of errors/output."""
-    if not model.is_dir():
-        print(f"model not found: {model}", file=sys.stderr)
-        return 2
     if not (0.0 <= threshold <= 1.0):
         print("invalid threshold (expected a number in [0, 1])", file=sys.stderr)
         return 2
@@ -306,13 +309,13 @@ def compare_file(input_path: Path, model: Path, threshold: float, device: str) -
         print(f"could not read: {input_path}", file=sys.stderr)
         return 2
     try:
-        anonymizer = Anonymizer(model=model, threshold=threshold, device=device)
+        anonymizer = Anonymizer(model=model, revision=revision, threshold=threshold, device=device)
         if input_path.suffix.lower() == ".csv":
             app = AnonymizationDiffApp(text, [], csv_path=input_path, detector=anonymizer.detect)
         else:
             app = AnonymizationDiffApp(text, anonymizer.detect(text))
-    except (OSError, ValueError, ImportError):
-        print(f"model error: {model}", file=sys.stderr)
+    except (OSError, ValueError, ImportError) as e:
+        print(f"model error: {e}", file=sys.stderr)
         return 2
     app.run()
     return 0

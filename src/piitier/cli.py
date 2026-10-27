@@ -29,29 +29,28 @@ from piitier.scan import Finding, read_allowlist, scan_file
 def mask_file(
     input_path: Path,
     output_path: Path | None,
-    model: Path | None = None,
+    model: str | None = None,
     threshold: float = 0.0,
     skip_columns: list[str] | None = None,
     delimiter: str | None = None,
+    revision: str | None = None,
 ) -> int:
     """Mask PII in a file and write output.
 
     Args:
         input_path: Path to the input file.
         output_path: Path to the output file (None = stdout).
-        model: Optional path to a local NER checkpoint directory.
+        model: Local checkpoint path or Hugging Face Hub repo id (``owner/name``).
         threshold: Minimum NER score; ignored when model is None.
         skip_columns: CSV header names or 1-based indices to leave unmasked.
         delimiter: Optional single-character CSV delimiter.
+        revision: Hub branch/tag/commit; ignored for local paths.
 
     Returns:
         Exit code: 0 on success, 2 on error.
     """
-    # 1. Validate model path (must be an existing directory) BEFORE reading
-    #    the input so that nothing is ever written to -o on error (UC-109).
-    if model is not None and not model.is_dir():
-        print(f"model not found: {model}", file=sys.stderr)
-        return 2
+    # 1. Validate threshold before any model resolution or file I/O so that a
+    #    bad --threshold never causes a partial write (UC-109).
     # `not (0 <= t <= 1)` is also True for NaN, which fails every comparison.
     if model is not None and not (0.0 <= threshold <= 1.0):
         print(f"invalid threshold: {threshold} (expected a number in [0, 1])", file=sys.stderr)
@@ -120,7 +119,7 @@ def mask_file(
     if model is not None:
         # Catch model construction and inference errors without a traceback.
         try:
-            anonymizer = piitier.Anonymizer(model=model, threshold=threshold)
+            anonymizer = piitier.Anonymizer(model=model, revision=revision, threshold=threshold)
             if skip_columns:
                 masked_text = piitier.mask_csv(
                     text,
@@ -131,8 +130,8 @@ def mask_file(
                 )
             else:
                 masked_text = anonymizer.mask(text)
-        except (OSError, ValueError, ImportError):
-            print(f"model error: {model}", file=sys.stderr)
+        except (OSError, ValueError, ImportError) as e:
+            print(f"model error: {e}", file=sys.stderr)
             return 2
     elif skip_columns:
         masked_text = piitier.mask_csv(
@@ -197,6 +196,11 @@ def main() -> int:
         prog="piitier",
         description="Polish PII anonymiser",
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"piitier {piitier.__version__}",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # mask subcommand
@@ -219,10 +223,10 @@ def main() -> int:
     )
     mask_parser.add_argument(
         "--model",
-        type=Path,
+        type=str,
         dest="model",
         default=None,
-        help="Path to a local NER checkpoint directory (enables rule+NER fusion)",
+        help="Local checkpoint path or Hugging Face Hub repo id (owner/name)",
     )
     mask_parser.add_argument(
         "--threshold",
@@ -230,6 +234,14 @@ def main() -> int:
         dest="threshold",
         default=0.0,
         help="Minimum NER span score to keep (default: 0.0); ignored without --model",
+    )
+    mask_parser.add_argument(
+        "--revision",
+        type=str,
+        dest="revision",
+        default=None,
+        metavar="REV",
+        help="Hub branch, tag, or commit hash (only used with a Hub repo id)",
     )
     mask_parser.add_argument(
         "--skip-columns",
@@ -251,9 +263,18 @@ def main() -> int:
         help="Inspect original and anonymized text side by side in a terminal",
     )
     compare_parser.add_argument("input", type=Path, help="Input file (.txt, .md, .csv, .pdf)")
-    compare_parser.add_argument("--model", type=Path, required=True, help="Local NER checkpoint")
+    compare_parser.add_argument(
+        "--model", type=str, required=True, help="Local checkpoint path or Hub repo id (owner/name)"
+    )
     compare_parser.add_argument("--threshold", type=float, default=0.0, help="Minimum NER score")
     compare_parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
+    compare_parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        metavar="REV",
+        help="Hub branch, tag, or commit hash",
+    )
 
     scan_parser = subparsers.add_parser(
         "scan",
@@ -284,14 +305,20 @@ def main() -> int:
         )
         delimiter = "\t" if args.delimiter == "\\t" else args.delimiter
         return mask_file(
-            args.input, args.output, args.model, args.threshold, skip_columns, delimiter
+            args.input,
+            args.output,
+            args.model,
+            args.threshold,
+            skip_columns,
+            delimiter,
+            args.revision,
         )
     if args.command == "scan":
         return scan_files(args.paths, args.allowlist, args.write_allowlist)
     if args.command == "compare":
         from piitier.tui import compare_file
 
-        return compare_file(args.input, args.model, args.threshold, args.device)
+        return compare_file(args.input, args.model, args.threshold, args.device, args.revision)
 
     return 1
 

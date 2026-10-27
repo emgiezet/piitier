@@ -1607,7 +1607,6 @@ wheels = [
 
 [[package]]
 name = "piitier"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "faker" },
@@ -1615,6 +1614,15 @@ dependencies = [
     { name = "openpyxl" },
     { name = "pypdf" },
     { name = "textual" },
+]
+
+[package.optional-dependencies]
+ner = [
+    { name = "torch" },
+    { name = "transformers" },
+]
+onnx = [
+    { name = "onnxruntime" },
 ]
 
 [package.dev-dependencies]
@@ -1640,10 +1648,14 @@ dev = [
 requires-dist = [
     { name = "faker", specifier = "==40.43.0" },
     { name = "morfeusz2", specifier = "==1.99.15" },
+    { name = "onnxruntime", marker = "extra == 'onnx'", specifier = "==1.31.0" },
     { name = "openpyxl", specifier = "==3.1.5" },
     { name = "pypdf", specifier = "==6.21.1" },
     { name = "textual", specifier = "==8.2.8" },
+    { name = "torch", marker = "extra == 'ner'", specifier = "==2.14.1" },
+    { name = "transformers", marker = "extra == 'ner'", specifier = "==5.20.2" },
 ]
+provides-extras = ["ner", "onnx"]
 
 [package.metadata.requires-dev]
 dev = [

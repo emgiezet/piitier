@@ -1,3 +1,8 @@
+# lineage: bardsai/eu-pii-anonimization-multilang-v2 rev 5e61416e77675881185767fc0c67759d48b35592 (base)
+#   → pii-5-v3  sha256:model.safetensors=40831fbc24d6e0a5ad35c6cda7604b44b44d465b6cbb7ae305baf67ec5716f6b
+#   → pii-5-v4a sha256:model.safetensors=<not distributed; local-only checkpoint, v4a missing at release>
+#   → pii-5-v4  sha256:model.safetensors=94d43a6effabd3c3b1500d8f20f9d136aa77b39f2f4fb01fcf51dedd062fc94c
+# base_revision is "main" because base_checkpoint is a local directory, not a Hub repo.
 run: pii-5-v4
 base_checkpoint: training/out/pii-5-v4a
 base_revision: main
