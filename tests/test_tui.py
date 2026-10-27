@@ -1,0 +1,316 @@
+"""Synthetic data only: the two-pane view never logs document contents."""
+
+from __future__ import annotations
+
+import asyncio
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from rich.text import Text
+from textual.widgets import Checkbox, DataTable, Input, RichLog, Static
+
+import piitier
+from piitier.labels import Label
+from piitier.spans import Span
+from piitier.tui import AnonymizationDiffApp, CsvSelectionScreen, build_diff
+
+
+def span(start: int, end: int, label: Label) -> Span:
+    return Span(start, end, label, "rule", 1.0, "valid")
+
+
+def styles_at(text: Text, offset: int) -> list[str]:
+    return [str(style.style) for style in text.spans if style.start <= offset < style.end]
+
+
+def test_diff_preserves_unchanged_text_and_marks_replacements_green() -> None:
+    original = "Literal [EMAIL] <tag> ABC\ncode XYZ end"
+    changes = [span(22, 25, Label.PESEL), span(31, 34, Label.EMAIL)]
+
+    before, after, lines = build_diff(original, changes, active=0)
+
+    assert before.plain == original
+    assert after.plain == "Literal [EMAIL] <tag> [PESEL]\ncode [EMAIL] end"
+    assert lines == [(0, 0, 22, 22), (1, 1, 5, 5)]
+    assert any("on red" in style for style in styles_at(before, 22))
+    assert any("on green" in style for style in styles_at(after, 22))
+    assert styles_at(before, 8) == []  # literal bracketed text is not a finding
+    assert any("green" in style for style in styles_at(after, after.plain.rindex("[EMAIL]")))
+
+
+def test_diff_tracks_different_line_offsets_after_multiline_replacement() -> None:
+    original = "A\nSECRET\nCONTINUED\nB\nOTHER"
+    changes = [span(2, 18, Label.ADRES), span(21, 26, Label.NIP)]
+
+    before, after, lines = build_diff(original, changes, active=1)
+
+    assert before.plain == original
+    assert after.plain == "A\n[ADRES_n]\nB\n[NIP]"
+    assert lines == [(1, 1, 0, 0), (4, 3, 0, 0)]
+    assert any("on green" in style for style in styles_at(after, after.plain.index("[NIP]")))
+
+
+def test_arrows_navigate_findings_and_scroll_both_panes() -> None:
+    original = "FIRST\n" + "unchanged\n" * 45 + "SECOND"
+    first = span(0, 5, Label.PESEL)
+    last = span(original.index("SECOND"), len(original), Label.EMAIL)
+    app = AnonymizationDiffApp(original, [first, last])
+
+    async def exercise() -> None:
+        async with app.run_test(size=(100, 20)) as pilot:
+            before = app.query_one("#before", RichLog)
+            after = app.query_one("#after", RichLog)
+            assert app.active == 0
+            assert before.scroll_y == after.scroll_y == 0
+
+            await pilot.press("down")
+            await pilot.pause()
+            assert app.active == 1
+            assert before.scroll_y > 0
+            assert after.scroll_y > 0
+            assert before.scroll_y == after.scroll_y
+
+            await pilot.press("up")
+            await pilot.pause()
+            assert app.active == 0
+            assert before.scroll_y == after.scroll_y == 0
+
+            await pilot.press("left")  # previous from first wraps to last
+            assert app.active == 1
+            await pilot.press("right")  # next wraps to first
+            assert app.active == 0
+
+    asyncio.run(exercise())
+
+
+def test_arrow_navigation_reveals_changes_on_long_unwrapped_lines() -> None:
+    original = "FIRST " + "x" * 120 + " SECOND"
+    app = AnonymizationDiffApp(
+        original,
+        [span(0, 5, Label.PESEL), span(original.index("SECOND"), len(original), Label.EMAIL)],
+    )
+
+    async def exercise() -> None:
+        async with app.run_test(size=(80, 16)) as pilot:
+            await pilot.press("down")
+            await pilot.pause()
+            before = app.query_one("#before", RichLog)
+            after = app.query_one("#after", RichLog)
+            assert before.scroll_x > 0
+            assert after.scroll_x > 0
+
+    asyncio.run(exercise())
+
+
+def test_no_findings_keeps_original_in_both_panes() -> None:
+    app = AnonymizationDiffApp("Just literal [PESEL], not a detected value", [])
+
+    async def exercise() -> None:
+        async with app.run_test() as pilot:
+            await pilot.press("right", "down", "left")
+            assert app.active == 0
+            status = str(app.query_one("#status", Static).render())
+            assert status == "Brak wykrytych fragmentów do zamaskowania"
+
+    asyncio.run(exercise())
+
+
+def test_compare_rejects_missing_model_without_printing_document(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("PRIVATE TEST TEXT", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "piitier.cli",
+            "compare",
+            str(source),
+            "--model",
+            str(tmp_path / "missing"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "model not found" in result.stderr
+    assert "PRIVATE TEST TEXT" not in result.stderr + result.stdout
+
+
+def test_csv_preview_then_multi_select_masks_only_unchecked_column(tmp_path: Path) -> None:
+    text = "ID;ID;Notes\r\n90051512340;90051512340;90051512340\r\n"
+    source = tmp_path / "in.csv"
+    source.write_bytes(text.encode())
+    app = AnonymizationDiffApp(text, [], csv_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            assert isinstance(app.screen, CsvSelectionScreen)
+            table = app.screen.query_one("#csv-preview", DataTable)
+            assert table.get_row_at(0) == ["90051512340"] * 3
+            assert len(app.screen.query(Checkbox)) == 3
+            assert app.spans == []
+            assert not (tmp_path / "in_anonymised.csv").exists()
+
+            await pilot.click("#skip-1")
+            await pilot.click("#skip-2")
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            assert not isinstance(app.screen, CsvSelectionScreen)
+            assert [text[span.start : span.end] for span in app.spans] == ["90051512340"]
+            assert build_diff(text, app.spans, 0)[1].plain == (
+                "ID;ID;Notes\n90051512340;90051512340;[PESEL]\n"
+            )
+            assert source.read_bytes() == text.encode()
+
+    asyncio.run(exercise())
+
+
+def test_csv_preview_keeps_arrow_navigation_for_table_and_keyboard_checkboxes(
+    tmp_path: Path,
+) -> None:
+    text = "ID;Notes\n90051512340;one\n90051512340;two\n"
+    app = AnonymizationDiffApp(text, [], csv_path=tmp_path / "in.csv", detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(100, 25)) as pilot:
+            table = app.screen.query_one(DataTable)
+            table.focus()
+            await pilot.press("down")
+            assert table.cursor_coordinate.row == 1
+            checkbox = app.screen.query_one("#skip-1", Checkbox)
+            checkbox.focus()
+            await pilot.press("space")
+            assert checkbox.value
+
+    asyncio.run(exercise())
+
+
+def test_csv_export_default_name_preserves_bytes_and_refuses_overwrite(tmp_path: Path) -> None:
+    text = "ID;Notes\r\n90051512340;90051512340\r\n"
+    source = tmp_path / "in.csv"
+    source.write_bytes(text.encode())
+    app = AnonymizationDiffApp(text, [], csv_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.click("#skip-1")
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            assert app.query_one("#export-filename", Input).value == "in_anonymised.csv"
+            assert await pilot.click("#export")
+            output = tmp_path / "in_anonymised.csv"
+            assert output.read_bytes() == b"ID;Notes\r\n90051512340;[PESEL]\r\n"
+            assert source.read_bytes() == text.encode()
+
+            output.write_bytes(b"EXISTING")
+            await pilot.pause(0.25)
+            assert await pilot.click("#export")
+            await pilot.pause()
+            assert output.read_bytes() == b"EXISTING"
+            assert "istnieje" in str(app.query_one("#export-status", Static).render())
+
+    asyncio.run(exercise())
+
+
+def test_csv_export_renamed_file_rejects_source_and_path_escape(tmp_path: Path) -> None:
+    text = "ID;Notes\n90051512340;90051512340\n"
+    source = tmp_path / "in.csv"
+    source.write_text(text, encoding="utf-8")
+    app = AnonymizationDiffApp(text, [], csv_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            filename = app.query_one("#export-filename", Input)
+            filename.value = "../outside.csv"
+            assert await pilot.click("#export")
+            assert not (tmp_path.parent / "outside.csv").exists()
+            filename.value = "in.csv"
+            await pilot.pause(0.25)
+            assert await pilot.click("#export")
+            assert source.read_text(encoding="utf-8") == text
+
+            filename.value = "renamed.csv"
+            await pilot.pause(0.25)
+            assert await pilot.click("#export")
+            assert (tmp_path / "renamed.csv").read_bytes() == (b"ID;Notes\n[PESEL];[PESEL]\n")
+            assert source.read_text(encoding="utf-8") == text
+
+    asyncio.run(exercise())
+
+
+def test_csv_ragged_third_column_can_be_skipped(tmp_path: Path) -> None:
+    text = "ID;Notes\n90051512340;90051512340;90051512340\n"
+    app = AnonymizationDiffApp(text, [], csv_path=tmp_path / "in.csv", detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 28)) as pilot:
+            table = app.screen.query_one(DataTable)
+            assert table.get_row_at(0)[2] == "90051512340"
+            await pilot.click("#skip-3")
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            assert build_diff(text, app.spans, 0)[1].plain == (
+                "ID;Notes\n[PESEL];[PESEL];90051512340\n"
+            )
+
+    asyncio.run(exercise())
+
+
+def test_export_filename_input_keeps_arrow_keys(tmp_path: Path) -> None:
+    text = "ID;Notes\n90051512340;90051512340\n"
+    app = AnonymizationDiffApp(text, [], csv_path=tmp_path / "in.csv", detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 28)) as pilot:
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            filename = app.query_one("#export-filename", Input)
+            filename.focus()
+            await pilot.pause()
+            filename.cursor_position = len(filename.value)
+            assert filename.cursor_position == len(filename.value)
+            await pilot.press("left")
+            assert filename.cursor_position == len(filename.value) - 1
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    ("original", "text", "expected"),
+    [
+        (
+            "Łódź;ID\r\nmiasto;90051512340\r\n".encode("cp1250"),
+            "Łódź;ID\r\nmiasto;90051512340\r\n",
+            "Łódź;ID\r\nmiasto;[PESEL]\r\n".encode("cp1250"),
+        ),
+        (
+            b"\xef\xbb\xbfID;Notes\r\n90051512340;90051512340\r\n",
+            "ID;Notes\r\n90051512340;90051512340\r\n",
+            b"\xef\xbb\xbfID;Notes\r\n90051512340;[PESEL]\r\n",
+        ),
+    ],
+)
+def test_csv_export_retains_source_encoding(
+    tmp_path: Path, original: bytes, text: str, expected: bytes
+) -> None:
+    source = tmp_path / "in.csv"
+    source.write_bytes(original)
+    app = AnonymizationDiffApp(text, [], csv_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 28)) as pilot:
+            await pilot.click("#skip-1")
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            await pilot.click("#export")
+            assert (tmp_path / "in_anonymised.csv").read_bytes() == expected
+            assert source.read_bytes() == original
+
+    asyncio.run(exercise())

@@ -435,3 +435,86 @@ def test_empty_model_dir_exits_2_no_traceback(tmp_path: Path) -> None:
     assert b"Traceback" not in stderr_bytes
     assert stdout_bytes == b""
     assert b"90051512340" not in stderr_bytes
+
+
+@pytest.fixture
+def skip_csv(tmp_path: Path) -> Path:
+    path = tmp_path / "in.csv"
+    path.write_bytes("Imie;PESEL;Uwagi\r\nJan;90051512340;PESEL klienta 90051512340\r\n".encode())
+    return path
+
+
+@pytest.mark.parametrize(
+    ("selector", "warning"),
+    [
+        ("PESEL", b""),
+        ("2", b""),
+        ("  pesel  ", b""),
+        ("BrakujacaKolumna,PESEL", b"warning: unknown column: BrakujacaKolumna\n"),
+    ],
+)
+def test_uc163_uc164_uc165_uc166_skip_selected_csv_column(
+    skip_csv: Path, selector: str, warning: bytes
+) -> None:
+    rc, out, err = run_piitier_mask(["mask", str(skip_csv), "--skip-columns", selector])
+    assert rc == 0
+    assert out == b"Imie;PESEL;Uwagi\r\nJan;90051512340;PESEL klienta [PESEL]\r\n"
+    assert err == warning
+
+
+def test_uc167_quoted_multiline_column_stays_untouched(tmp_path: Path) -> None:
+    path = tmp_path / "in.csv"
+    path.write_bytes(
+        (
+            '"Imie";"Opis, ze srednikiem ; i\nnowa ""linia""";"PESEL"\r\n'
+            '"Jan";"tekst 90051512340";"90051512340"\r\n'
+        ).encode()
+    )
+    rc, out, err = run_piitier_mask(
+        ["mask", str(path), "--skip-columns", 'Opis, ze srednikiem ; i\nnowa "linia"']
+    )
+    assert rc == 0
+    assert (
+        out
+        == (
+            '"Imie";"Opis, ze srednikiem ; i\nnowa ""linia""";"PESEL"\r\n'
+            '"Jan";"tekst 90051512340";"[PESEL]"\r\n'
+        ).encode()
+    )
+    assert err == b""
+
+
+def test_uc168_cross_boundary_span_remains_masked(tmp_path: Path) -> None:
+    path = tmp_path / "in.csv"
+    path.write_text("col1 col2 col3 col4\n4111 1111 1111 1111\n", encoding="utf-8")
+    rc, out, err = run_piitier_mask(
+        ["mask", str(path), "--skip-columns", "col2", "--delimiter", " "]
+    )
+    assert rc == 0
+    assert out == b"col1 col2 col3 col4\n[NR_KARTY]\n"
+    assert err == b""
+
+
+def test_uc169_skip_columns_rejected_for_txt(tmp_txt_pesel: Path) -> None:
+    rc, out, err = run_piitier_mask(["mask", str(tmp_txt_pesel), "--skip-columns", "PESEL"])
+    assert rc == 2
+    assert out == b""
+    assert err == f"--skip-columns is only supported for .csv files: {tmp_txt_pesel}\n".encode()
+
+
+def test_uc170_delimiter_requires_skip_columns(skip_csv: Path) -> None:
+    rc, out, err = run_piitier_mask(["mask", str(skip_csv), "--delimiter", ";"])
+    assert rc == 2
+    assert out == b""
+    assert err == b"cannot use --delimiter without --skip-columns\n"
+
+
+def test_uc171_tab_delimiter_escape(tmp_path: Path) -> None:
+    path = tmp_path / "in.csv"
+    path.write_text("ID\tNotes\n90051512340\t90051512340\n", encoding="utf-8")
+    rc, out, err = run_piitier_mask(
+        ["mask", str(path), "--delimiter", "\\t", "--skip-columns", "1"]
+    )
+    assert rc == 0
+    assert out == b"ID\tNotes\n90051512340\t[PESEL]\n"
+    assert err == b""

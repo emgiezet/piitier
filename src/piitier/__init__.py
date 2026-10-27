@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 from piitier import rules as _rules
+from piitier.csvskip import filter_spans, parse_csv_field_ranges, plan_skips, sniff_delimiter
 from piitier.fusion import fuse as _fuse
 from piitier.render import mask as _render_mask
 from piitier.spans import Span
 
 __version__ = "0.1.0"
 
-__all__ = ["Anonymizer", "Span", "__version__", "detect", "mask"]
+__all__ = ["Anonymizer", "Span", "__version__", "detect", "mask", "mask_csv"]
 
 
 @runtime_checkable
@@ -48,6 +49,28 @@ def mask(text: str) -> str:
         Returns ``""`` for empty input.
     """
     return _render_mask(text, detect(text))
+
+
+def mask_csv(
+    text: str,
+    skip_columns: list[str] | None = None,
+    *,
+    delimiter: str | None = None,
+    detector: Callable[[str], list[Span]] | None = None,
+    on_unknown_column: Callable[[str], None] | None = None,
+) -> str:
+    """Mask CSV text while leaving fully contained detections in selected cells untouched."""
+    find = detector if detector is not None else detect
+    if not skip_columns:
+        return _render_mask(text, find(text))
+    delim = delimiter if delimiter is not None else sniff_delimiter(text)
+    if len(delim) != 1:
+        raise ValueError("delimiter must be a 1-character string")
+    plan = plan_skips(parse_csv_field_ranges(text, delim), skip_columns)
+    if on_unknown_column is not None:
+        for selector in plan.unknown_selectors:
+            on_unknown_column(selector)
+    return _render_mask(text, filter_spans(find(text), plan.protected_ranges))
 
 
 class Anonymizer:
