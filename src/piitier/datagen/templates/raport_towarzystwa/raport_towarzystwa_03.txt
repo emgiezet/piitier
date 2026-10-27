@@ -1,0 +1,9 @@
+RAPORT TOWARZYSTWA UBEZPIECZEŃ – przegląd ochrony majątkowej, III kwartał 2024
+Opiekun portfela: {{OSOBA#1}}, tel. {{TELEFON}}, e-mail {{EMAIL}}
+
+Numer polisy;Ubezpieczony;PESEL;Lokalizacja;Suma ubezpieczenia;Status szkody
+{{NR_POLISY}};{{OSOBA#2}};{{PESEL#2}};{{ADRES#2}};{{KWOTA}} zł;bez zgłoszenia
+{{NR_POLISY}};{{OSOBA#3}};{{PESEL#3}};{{ADRES#3}};{{KWOTA}} zł;zgłoszenie {{NR_SZKODY}}
+{{NR_POLISY}};{{OSOBA#4}};{{PESEL#4}};{{ADRES#4}};{{KWOTA}} zł;bez zgłoszenia
+
+Raport obejmuje polisy aktywne w okresie sprawozdawczym.

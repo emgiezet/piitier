@@ -17,9 +17,9 @@ templatize --pdf-dir <dir> --out <dir> [--doc-type polisa] [--limit N] [--reject
     Convert real PDFs into placeholder-only templates using local Ollama
     span marking; prints the result counts as JSON.
 
-templatize-tables --src <dir> --out <dir> [--doc-type zestawienie_prowizyjne]
+templatize-tables --src <dir> --out <dir> [--doc-type raport_towarzystwa]
     [--max-per-file N] [--reject-dir <dir>]
-    Convert tabular XLSX/CSV commission-settlement files into placeholder-only
+    Convert tabular XLSX/CSV insurer reports into placeholder-only
     templates; prints the result counts as JSON.
 
 Exit codes
@@ -147,8 +147,8 @@ def main() -> None:
     tt_p.add_argument("--out", type=Path, required=True, metavar="DIR", help="Templates root.")
     tt_p.add_argument(
         "--doc-type",
-        default="zestawienie_prowizyjne",
-        help="Document type (default: zestawienie_prowizyjne).",
+        default="raport_towarzystwa",
+        help="Document type (default: raport_towarzystwa).",
     )
     tt_p.add_argument(
         "--max-per-file",

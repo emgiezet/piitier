@@ -1,7 +1,0 @@
-numer polisy	imię i nazwisko ubezpieczającego	data sprzedaży polisy	składka	imię i nazwisko agenta
-{{NR_POLISY}}	{{OSOBA#1}}	2024-03-04	{{KWOTA}}	{{OSOBA#2}}
-{{NR_POLISY}}	{{OSOBA#3}}	2024-03-07	{{KWOTA}}	{{OSOBA#2}}
-{{NR_POLISY}}	{{OSOBA#4}}	2024-03-11	{{KWOTA}}	{{OSOBA#5}}
-{{NR_POLISY}}	{{OSOBA#6}}	2024-03-15	{{KWOTA}}	{{OSOBA#5}}
-{{NR_POLISY}}	{{OSOBA#7}}	2024-03-19	{{KWOTA}}	{{OSOBA#2}}
-{{NR_POLISY}}	{{OSOBA#1}}	2024-03-26	{{KWOTA}}	{{OSOBA#8}}

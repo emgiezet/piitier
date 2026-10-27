@@ -87,7 +87,7 @@ Punkty odniesienia z istniejących prac:
 
 **Licencje i RODO:**
 - Dane w 100% syntetyczne nie są danymi osobowymi, więc publikacja datasetu na HF jest bezpieczna. Nadal sprawdzaj, czy LLM nie „wyrecytował” prawdziwych osób; filtruj nazwiska znanych osób lub losuj je wyłącznie z Fakera.
-- Dane od pracodawcy (Insly) lub klientów: **nie używaj bez umowy i podstawy prawnej**. Bezpieczna ścieżka to zbiór ewaluacyjny przetwarzany wyłącznie on-prem u partnera (model jedzie do danych, nie odwrotnie), z umową powierzenia lub NDA i bez publikacji.
+- Dane od pracodawcy lub klientów: **nie używaj bez umowy i podstawy prawnej**. Bezpieczna ścieżka to zbiór ewaluacyjny przetwarzany wyłącznie on-prem u partnera (model jedzie do danych, nie odwrotnie), z umową powierzenia lub NDA i bez publikacji.
 - Licencja wyjściowego datasetu musi być zgodna ze źródłami (CC BY 4.0 wymaga atrybucji; CC BY 3.0 KPWr – także). Licencja modelu bazowego (Apache 2.0 vs licencje Bielika/PLLuM) determinuje licencję modelu pochodnego.
 
 ## 4. Taksonomia encji i ramy prawne
@@ -245,7 +245,7 @@ Kontekst z literatury: w benchmarku LLM-Anonymizer (Wiest i in., zespół J.N. K
 - **Ceny GPU** w Polsce były w 2026 r. ekstremalnie zmienne. Cen używanych RTX 3090 nie weryfikowałem. Ceny chmurowe różnią się zależnie od źródła i daty.
 - **Finansowanie:** ostatni nabór NGI Zero Commons Fund jest zamknięty.\[53\] Ścieżka SMART wymaga spółki i dużego budżetu B+R. Szczegóły programów NCBR, EIC i inwestorów CEE wymagają aktualnej weryfikacji.
 - **Prawo:** opis RODO, AI Act, DORA i tajemnic sektorowych jest orientacyjny i wymaga konsultacji z prawnikiem, zwłaszcza status wydłużenia terminów AI Act i to, czy konkretny tryb maskowania spełnia próg anonimizacji w danym kontekście.
-- **Konflikt interesów:** jeśli pracujesz w Insly, upewnij się, że umowa o pracę nie przypisuje pracodawcy praw do projektu i że nie używasz danych ani zasobów firmy bez zgody.
+- **Konflikt interesów:** upewnij się, że umowa o pracę nie przypisuje pracodawcy praw do projektu i że nie używasz danych ani zasobów firmy bez zgody.
 
 ## Sources
 

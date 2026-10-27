@@ -1,9 +1,0 @@
-Rozliczenie prowizji agencyjnej – kwartał III 2024
-Agencja: NIP {{NIP}}; opiekun rozliczeń: {{OSOBA#1}}, tel. {{TELEFON}}, e-mail {{EMAIL}}
-
-nr umowy;klient;PESEL klienta;data zawarcia;składka roczna;stawka;prowizja
-{{NR_UMOWY}};{{OSOBA#2}};{{PESEL}};2024-07-02;{{KWOTA}} zł;12%;{{KWOTA}} zł
-{{NR_UMOWY}};{{OSOBA#3}};{{PESEL}};2024-08-14;{{KWOTA}} zł;10%;{{KWOTA}} zł
-{{NR_UMOWY}};{{OSOBA#4}};{{PESEL}};2024-09-23;{{KWOTA}} zł;12%;{{KWOTA}} zł
-
-Prowizję przekazano na rachunek {{IBAN}}.

@@ -36,7 +36,7 @@ _ALLOWED_DOC_TYPES = frozenset(
         "polisa",
         "skierowanie",
         "transkrypcja_infolinii",
-        "zestawienie_prowizyjne",
+        "raport_towarzystwa",
     }
 )
 

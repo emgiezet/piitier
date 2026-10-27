@@ -1,11 +1,9 @@
 .aisdlc/
 data/
 raw_data/
-# Templates derived from raw_data/ (client/employer documents): local only, never committed
-# (CLAUDE.md invariant 2). Regenerate with `python -m piitier.datagen templatize` and
-# `python -m piitier.datagen templatize-tables`.
-src/piitier/datagen/templates/polisa/polisa_pdf_????????????.txt
-src/piitier/datagen/templates/zestawienie_prowizyjne/zestawienie_prowizyjne_????????????.txt
+# Derived templates from private source files are local only (CLAUDE.md invariant 2).
+# Covers existing local templates as well as output from templatize/templatize-tables.
+src/piitier/datagen/templates/*/*_????????????.txt
 src/piitier/datagen/templates/manifest.json
 training/out/
 __pycache__/

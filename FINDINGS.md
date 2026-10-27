@@ -39,13 +39,13 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 
 ### Rebuild the local calibration split
 
-`data/synthetic/v0.3` was trained with **338** templates (218 policy, 81 table). A clean
-checkout has only 6 policy and 3 hand-written table templates; substituting that set would
-change the split and invalidate the measured result. First restore the private, gitignored
-historical template backup to `data/derived-templates/` (see `docs/DATASET_CARD.md` for its
-origin), and the original `data/synthetic/v0.3/{train,dev}.jsonl`. Neither is distributed in git.
-The following assembles the original 338 templates (the 3 newer hand-written table templates
-were not part of v0.3), then runs the build command in `training/configs/pii-5-v3.yaml`:
+`data/synthetic/v0.3` was trained with **338** templates (218 policy, 81 table). A current
+checkout has 6 policy and 3 synthetic insurer-report templates, so its output cannot
+reproduce that historical corpus. To rerun the calibration procedure below, first check out
+the historical generator revision and restore the private, gitignored template backup to
+`data/derived-templates/` and the original `data/synthetic/v0.3/{train,dev}.jsonl`.
+Neither is distributed in git. The following commands describe the historical revision only;
+its commission-table document type is not supported by the current generator:
 
 ```bash
 uv run python - <<'PY'

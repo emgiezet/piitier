@@ -1,0 +1,8 @@
+RAPORT TOWARZYSTWA UBEZPIECZEŃ – portfel polis, marzec 2024
+
+Numer polisy	Ubezpieczający	Data zawarcia	Składka roczna	Przedmiot ochrony
+{{NR_POLISY}}	{{OSOBA#1}}	2024-03-04	{{KWOTA}} PLN	pojazd {{NR_REJESTRACYJNY}}
+{{NR_POLISY}}	{{OSOBA#2}}	2024-03-07	{{KWOTA}} PLN	pojazd {{NR_REJESTRACYJNY}}
+{{NR_POLISY}}	{{OSOBA#3}}	2024-03-11	{{KWOTA}} PLN	ubezpieczenie majątkowe
+
+Łączny przypis składki: {{KWOTA}} PLN

@@ -65,10 +65,6 @@ Act
 Car
 Data
 
-# Insly document-system stamp
-Weryf
-Insly
-
 # Legal and data-protection boilerplate
 Rozporządzenie
 Parlamentu
@@ -405,9 +401,7 @@ Mondeo
 Kombi
 Edition
 
-# Commission statements (tabular)
-Prowizja
-Prow
+# Insurance report and policy vocabulary
 Stawka
 Podst
 Nal
@@ -439,9 +433,6 @@ Wznawiana
 Wznowienie
 Wznowionej
 Pośrednika
-Prowizyjna
-Prowizyjne
-Prowizyjnej
 Użytkownika
 Użytkownik
 Naliczona

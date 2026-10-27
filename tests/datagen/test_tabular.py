@@ -1,4 +1,4 @@
-"""Tests for piitier.datagen.tabular (commission-settlement template harvester)."""
+"""Tests for piitier.datagen.tabular (insurer-report template harvester)."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def _write_csv(path: Path, headers: list[str], rows: list[list[Any]], delim: str
             writer.writerow(row)
 
 
-def _accepted_templates(out: Path, doc_type: str = "zestawienie_prowizyjne") -> list[str]:
+def _accepted_templates(out: Path, doc_type: str = "raport_towarzystwa") -> list[str]:
     """Return sorted list of accepted template file contents."""
     return sorted(p.read_text(encoding="utf-8") for p in (out / doc_type).glob("*.txt"))
 
@@ -124,12 +124,12 @@ def test_map_header_staff() -> None:
 
 
 def test_map_header_amount() -> None:
-    assert _map_header("Prowizja") == (Label.KWOTA, "other")
+    assert _map_header("Odszkodowanie") == (Label.KWOTA, "other")
     assert _map_header("Inkaso") == (Label.KWOTA, "other")
     assert _map_header("Składka") == (Label.KWOTA, "other")
     assert _map_header("Do wypłaty") == (Label.KWOTA, "other")
     assert _map_header("PODST NAL [PLN]") == (Label.KWOTA, "other")
-    assert _map_header("STAWKA PROW [%]") == (Label.KWOTA, "other")
+    assert _map_header("Kwota wypłaty") == (Label.KWOTA, "other")
 
 
 def test_map_header_unmapped() -> None:
@@ -156,10 +156,10 @@ def test_uc_header_detection_with_preamble(tmp_path: Path) -> None:
     csv_path = src / "test.csv"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as fh:
         w = csv.writer(fh, delimiter=";")
-        w.writerow(["Szczegóły zestawienia prowizyjnego nr B/001/2025"])
-        w.writerow(["Podstawa naliczenia prowizji łącznie: 5000,00 zł"])
+        w.writerow(["Raport towarzystwa za marzec 2024"])
+        w.writerow(["Łączna składka: 5000,00 zł"])
         w.writerow([])
-        w.writerow(["Nr polisy", "Klient", "PESEL", "Prowizja"])
+        w.writerow(["Nr polisy", "Klient", "PESEL", "Odszkodowanie"])
         w.writerow(["POL-001", "Jan Testowy", _VALID_PESEL, "500"])
         w.writerow(["POL-002", "Anna Testowa", "56120303455", "300"])
 
@@ -172,7 +172,7 @@ def test_uc_header_detection_with_preamble(tmp_path: Path) -> None:
     assert "{{OSOBA#1}}" in templates[0] or "{{PESEL#1}}" in templates[0]
     # Template must NOT contain the preamble text
     for t in templates:
-        assert "Szczegóły zestawienia" not in t
+        assert "Raport towarzystwa" not in t
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ def test_uc_header_detection_with_preamble(tmp_path: Path) -> None:
 
 def test_uc_fullname_pesel_share_entity(tmp_path: Path) -> None:
     """OSOBA and PESEL in the same row share the same entity id (#n)."""
-    headers = ["Nr polisy", "Klient", "PESEL", "Prowizja"]
+    headers = ["Nr polisy", "Klient", "PESEL", "Składka"]
     rows = [
         ["POL-001", "Jan Testowy", _VALID_PESEL, "500"],
         ["POL-002", "Anna Testowa", "56120303455", "300"],
@@ -206,7 +206,7 @@ def test_uc_fullname_pesel_share_entity(tmp_path: Path) -> None:
 
 def test_uc_split_name_share_entity(tmp_path: Path) -> None:
     """IMIE and NAZWISKO columns for the same role share one entity id per row."""
-    headers = ["Nr polisy", "KLIENT_IMIE", "KLIENT_NAZWISKO", "Prowizja"]
+    headers = ["Nr polisy", "KLIENT_IMIE", "KLIENT_NAZWISKO", "Składka"]
     rows = [
         ["POL-001", "Jan", "Testowy", "500"],
         ["POL-002", "Anna", "Testowa", "300"],
@@ -230,7 +230,7 @@ def test_uc_split_name_share_entity(tmp_path: Path) -> None:
 
 def test_uc_client_and_staff_distinct_entities(tmp_path: Path) -> None:
     """Client OSOBA and staff OSOBA in the same row use different entity ids."""
-    headers = ["Nr polisy", "Klient", "Agent dystrybutor", "Prowizja"]
+    headers = ["Nr polisy", "Klient", "Agent dystrybutor", "Składka"]
     rows = [
         ["POL-001", "Jan Testowy", "Ewa Agentowa", "500"],
         ["POL-002", "Anna Testowa", "Piotr Agentowy", "300"],
@@ -253,8 +253,8 @@ def test_uc_client_and_staff_distinct_entities(tmp_path: Path) -> None:
 
 
 def test_uc_amount_column_maps_to_kwota(tmp_path: Path) -> None:
-    """Money columns like 'Prowizja' and 'Składka' map to {{KWOTA}}."""
-    headers = ["Nr polisy", "Klient", "Składka", "Prowizja"]
+    """Insurer amounts such as premiums and claim payouts become {{KWOTA}}."""
+    headers = ["Nr polisy", "Klient", "Składka", "Odszkodowanie"]
     rows = [
         ["POL-001", "Jan Testowy", "500", "50"],
         ["POL-002", "Anna Testowa", "300", "30"],
@@ -275,7 +275,7 @@ def test_uc_amount_column_maps_to_kwota(tmp_path: Path) -> None:
 
 def test_uc_long_id_column_dropped(tmp_path: Path) -> None:
     """Unmapped columns with 7+ digit values are dropped (whole column inc. header)."""
-    headers = ["Nr polisy", "Klient", "Id wplaty", "Prowizja"]
+    headers = ["Nr polisy", "Klient", "Id wplaty", "Składka"]
     rows = [
         ["POL-001", "Jan Testowy", "12345678901", "500"],
         ["POL-002", "Anna Testowa", "98765432109", "300"],
@@ -296,7 +296,7 @@ def test_uc_long_id_column_dropped(tmp_path: Path) -> None:
 
 def test_uc_unmapped_pesel_detected(tmp_path: Path) -> None:
     """A checksum-valid PESEL in an unmapped column is replaced with {{PESEL}}."""
-    headers = ["Nr polisy", "Prowizja", "Identyfikator"]
+    headers = ["Nr polisy", "Składka", "Identyfikator"]
     rows = [
         ["POL-001", "500", _VALID_PESEL],
         ["POL-002", "300", _VALID_PESEL],
@@ -324,7 +324,7 @@ def test_uc_leaked_name_causes_rejection(tmp_path: Path) -> None:
     out = tmp_path / "out"
     reject_dir = Path("/tmp/tabular_test_rejects")
 
-    headers = ["Nr polisy", "Prowizja", "Komentarz"]
+    headers = ["Nr polisy", "Składka", "Komentarz"]
     rows = [
         ["POL-001", "500", "Jan Kowalski"],
         ["POL-002", "300", "Anna Nowak"],
@@ -352,7 +352,7 @@ def test_uc_deduplication(tmp_path: Path) -> None:
     out = tmp_path / "out"
 
     # Write a file with just 2 rows so all 3 windows are identical
-    headers = ["Nr polisy", "Klient", "PESEL", "Prowizja"]
+    headers = ["Nr polisy", "Klient", "PESEL", "Składka"]
     rows = [
         ["POL-001", "Jan Testowy", _VALID_PESEL, "500"],
         ["POL-002", "Anna Testowa", "56120303455", "300"],
@@ -360,7 +360,7 @@ def test_uc_deduplication(tmp_path: Path) -> None:
     _write_xlsx(src / "test.xlsx", headers, rows)
 
     templatize_tables(src, out, reject_dir=Path("/tmp"))
-    templates = list((out / "zestawienie_prowizyjne").glob("*.txt"))
+    templates = list((out / "raport_towarzystwa").glob("*.txt"))
     # Even if 3 windows are attempted, only unique ones are written
     # Filenames include sha256; no duplicates
     names = {t.name for t in templates}
@@ -397,7 +397,7 @@ def test_uc_reject_dir_inside_cwd_raises(tmp_path: Path) -> None:
 
 def test_detect_header_row_first_row() -> None:
     rows: list[list[Any]] = [
-        ["Nr polisy", "Klient", "PESEL", "Prowizja"],
+        ["Nr polisy", "Klient", "PESEL", "Składka"],
         ["POL-001", "Jan Testowy", "44051401359", "500"],
     ]
     assert _detect_header_row(rows) == 0
@@ -405,9 +405,9 @@ def test_detect_header_row_first_row() -> None:
 
 def test_detect_header_row_with_preamble() -> None:
     rows: list[list[Any]] = [
-        ["Zestawienie prowizyjne nr B/001/2025"],
+        ["Raport towarzystwa za marzec 2024"],
         [None],
-        ["Nr polisy", "Klient", "PESEL", "Prowizja"],
+        ["Nr polisy", "Klient", "PESEL", "Składka"],
         ["POL-001", "Jan Testowy", "44051401359", "500"],
     ]
     assert _detect_header_row(rows) == 2
@@ -434,13 +434,13 @@ def test_uc_accepted_templates_build_and_check(tmp_path: Path) -> None:
     build_out = tmp_path / "build"
 
     # Write an XLSX with valid data
-    headers = ["Nr polisy", "Klient", "PESEL", "Agent", "Prowizja"]
+    headers = ["Nr polisy", "Klient", "PESEL", "Agent", "Odszkodowanie"]
     rows = [
         ["POL-001", "Jan Testowy", _VALID_PESEL, "Ewa Agentowa", "500"],
         ["POL-002", "Anna Testowa", "56120303455", "Piotr Agentowy", "300"],
         ["POL-003", "Tomasz Testowy", "80010112345", "Ewa Agentowa", "400"],
     ]
-    _write_xlsx(src / "komisja.xlsx", headers, rows)
+    _write_xlsx(src / "raport.xlsx", headers, rows)
 
     result = templatize_tables(src, tmpl_out, reject_dir=tmp_path / "rejects")
     assert result["accepted"] > 0, f"No templates accepted: {result['rejected']}"
@@ -463,7 +463,7 @@ def test_uc_csv_semicolon_delimiter(tmp_path: Path) -> None:
 
     _write_csv(
         src / "test.csv",
-        ["Nr polisy", "Klient", "PESEL", "Prowizja"],
+        ["Nr polisy", "Klient", "PESEL", "Składka"],
         [
             ["POL-001", "Jan Testowy", _VALID_PESEL, "500"],
             ["POL-002", "Anna Testowa", "56120303455", "300"],
@@ -487,7 +487,7 @@ def test_uc_manifest_written(tmp_path: Path) -> None:
 
     _write_xlsx(
         src / "test.xlsx",
-        ["Nr polisy", "Klient", "PESEL", "Prowizja"],
+        ["Nr polisy", "Klient", "PESEL", "Składka"],
         [
             ["POL-001", "Jan Testowy", _VALID_PESEL, "500"],
             ["POL-002", "Anna Testowa", "56120303455", "300"],
@@ -500,7 +500,7 @@ def test_uc_manifest_written(tmp_path: Path) -> None:
     assert isinstance(manifest, list)
     assert len(manifest) >= 1
     rec = manifest[-1]
-    assert rec["doc_type"] == "zestawienie_prowizyjne"
+    assert rec["doc_type"] == "raport_towarzystwa"
     assert rec["generator"] == "tabular"
     assert "files_read" in rec
     assert "accepted" in rec
@@ -519,7 +519,7 @@ def test_uc_files_read_counts_correctly(tmp_path: Path) -> None:
     for i in range(3):
         _write_xlsx(
             src / f"file{i}.xlsx",
-            ["Nr polisy", "Klient", "PESEL", "Prowizja"],
+            ["Nr polisy", "Klient", "PESEL", "Składka"],
             [
                 [f"POL-{i}01", "Jan Testowy", _VALID_PESEL, "500"],
                 [f"POL-{i}02", "Anna Testowa", "56120303455", "300"],
@@ -541,10 +541,10 @@ def test_uc_lock_files_skipped(tmp_path: Path) -> None:
     out = tmp_path / "out"
 
     # Create a lock file – should be silently skipped
-    (src / "~$komisja.xlsx").write_bytes(b"lock")
+    (src / "~$raport.xlsx").write_bytes(b"lock")
     _write_xlsx(
-        src / "komisja.xlsx",
-        ["Nr polisy", "Klient", "PESEL", "Prowizja"],
+        src / "raport.xlsx",
+        ["Nr polisy", "Klient", "PESEL", "Składka"],
         [
             ["POL-001", "Jan Testowy", _VALID_PESEL, "500"],
             ["POL-002", "Anna Testowa", "56120303455", "300"],
@@ -562,7 +562,7 @@ def test_uc_lock_files_skipped(tmp_path: Path) -> None:
 
 
 def test_uc_absent_cells_stay_literal(tmp_path: Path) -> None:
-    headers = ["Nr polisy", "Klient", "PESEL", "Prowizja"]
+    headers = ["Nr polisy", "Klient", "PESEL", "Składka"]
     rows = [
         ["POL-001", "Jan Testowy", "-", "500"],
         ["POL-002", None, "56120303455", "0"],
@@ -583,7 +583,7 @@ def test_uc_absent_cells_stay_literal(tmp_path: Path) -> None:
 
 
 def test_uc_nip_regon_anonymous(tmp_path: Path) -> None:
-    headers = ["Nr polisy", "Klient", "NIP", "REGON", "Prowizja"]
+    headers = ["Nr polisy", "Klient", "NIP", "REGON", "Składka"]
     rows = [
         ["POL-001", "Jan Testowy", "1234563218", "123456789", "500"],
         ["POL-002", "Anna Testowa", "9876543219", "987654321", "300"],
@@ -621,7 +621,7 @@ def test_uc_nip_regon_anonymous(tmp_path: Path) -> None:
     ],
 )
 def test_identifier_columns_dropped(header: str, value: str) -> None:
-    headers = ["Nr polisy", "Klient", header, "Prowizja"]
+    headers = ["Nr polisy", "Klient", header, "Składka"]
     rows = [["POL-001", "Jan Testowy", value, "500"], ["POL-002", "Anna Testowa", value, "300"]]
     col_lookup, drop_cols = _analyse_columns(headers, rows)
     text = _render_window(headers, col_lookup, drop_cols, rows, "\t")
@@ -646,14 +646,14 @@ def test_map_header_spelling_variants(header: str, label: Label) -> None:
 
 def test_header_row_with_numeric_cell_is_skipped() -> None:
     rows: list[list[Any]] = [
-        ["Prowizja naliczona", "88.98", "Klient"],
-        ["Nr polisy", "Klient", "Prowizja"],
+        ["Składka przypisana", "88.98", "Klient"],
+        ["Nr polisy", "Klient", "Składka"],
     ]
     assert _detect_header_row(rows) == 1
 
 
 def test_window_ends_at_sparse_summary_row() -> None:
-    headers = ["Nr polisy", "Klient", "Prowizja"]
+    headers = ["Nr polisy", "Klient", "Składka"]
     rows: list[list[Any]] = [
         ["POL-001", "Jan Testowy", "500"],
         ["POL-002", "Anna Testowa", "300"],
