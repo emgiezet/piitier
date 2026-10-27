@@ -19,9 +19,9 @@ tel. [TELEFON], e-mail [EMAIL]. Rozpoznanie: [ROZPOZNANIE].
 Kwota roszczenia: [KWOTA]. Lekarz prowadzący: [LEKARZ_n].
 ```
 
-> **Status: 0.1.0 release candidate.** Library, CLI, TUI, training and evaluation pipeline are complete.
-> The `pii-5-v4` checkpoint is being prepared for the Hugging Face Hub. piitier is a tool, not a certificate
-> of anonymisation; review its output before you rely on it.
+> **Status: 0.1.0.** Library, CLI, TUI, training and evaluation pipeline are complete.
+> The `pii-5-v4` checkpoint is being prepared for the Hugging Face Hub; it is not yet published
+> there. piitier is a tool, not a certificate of anonymisation; review its output before you rely on it.
 
 ## Why piitier
 
@@ -46,14 +46,22 @@ traceable to a report in `eval/reports/`.
 
 ## Install
 
-Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+**From PyPI** (no git clone required):
+
+```bash
+pip install piitier              # rules-only masking; no torch dependency
+pip install 'piitier[ner]'       # adds torch + transformers for the NER model
+pip install 'piitier[onnx]'      # adds ONNX runtime inference instead of PyTorch
+```
+
+**From source** (development):
 
 ```bash
 git clone https://github.com/emgiezet/piitier && cd piitier
 uv sync            # runtime + dev dependencies (torch/transformers for the NER model)
 ```
 
-Rules-only masking (`piitier mask` without `--model`) needs only the runtime dependencies; importing
+Rules-only masking (`piitier mask` without `--model`) needs only the base package; importing
 `piitier` never loads torch.
 
 ## Quick start
@@ -61,20 +69,30 @@ Rules-only masking (`piitier mask` without `--model`) needs only the runtime dep
 ### Command line
 
 ```bash
+piitier --version
 uv run piitier mask document.pdf                                        # rules only; .txt .md .csv .pdf (text layer)
 uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold 0.78
+uv run piitier mask document.pdf --model emgiezet/piitier-pl --revision <sha> --threshold 0.78  # Hub repo id
 uv run piitier mask customers.csv --skip-columns "ID,2"                 # keep columns by header name or 1-based index
 uv run piitier mask customers.csv --skip-columns "ID" --delimiter ";"   # override delimiter auto-detection
 uv run piitier compare claims.csv --model <checkpoint-dir> --device cuda  # interactive TUI: pick columns, mask, export
+uv run piitier compare claims.csv --model emgiezet/piitier-pl --revision <sha>  # Hub repo id form
 uv run piitier scan src/ docs/                                          # list checksum-valid identifiers, never their values
+uv run piitier scan src/ --write-allowlist .pii-allowlist               # write all fingerprints and exit 0
 ```
 
-- `mask` writes the masked document; exit code 2 is a usage or input error (missing file or model, invalid
-  threshold). Error messages name the path, never the document content.
-- `compare` opens a side-by-side terminal view. For CSV it shows a table preview with per-column checkboxes
-  (all masked by default), then lets you export next to the source without overwriting existing files.
-- `scan` prints `path:line:column: LABEL` for every checksum-valid identifier and exits 1 if any is missing
-  from `--allowlist`. It runs as a pre-commit hook in this repository; use it to gate your own.
+- `mask` writes the masked document. Exit 0 on success; exit 2 on a usage or input error (missing
+  file, unsupported type, invalid threshold, model download failure); exit 3 when the input PDF has
+  no text layer. Error messages name the path, never the document content.
+- `compare` opens a side-by-side terminal view. For CSV it shows a table preview with per-column
+  checkboxes (all masked by default), then lets you export next to the source without overwriting
+  existing files. `--model` accepts a local directory or a Hugging Face Hub repo id; `--revision`
+  pins a Hub branch, tag, or commit hash.
+- `scan` prints `path:line:column: LABEL` for every checksum-valid identifier. Exit 0 when nothing
+  outside the allowlist is found; exit 1 when unallowlisted identifiers are present; exit 2 on a
+  missing path or missing allowlist file. `--write-allowlist <file>` writes fingerprints of all
+  findings (merged with any existing allowlist) and exits 0 without printing findings. Run as a
+  pre-commit hook to gate your own repository.
 
 ### Python
 
@@ -89,12 +107,19 @@ piitier.mask(text)
 piitier.detect(text)
 # -> [Span(start=36, end=47, label=<Label.PESEL: '[PESEL]'>, source='rule', score=1.0, status='valid')]
 
-anon = piitier.Anonymizer(model="training/out/pii-5-v4", threshold=0.78)  # model loaded once
+anon = piitier.Anonymizer(model="training/out/pii-5-v4", threshold=0.78)  # local directory
 anon.mask(text)
 # -> 'Poszkodowana [IMIĘ_n] [NAZWISKO_n], PESEL [PESEL].'
 
+hub_anon = piitier.Anonymizer(
+    model="emgiezet/piitier-pl",  # Hugging Face Hub repo id; requires piitier[ner]
+    revision="main",              # branch, tag, or commit hash
+    threshold=0.78,
+)
+hub_anon.mask(text)
+# -> 'Poszkodowana [IMIĘ_n] [NAZWISKO_n], PESEL [PESEL].'
+
 piitier.mask_csv(csv_text, skip_columns=["ID"], delimiter=";")  # column-aware CSV masking
-```
 
 `Anonymizer` also accepts `predictor=` (any object with `predict(text) -> list[Span]`), so you can plug in
 your own model behind the same rules and fusion layer.
@@ -135,9 +160,9 @@ test keeps it in sync with the `Label` enum.
 
 ## The model
 
-| | |
-|---|---|
 | Release candidate | `pii-5-v4`, calibrated threshold **0.78** ([`training/configs/pii-5-v4.yaml`](training/configs/pii-5-v4.yaml)) |
+| Model card | [`training/model_cards/pii-5-v4/README.md`](training/model_cards/pii-5-v4/README.md) |
+| Hub repo id | `emgiezet/piitier-pl` — upload is a manual step and the weights are not yet published |
 | Base | [`bardsai/eu-pii-anonimization-multilang-v2`](https://huggingface.co/bardsai/eu-pii-anonimization-multilang-v2) — ModernBERT, 307M parameters, Apache-2.0 |
 | Training data | synthetic Polish corpus, 9 document types, see [`docs/DATASET_CARD.md`](docs/DATASET_CARD.md) |
 | Formats | PyTorch safetensors and FP32 ONNX. INT8 is deliberately withheld: it drops recall by 0.018, above the 0.01 tolerance, so `training.export_onnx` refuses to ship it |
@@ -217,8 +242,8 @@ design rationale and roadmap.
 |---|---|
 | Rules + NER + fusion + renderer, CLI, TUI, CSV column control | done |
 | Privacy-gated calibration (`pii-5-v4`, threshold 0.78) | done |
-| Publish `pii-5-v4` on the Hugging Face Hub with a model card | in progress |
-| Load models by Hub id (`--model org/piitier-pl`) | planned |
+| Load models by Hub id (`--model owner/name`, `--revision`) | done |
+| Publish `pii-5-v4` on the Hugging Face Hub with a model card | in progress — weights upload is a manual step |
 | Frozen `bench/v1/test` split, 300–500 double-annotated documents | planned |
 | Numbered coreference placeholders (`[OSOBA_1]`, `[OSOBA_2]`) | planned |
 | Reversible `pseudonymize` mode with an encrypted mapping | planned |
@@ -227,12 +252,12 @@ design rationale and roadmap.
 ## Known limitations
 
 - Placeholders are not numbered yet: every mention of a person renders as `[OSOBA_n]` / `[IMIĘ_n]`.
-- The NER can split one word across two entity types (`[NAZWISKO_n][OSOBA_n]`).
-- The payment-card rule can match Luhn-valid 16-digit runs inside long decimals.
 - `bench/v1` has 6 documents; the `test/` split does not exist yet.
-- `pip install piitier` from a wheel gives rules-only masking; the NER extras come with `uv sync`.
+- `pip install piitier` without extras gives rules-only masking; NER requires `pip install 'piitier[ner]'`.
 - Quasi-identifiers (job title, employer, event dates) and colloquial health descriptions are outside the
   current taxonomy; see the roadmap section of `docs/TAXONOMY.md`.
+- `uv.lock` is excluded from `piitier scan` because NIP/PESEL/REGON rules fire on package hashes; synthetic
+  values inside the lock file are not vetted.
 
 ## Repository layout
 
@@ -240,6 +265,7 @@ design rationale and roadmap.
 |---|---|
 | `src/piitier/` | library: `rules/` (checksum validators), `ner/` (inference), `fusion.py`, `render.py`, `loaders.py`, `csvskip.py`, `cli.py`, `tui.py`, `datagen/` |
 | `training/` | fine-tuning, calibration and ONNX export, driven by `training/configs/*.yaml` |
+| `training/model_cards/` | model cards for each released checkpoint |
 | `eval/` | metrics, baseline adapters, benchmark runner and reports |
 | `bench/` | PL-PII-Bench gold set (versioned) |
 | `docs/` | `PLAN.md`, `TAXONOMY.md`, `DATASET_CARD.md`, `bench/PROTOCOL.md`, `labelling/GUIDELINES.md` |
@@ -255,9 +281,10 @@ uv run pytest -q -m "not integration"      # unit tests, no network
 uv run pytest -q -m integration            # downloads checkpoints from the Hugging Face Hub
 ```
 
-CI runs the hooks and unit tests on every pull request and push to `main`. Work is specced first: every
-change has a `specs/<TICKET>/spec.md` whose `UC-<n>` ids appear in test names. See
-[`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CLAUDE.md`](CLAUDE.md).
+CI runs the hooks, unit tests, and a wheel build (install + smoke test) on every pull request and push to
+`main` and `release/**`; integration tests run weekly and on demand via `.github/workflows/integration.yml`.
+Work is specced first: every change has a `specs/<TICKET>/spec.md` whose `UC-<n>` ids appear in test names.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CLAUDE.md`](CLAUDE.md).
 
 ## License
 

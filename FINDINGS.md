@@ -14,7 +14,8 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 | Threshold calibration with a strict-recall target of 0.98 cannot succeed for `pii-5-v3` (best strict recall 0.944 synthetic, 0.636 bench); no threshold is written. Partial recall on synthetic dev is 0.982 | PII-7 investigation; PII-10 write-on-success |
 | Dedicated calibration split (1 031 synthetic documents, 14 766 gold spans; 25 duplicate zero-gold rows removed against v0.3 train/dev): strict recall at threshold 0.0 is **0.9446** (13 948 TP, 818 FN), precision 0.8846 (1 819 FP). Target 0.98 not met; config unchanged | `training/out/pii-5-v3/calibration_sweep.json` (77 evaluated thresholds, local-only); `data/synthetic/v0.3-cal/dev.jsonl` (gitignored; built from local historical v0.3 templates with seed 900042) |
 | `pii-5-v4` uses six new **training-only** medical templates; the original calibration split and strict metric are unchanged. Privacy-gated calibration selects **0.78**: synthetic strict recall **0.9866** (14 568 TP, 198 FN), precision **0.9711** (433 FP), Wilson 95% [0.9846, 0.9883]. Synthetic person-identification group recall remains **0.9509**. On handwritten `bench/v1/dev`, strict recall is **30/40** and leaked values **0/40**. Without the safety gate, threshold 0.98 leaked 8/40 values despite passing synthetic recall. | [`eval/reports/pii-5-v4/calibration_sweep.json`](eval/reports/pii-5-v4/calibration_sweep.json), `training/configs/pii-5-v4.yaml`, [`eval/reports/pii-5-v4/2026-10-27-ner-benchv1-dev.md`](eval/reports/pii-5-v4/2026-10-27-ner-benchv1-dev.md); weights and training corpus stay local-only |
-| The decoder can split one word across two entity types (`Wiśniew` NAZWISKO + `ska` OSOBA) | local tracker issue #2 |
+| The decoder can split one word across two entity types (`Wiśniew` NAZWISKO + `ska` OSOBA) — **fixed** in 0.1.0 by first-subtoken rule (one label per word) | local tracker issue #2; `src/piitier/ner/inference.py`, `tests/ner/test_inference.py` |
+| Word-consistent decoder (first-subtoken rule): `bench/v1/dev` strict F1 unchanged at **0.6897**, leaks **0/40**; the IMIE/NAZWISKO false positives there are single-token label errors, not subword splits, so the fix neither helps nor hurts on the current bench | `src/piitier/ner/inference.py`, `tests/ner/test_inference.py`; commit d4ee335 |
 
 ## Pipeline
 
@@ -25,7 +26,9 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 | A NaN or out-of-range threshold silently dropped every NER span (fail-open); it is now rejected | PII-6-a review |
 | The INT8 gate compared INT8 with INT8 (a directory holding `model_int8.onnx` was scored as ONNX), so it could never trip | PII-7 (PR #10), local issue #1 |
 | Corpus metrics matched spans across documents; the error was ≤ 0.001 F1, but matching is now per document | PII-7 |
-| The payment-card rule matches Luhn-valid 16-digit runs inside decimals (`0.9937050359712231`) and lock-file hashes | found while building `piitier scan` (PII-8); not fixed yet |
+| Payment-card rule no longer matches Luhn-valid digit runs embedded in decimals (`0.9937050359712231`) or lock-file hashes — **fixed** in 0.1.0 | `src/piitier/rules/payment_card.py`, `tests/rules/test_payment_card.py`; commit d4ee335 |
+| `uv.lock` remains excluded from the `piitier scan` hook because NIP/PESEL/REGON rules still fire inside package hashes; no fix yet | `src/piitier/scan.py`, `.pre-commit-config.yaml`; commit d4ee335 |
+| Hub resolution order: local directory wins over a Hub repo id (`owner/name`); `--revision` selects branch/tag/commit for Hub downloads only; Hub support requires the `ner` extra | `src/piitier/ner/hub.py`; commit d4ee335 |
 
 ## Data
 
@@ -208,3 +211,14 @@ coding-agent tool calls, not a span anonymiser. Practices piitier adopted from i
 | CONTRIBUTING and PR template | PII-12 | done |
 | Gate evaluators that refuse undefined metrics (the INT8 gate computes deltas from 0.0) | PROTOCOL.md, rule 1 | open |
 | Redaction hook for coding agents (`PreToolUse` / `PostToolUse`) | — | idea, not specced |
+
+## Release 0.1.0
+
+The following items are open going into the stable release:
+
+- **Frozen test split**: `bench/v1/test` does not exist yet; the full held-out set needs human annotators and double-labelling with kappa ≥ 0.7 (PII-11 tooling done).
+- **Data-licence sign-off**: the training corpus is derived from internal templates; distribution of the model weights requires explicit sign-off before Hub upload.
+- **Hub upload**: `emgiezet/piitier-pl` weights have not been pushed; the publish checklist is at `training/model_cards/pii-5-v4/PUBLISH.md`.
+- **PII-6-b coreference numbering**: re-identified entities are not numbered across a document; tracked but not specced.
+- **PII-6-c pseudonymize mode**: consistent replacement with synthetic values (name → name, PESEL → valid PESEL) is not implemented.
+- **INT8 export gate**: dynamic INT8 quantisation recall is −0.018 below FP32 (exceeds the 0.01 tolerance); the gate blocks export and the INT8 model is not distributed.
