@@ -49,10 +49,10 @@ Each record in `train.jsonl` and `dev.jsonl` is a JSON object with the following
    - `qwen3-coder:30b` (`templatize`) is used solely as a span detector on the text of insurance-policy PDFs: it returns a JSON list of literal fragments with a label (`text`, `label`); the code verifies that each fragment appears verbatim and replaces it with a placeholder itself.
    - No LLM generates PII values or assigns span labels in the corpus; values are injected by code.
 5. **Insurance-policy PDF files (layout donors)**:
-   - Origin: internal document collection (wefox, PZU, Inter Partner Assistance/AXA policies) with **fictitious identities** (not real personal data, though they closely resemble it); approved for training by the data owner; never redistributed.
+   - Origin: the author's own document collection (wefox, PZU, Inter Partner Assistance/AXA policy layouts) with **fictitious identities** (not real personal data, though they closely resemble it); the data owner is the project author, so no third-party permission is involved; never redistributed.
    - Text is extracted with `pypdf`, normalised (NBSP→space, fi/fl ligature substitution, multiple-space collapsing) and passed to a local LLM (`qwen3-coder:30b` via Ollama), which **only identifies spans** for replacement; code rules replace each value with a `{{LABEL}}` placeholder. The acceptance gate (`_gate`) rejects any fragment whose literals retain anything shaped like a PII value: it checks parsing, leaks (9+ digits, dates outside a birth-date context, card numbers, IBANs, postal codes), and label shape.
    - Derived templates (`templates/polisa/polisa_pdf_<hash>.txt`) **are not included in the repository** (`.gitignore`; CLAUDE.md invariant 2: employer and client documents never enter the repo): they are generated locally from legally permitted PDFs via `python -m piitier.datagen templatize`. A clean clone contains only the hand-written `polisa` templates; a corpus rebuilt without the derived local templates will differ from the historical `data/synthetic/v0.3`.
-   - Source licence: **proprietary, not redistributed**. Derived templates are approved for training by the data owner and represent only the layout of the documents without any original values. The output synthetic dataset is published under **CC BY 4.0** solely as a product of code generators and generative models, not of the original PDFs.
+   - Source licence: **owned by the author, not redistributed**. Derived templates keep only the layout of the documents without any original values. The output synthetic dataset is published under **CC BY 4.0** solely as a product of code generators and generative models, not of the original PDFs.
 
 6. **Insurance-company reports (synthetic templates)**:
    - The repository contains three hand-written `raport_towarzystwa_01..03.txt` templates: a policy-portfolio report, a claims-settlement report, and a property-coverage review. The layout and dates are fictional; these are not documents received from insurers.
@@ -130,8 +130,8 @@ Three categories of artefact exist in this project; only the first is distribute
 
 2. **Templates derived from private documents** (insurance-policy PDFs, commission-statement
    XLSX/CSV) — local only, gitignored, never redistributed. They are produced by
-   `python -m piitier.datagen templatize` / `templatize-tables` from source documents that were
-   approved for training by the data owner but cannot be published. The derivation tool replaces
+   `python -m piitier.datagen templatize` / `templatize-tables` from documents owned by the
+   project author, which are not published. The derivation tool replaces
    every PII value with a `{{LABEL}}` placeholder; the acceptance gate rejects fragments that
    retain anything shaped like a PII value. Because these templates are absent from a clean clone,
    a rebuilt corpus will differ from the historical `data/synthetic/v0.3`.

@@ -225,11 +225,13 @@ Source: `eval/reports/pii-5-v4/2026-10-27-ner-benchv1-dev.md`.
 
 - **Synthetic corpus** (`data/synthetic/v0.3` and extensions): CC BY 4.0. Generated from
   publicly distributed templates shipped in this repository.
-- **Private insurer templates:** some templates derived from private insurer document
-  layouts are **not redistributed** and are gitignored. They were approved by the data
-  owner for training only. A clean clone of this repository cannot exactly reproduce the
-  `v0.3` corpus or the calibration split (see `FINDINGS.md`, "Rebuild the local calibration
-  split" section).
+- **Layout-donor documents:** some templates were derived from insurance documents owned
+  by the author (Max Małecki), who also owns and releases these weights. Those documents
+  carried fictitious identities; the derived templates keep only layout, every value is a
+  `{{LABEL}}` placeholder, and they are **not redistributed** (gitignored). No third-party
+  data licence applies to the weights. A clean clone of this repository cannot exactly
+  reproduce the `v0.3` corpus or the calibration split (see `FINDINGS.md`, "Rebuild the
+  local calibration split" section).
 - The calibration split (1 031 docs) was built with seed 900042 from 338 templates
   (218 policy, 81 table), with 25 zero-gold duplicate rows removed.
 

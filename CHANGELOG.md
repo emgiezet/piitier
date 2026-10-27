@@ -53,8 +53,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `uv.lock` is excluded from `piitier scan` because NIP/PESEL/REGON rules fire inside package hashes; no fix yet.
 - No frozen `bench/v1/test` split: the full test set needs human annotators.
 - INT8 export gate is blocked (recall −0.018 exceeds 0.01 tolerance); INT8 model is not distributed.
-- Hub upload of `emgiezet/piitier-pl` weights is manual and has not been performed; data-licence sign-off is pending.
-- Polish TUI button labels (upstream Textual limitation; tracked but not fixed).
+- Hub upload of `emgiezet/piitier-pl` weights is manual and has not been performed.
+- TUI button labels are Polish (`Maskuj kolumny`, `Anonimizuj`).
 
 ---
 

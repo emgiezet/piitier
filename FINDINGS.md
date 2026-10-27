@@ -218,7 +218,7 @@ coding-agent tool calls, not a span anonymiser. Practices piitier adopted from i
 The following items are open going into the stable release:
 
 - **Frozen test split**: `bench/v1/test` does not exist yet; the full held-out set needs human annotators and double-labelling with kappa ≥ 0.7 (PII-11 tooling done).
-- **Data-licence sign-off**: the training corpus is derived from internal templates; distribution of the model weights requires explicit sign-off before Hub upload.
+- **Data provenance**: the layout-donor documents behind the local templates belong to the project author, who also releases the weights; no third-party data licence applies (recorded 2026-10-27, model card "Training data and provenance").
 - **Hub upload**: `emgiezet/piitier-pl` weights have not been pushed; the publish checklist is at `training/model_cards/pii-5-v4/PUBLISH.md`.
 - **PII-6-b coreference numbering**: implemented in 0.1.0 (see Pipeline table above).
 - **PII-6-c pseudonymize mode**: consistent replacement with synthetic values (name → name, PESEL → valid PESEL) is not implemented.
