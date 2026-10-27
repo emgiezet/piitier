@@ -141,7 +141,7 @@ def test_compare_rejects_missing_model_without_printing_document(tmp_path: Path)
     assert "PRIVATE TEST TEXT" not in result.stderr + result.stdout
 
 
-def test_csv_preview_then_multi_select_masks_only_unchecked_column(tmp_path: Path) -> None:
+def test_csv_preview_selects_columns_to_mask_before_export(tmp_path: Path) -> None:
     text = "ID;ID;Notes\r\n90051512340;90051512340;90051512340\r\n"
     source = tmp_path / "in.csv"
     source.write_bytes(text.encode())
@@ -153,17 +153,17 @@ def test_csv_preview_then_multi_select_masks_only_unchecked_column(tmp_path: Pat
             table = app.screen.query_one("#csv-preview", DataTable)
             assert table.get_row_at(0) == ["90051512340"] * 3
             assert len(app.screen.query(Checkbox)) == 3
+            assert all(checkbox.value for checkbox in app.screen.query(Checkbox))
             assert app.spans == []
-            assert not (tmp_path / "in_anonymised.csv").exists()
 
-            await pilot.click("#skip-1")
-            await pilot.click("#skip-2")
+            await pilot.click("#mask-1")
+            await pilot.click("#mask-2")
             await pilot.click("#anonymize")
             await pilot.pause()
             assert not isinstance(app.screen, CsvSelectionScreen)
-            assert [text[span.start : span.end] for span in app.spans] == ["90051512340"]
-            assert build_diff(text, app.spans, 0)[1].plain == (
-                "ID;ID;Notes\n90051512340;90051512340;[PESEL]\n"
+            await pilot.click("#export")
+            assert (tmp_path / "in_anonymised.csv").read_bytes() == (
+                b"ID;ID;Notes\r\n90051512340;90051512340;[PESEL]\r\n"
             )
             assert source.read_bytes() == text.encode()
 
@@ -182,10 +182,10 @@ def test_csv_preview_keeps_arrow_navigation_for_table_and_keyboard_checkboxes(
             table.focus()
             await pilot.press("down")
             assert table.cursor_coordinate.row == 1
-            checkbox = app.screen.query_one("#skip-1", Checkbox)
+            checkbox = app.screen.query_one("#mask-1", Checkbox)
             checkbox.focus()
             await pilot.press("space")
-            assert checkbox.value
+            assert not checkbox.value
 
     asyncio.run(exercise())
 
@@ -198,7 +198,7 @@ def test_csv_export_default_name_preserves_bytes_and_refuses_overwrite(tmp_path:
 
     async def exercise() -> None:
         async with app.run_test(size=(110, 30)) as pilot:
-            await pilot.click("#skip-1")
+            await pilot.click("#mask-1")
             await pilot.click("#anonymize")
             await pilot.pause()
             assert app.query_one("#export-filename", Input).value == "in_anonymised.csv"
@@ -245,7 +245,7 @@ def test_csv_export_renamed_file_rejects_source_and_path_escape(tmp_path: Path) 
     asyncio.run(exercise())
 
 
-def test_csv_ragged_third_column_can_be_skipped(tmp_path: Path) -> None:
+def test_csv_ragged_third_column_can_be_left_unmasked(tmp_path: Path) -> None:
     text = "ID;Notes\n90051512340;90051512340;90051512340\n"
     app = AnonymizationDiffApp(text, [], csv_path=tmp_path / "in.csv", detector=piitier.detect)
 
@@ -253,7 +253,7 @@ def test_csv_ragged_third_column_can_be_skipped(tmp_path: Path) -> None:
         async with app.run_test(size=(110, 28)) as pilot:
             table = app.screen.query_one(DataTable)
             assert table.get_row_at(0)[2] == "90051512340"
-            await pilot.click("#skip-3")
+            await pilot.click("#mask-3")
             await pilot.click("#anonymize")
             await pilot.pause()
             assert build_diff(text, app.spans, 0)[1].plain == (
@@ -306,7 +306,7 @@ def test_csv_export_retains_source_encoding(
 
     async def exercise() -> None:
         async with app.run_test(size=(110, 28)) as pilot:
-            await pilot.click("#skip-1")
+            await pilot.click("#mask-1")
             await pilot.click("#anonymize")
             await pilot.pause()
             await pilot.click("#export")

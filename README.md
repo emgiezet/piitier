@@ -43,7 +43,7 @@ uv run piitier mask document.pdf          # rules only; .txt .md .csv .pdf (with
 uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold 0.0
 uv run piitier mask document.csv --skip-columns "PESEL,2"  # header names or 1-based indices
 uv run piitier mask document.csv --skip-columns "ID" --delimiter ";"  # override auto-detection
-uv run piitier compare document.csv --model <checkpoint-dir>  # TUI: preview, skip columns, export
+uv run piitier compare document.csv --model <checkpoint-dir> --device cuda  # TUI: choose columns, mask, export
 ```
 
 Exit code 2 means a usage or input error (missing file or model, invalid threshold). Errors name the path,
@@ -53,11 +53,13 @@ Skipped CSV columns retain their original text; unknown columns emit a warning o
 stopping masking. A detection spanning a skipped and an unskipped cell is still masked. CSV-only
 options on other file types exit 2.
 
-The `compare` TUI requires a local model. For CSV it shows a table and per-column checkboxes
-before anonymization; select columns to leave unchanged, then choose **Anonimizuj**. The
-comparison screen exports alongside the source with an editable filename (default
-`<name>_anonymised.csv`), without overwriting an existing file. Non-CSV files open the original
-comparison view directly.
+The `compare` TUI requires a local model. For CSV it first shows a table preview (up to 50
+rows) on the left and per-column **Maskuj kolumny** checkboxes on the right. All columns are
+selected for masking by default; uncheck any columns to leave them unchanged, then choose
+**Anonimizuj**. The comparison screen exports alongside the source with an editable filename
+(default `<name>_anonymised.csv`), without overwriting an existing file. Non-CSV files open the
+original comparison view directly. The CLI `mask --skip-columns` still selects columns to
+leave unchanged.
 
 `piitier scan <files>…` lists checksum-valid identifiers as `path:line:column: LABEL` without printing the
 value, and exits 1 if any are not in `--allowlist`. Use it to check files before sharing them.

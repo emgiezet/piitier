@@ -84,13 +84,14 @@ class CsvSelectionScreen(Screen[None]):
         yield Header()
         with Horizontal(id="csv-columns"):
             with Vertical(id="csv-table-wrap"):
-                yield Static("PODGLĄD CSV", classes="pane-title")
-                yield DataTable(id="csv-preview")
+                yield Static("PODGLĄD CSV · pierwsze 50 wierszy", classes="pane-title")
+                yield DataTable(id="csv-preview", zebra_stripes=True)
             with Vertical(id="csv-selectors"):
-                yield Static("POMIŃ PRZY ANONIMIZACJI", classes="pane-title")
+                yield Static("MASKUJ KOLUMNY", classes="pane-title")
+                yield Static("Odznaczone: bez zmian")
                 with VerticalScroll(id="csv-checkboxes"):
                     for index, header in enumerate(self.headers):
-                        yield Checkbox(f"{index + 1}. {header}", id=f"skip-{index + 1}")
+                        yield Checkbox(f"{index + 1}. {header}", value=True, id=f"mask-{index + 1}")
         yield Static("", id="csv-error")
         yield Button("Anonimizuj", id="anonymize", variant="primary")
         yield Footer()
@@ -118,7 +119,7 @@ class CsvSelectionScreen(Screen[None]):
         selectors = [
             str(index + 1)
             for index in range(len(self.headers))
-            if self.query_one(f"#skip-{index + 1}", Checkbox).value
+            if not self.query_one(f"#mask-{index + 1}", Checkbox).value
         ]
         try:
             assert app.detector is not None
@@ -145,8 +146,8 @@ class AnonymizationDiffApp(App[None]):
     #status { height: 1; text-align: center; }
     #csv-columns { height: 1fr; }
     #csv-table-wrap { width: 1fr; }
-    #csv-preview { height: 1fr; }
-    #csv-selectors { width: 34; }
+    #csv-preview { height: 1fr; border: round $primary; }
+    #csv-selectors { width: 34; border: round $primary; padding: 0 1; }
     #csv-checkboxes { height: 1fr; }
     #csv-error { height: 1; }
     #anonymize { width: 100%; }
