@@ -1,183 +1,265 @@
 # piitier
 
-Polish PII anonymiser for regulated sectors (fintech, insurtech, medtech). It combines deterministic
-checksum validators, a fine-tuned NER model and a placeholder renderer that never changes a character
-outside the detected spans.
+**Polish PII anonymisation for regulated industries: fintech, insurtech, medtech.**
 
-**Status: pre-release (0.1.0).** The library, CLI, training and evaluation pipeline work. The model is not
-published yet. This is not a certificate of anonymisation.
+piitier finds and masks personal data in Polish documents: claims, policies, loan agreements, hospital
+discharge letters, bank statements, call-centre transcripts. It pairs checksum-validated detectors for every
+Polish state identifier with a fine-tuned NER model, and replaces only what it detects. Never a character
+more.
 
-## What it does
+![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![Status: 0.1.0 release candidate](https://img.shields.io/badge/status-0.1.0%20RC-orange)
 
 ```text
-$ piitier mask zgloszenie.txt --model training/out/pii-5-v3
+$ piitier mask zgloszenie.txt --model training/out/pii-5-v4 --threshold 0.78
 Zgłoszenie szkody z dnia 12.03.2025.
 Poszkodowana [IMIĘ_n] [NAZWISKO_n], zam. [ADRES_n], PESEL [PESEL],
 tel. [TELEFON], e-mail [EMAIL]. Rozpoznanie: [ROZPOZNANIE].
 Kwota roszczenia: [KWOTA]. Lekarz prowadzący: [LEKARZ_n].
 ```
 
-Without `--model` only the deterministic rules run, and the same document becomes
-`… Poszkodowana Anna Wiśniewska, zam. ul. Lipowa 14/3, 30-001 Kraków, PESEL [PESEL], …`.
+> **Status: 0.1.0 release candidate.** Library, CLI, TUI, training and evaluation pipeline are complete.
+> The `pii-5-v4` checkpoint is being prepared for the Hugging Face Hub. piitier is a tool, not a certificate
+> of anonymisation; review its output before you rely on it.
 
-Guarantees the code is built around (`CLAUDE.md`, "Invariants"):
+## Why piitier
 
-- **Text fidelity.** The output differs from the input only inside `[start, end)` spans of the original
-  string. A property-based test pins this at exactly 0 changed characters.
-- **Recall first.** A structured identifier that fails its checksum is marked `suspect` and still masked,
-  never dropped.
-- **No generative output.** No LLM writes the masked text; models only propose spans.
-- **Rules win on identifiers.** A checksum-valid rule span (PESEL, NIP, REGON, IBAN, ID card, payment
-  card) beats any overlapping model span.
+Polish documents come with their own structured identifiers: PESEL, NIP, REGON, dowód osobisty, KW, NPWZ,
+Polish IBAN. piitier covers 39 entity types across 6 GDPR risk groups, with Art. 9 health data handled
+separately.
 
-The 39 entity types in 6 risk groups, their placeholders and risk weights are defined in
-[`docs/TAXONOMY.md`](docs/TAXONOMY.md), the single source of truth for labels.
+Checksum validators catch every valid state identifier with no false negatives. A 307M-parameter encoder
+(ModernBERT) handles names, addresses, amounts and health data. Where rules and model disagree on an
+identifier, the rules win.
+
+Output differs from input only inside detected spans. A property-based test pins this at exactly 0 changed
+characters outside spans. No LLM rewrites your document.
+
+Any identifier that fails its checksum is still masked and flagged as `suspect`, never dropped. A threshold
+is accepted only if it leaks nothing on the hand-written benchmark.
+
+Inference runs on CPU with no network calls and no telemetry. Rules-only mode needs no model at all.
+
+The code is Apache-2.0; the synthetic corpus and benchmark are CC BY 4.0. Every reported number is
+traceable to a report in `eval/reports/`.
+
+## Install
+
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
+```bash
+git clone https://github.com/emgiezet/piitier && cd piitier
+uv sync            # runtime + dev dependencies (torch/transformers for the NER model)
+```
+
+Rules-only masking (`piitier mask` without `--model`) needs only the runtime dependencies; importing
+`piitier` never loads torch.
 
 ## Quick start
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
+### Command line
 
 ```bash
-uv sync                                   # runtime + dev dependencies (incl. torch/transformers for the NER)
-uv run piitier mask document.pdf          # rules only; .txt .md .csv .pdf (with a text layer)
-uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold 0.0
-uv run piitier mask document.csv --skip-columns "PESEL,2"  # header names or 1-based indices
-uv run piitier mask document.csv --skip-columns "ID" --delimiter ";"  # override auto-detection
-uv run piitier compare document.csv --model <checkpoint-dir> --device cuda  # TUI: choose columns, mask, export
+uv run piitier mask document.pdf                                        # rules only; .txt .md .csv .pdf (text layer)
+uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold 0.78
+uv run piitier mask customers.csv --skip-columns "ID,2"                 # keep columns by header name or 1-based index
+uv run piitier mask customers.csv --skip-columns "ID" --delimiter ";"   # override delimiter auto-detection
+uv run piitier compare claims.csv --model <checkpoint-dir> --device cuda  # interactive TUI: pick columns, mask, export
+uv run piitier scan src/ docs/                                          # list checksum-valid identifiers, never their values
 ```
 
-Exit code 2 means a usage or input error (missing file or model, invalid threshold). Errors name the path,
-never document content.
+- `mask` writes the masked document; exit code 2 is a usage or input error (missing file or model, invalid
+  threshold). Error messages name the path, never the document content.
+- `compare` opens a side-by-side terminal view. For CSV it shows a table preview with per-column checkboxes
+  (all masked by default), then lets you export next to the source without overwriting existing files.
+- `scan` prints `path:line:column: LABEL` for every checksum-valid identifier and exits 1 if any is missing
+  from `--allowlist`. It runs as a pre-commit hook in this repository; use it to gate your own.
 
-Skipped CSV columns retain their original text; unknown columns emit a warning on stderr without
-stopping masking. A detection spanning a skipped and an unskipped cell is still masked. CSV-only
-options on other file types exit 2.
-
-The `compare` TUI requires a local model. For CSV it first shows a table preview (up to 50
-rows) on the left and per-column **Maskuj kolumny** checkboxes on the right. All columns are
-selected for masking by default; uncheck any columns to leave them unchanged, then choose
-**Anonimizuj**. The comparison screen exports alongside the source with an editable filename
-(default `<name>_anonymised.csv`), without overwriting an existing file. Non-CSV files open the
-original comparison view directly. The CLI `mask --skip-columns` still selects columns to
-leave unchanged.
-
-`piitier scan <files>…` lists checksum-valid identifiers as `path:line:column: LABEL` without printing the
-value, and exits 1 if any are not in `--allowlist`. Use it to check files before sharing them.
-
-## Python API
+### Python
 
 ```python
 import piitier
 
 text = "Poszkodowana Anna Wiśniewska, PESEL 44051401359."
 
-# Rules only; importing piitier never loads torch.
 piitier.mask(text)
 # -> 'Poszkodowana Anna Wiśniewska, PESEL [PESEL].'
-piitier.detect(text)
-# -> [Span(start=36, end=47, label=<Label.PESEL: '[PESEL]'>, source='rule',
-#          score=1.0, status='valid')]
 
-# Rules + NER; the model is loaded once, in the constructor.
-anon = piitier.Anonymizer(model="training/out/pii-5-v3", threshold=0.0)
+piitier.detect(text)
+# -> [Span(start=36, end=47, label=<Label.PESEL: '[PESEL]'>, source='rule', score=1.0, status='valid')]
+
+anon = piitier.Anonymizer(model="training/out/pii-5-v4", threshold=0.78)  # model loaded once
 anon.mask(text)
 # -> 'Poszkodowana [IMIĘ_n] [NAZWISKO_n], PESEL [PESEL].'
+
+piitier.mask_csv(csv_text, skip_columns=["ID"], delimiter=";")  # column-aware CSV masking
 ```
 
-For CSV text, `piitier.mask_csv(text, skip_columns=["ID"], delimiter=";")` masks detections
-outside the selected column. Omit `delimiter` to auto-detect it; optional `detector` and
-`on_unknown_column` callbacks customize detection and missing-column handling.
+`Anonymizer` also accepts `predictor=` (any object with `predict(text) -> list[Span]`), so you can plug in
+your own model behind the same rules and fusion layer.
 
-`Anonymizer` also accepts `predictor=` (any object with `predict(text) -> list[Span]`) instead of a model
-directory. Fusion of rule and model spans is in [`src/piitier/fusion.py`](src/piitier/fusion.py).
+## How it works
 
-## Model
+```mermaid
+flowchart LR
+    A[Document<br/>txt · md · csv · pdf] --> B[Rule detectors<br/>regex + checksums]
+    A --> C[NER model<br/>ModernBERT 307M]
+    B --> D[Fusion<br/>rules win on identifiers,<br/>then risk weight, then length]
+    C --> D
+    D --> E[Renderer<br/>placeholders, 0 chars changed outside spans]
+    E --> F[Masked document]
+```
+
+Four invariants the code is built around (`CLAUDE.md`):
+
+1. **Text fidelity**: output differs from input only inside `[start, end)` spans.
+2. **Recall first**: checksum failures are `suspect`, still masked.
+3. **No generative output**: models only propose spans.
+4. **Rules win on identifiers**: a checksum-valid PESEL, NIP, REGON, IBAN, ID-card or card number beats any
+   overlapping model span.
+
+### What it detects
+
+| Risk group | Weight | Entities | Method |
+|---|---|---|---|
+| State identifiers | 1.0 | PESEL, ID card, passport, driving licence, NIP, REGON | rules + checksums |
+| Finance | 1.0 | IBAN (mod-97), account number, payment card (Luhn), CVV, contract number, amount, income | rules + NER |
+| Insurance | 0.9 | policy number, claim number, vehicle registration, VIN, land-register (KW) number | configurable patterns + rules + NER |
+| Contact & location | 0.8 | address, postcode, city, phone, e-mail, IP, geo | rules + NER |
+| Health (GDPR Art. 9) | 0.8 | health data, diagnosis, ICD-10, medication, record number, facility, physician, NPWZ | NER + dictionaries + rules |
+| Person identity | 0.6 | full name, first name, surname, date of birth, age, sex | NER |
+
+[`docs/TAXONOMY.md`](docs/TAXONOMY.md) is the single source of truth for labels, placeholders and weights; a
+test keeps it in sync with the `Label` enum.
+
+## The model
 
 | | |
 |---|---|
-| Current checkpoint | `pii-5-v3`, local only (`training/out/` is gitignored, not yet on the Hugging Face Hub) |
-| Base | [`bardsai/eu-pii-anonimization-multilang-v2`](https://huggingface.co/bardsai/eu-pii-anonimization-multilang-v2), ModernBERT 307M, Apache-2.0, revision `5e61416e` |
-| Training data | synthetic corpus `data/synthetic/v0.3` (19 637 train / 2 363 dev documents), see [`docs/DATASET_CARD.md`](docs/DATASET_CARD.md) |
-| Config | [`training/configs/pii-5-v3.yaml`](training/configs/pii-5-v3.yaml) |
+| Release candidate | `pii-5-v4`, calibrated threshold **0.78** ([`training/configs/pii-5-v4.yaml`](training/configs/pii-5-v4.yaml)) |
+| Base | [`bardsai/eu-pii-anonimization-multilang-v2`](https://huggingface.co/bardsai/eu-pii-anonimization-multilang-v2) — ModernBERT, 307M parameters, Apache-2.0 |
+| Training data | synthetic Polish corpus, 9 document types, see [`docs/DATASET_CARD.md`](docs/DATASET_CARD.md) |
+| Formats | PyTorch safetensors and FP32 ONNX. INT8 is deliberately withheld: it drops recall by 0.018, above the 0.01 tolerance, so `training.export_onnx` refuses to ship it |
+| Hardware | trains in hours on a single consumer GPU; CPU inference |
 
-Results so far:
+### Results
 
-- `bench/v1/dev` (6 hand-written documents, 40 gold spans): **0/40 PII values leaked** (base model 2/40). See
-  [`eval/reports/2026-10-25-trening-pii-5.md`](eval/reports/2026-10-25-trening-pii-5.md).
-- Synthetic dev (2 363 documents), FP32 ONNX, strict matching per document: F1 0.912, recall 0.944.
-- **INT8 export is blocked.** Dynamic INT8 quantisation drops recall to 0.926 (−0.018), above the 0.01
-  tolerance, so `training.export_onnx` exits 1.
+Synthetic calibration split, 1 031 documents, 14 766 gold spans, strict span matching:
 
-## Training and evaluation
+| Metric | pii-5-v4 @ 0.78 |
+|---|---|
+| Strict recall | **0.987** (Wilson 95 % CI 0.985–0.988) |
+| Precision | **0.971** |
+| Leaked PII values | **0** — no gold value appears verbatim in the masked output |
+
+Hand-written PL-PII-Bench `v1/dev`, 6 documents, 40 gold spans, one per document type:
+
+| System | Leaked PII values | Strict F1 |
+|---|---|---|
+| **piitier pii-5-v4** | **0 / 40** | 0.69 |
+| piitier pii-5-v3 | 0 / 40 | 0.65 |
+| base model (bardsai v2) | 2 / 40 | 0.31 |
+
+Full reports: [`eval/reports/pii-5-v4/`](eval/reports/pii-5-v4/),
+[`eval/reports/2026-10-25-training-pii-5.md`](eval/reports/2026-10-25-training-pii-5.md),
+and the running log in [`FINDINGS.md`](FINDINGS.md).
+
+Honest footnote: `bench/v1/dev` is small and was also used as the privacy gate when choosing the threshold,
+so its 0/40 is a safety check, not independent proof of generalisation. The frozen `bench/v1/test` split
+(300–500 double-annotated documents) is the next milestone.
+
+## PL-PII-Bench
+
+piitier ships the first open benchmark for PII detection in Polish regulated-sector documents:
+
+- versioned gold set under [`bench/`](bench/) with a frozen `test/` split that is never used for training,
+  calibration or prompt examples (the config loader rejects it);
+- [annotation guidelines](docs/labelling/GUIDELINES.md) and an [evaluation protocol](docs/bench/PROTOCOL.md)
+  defining strict/partial P/R/F1 per label, risk-weighted recall, leak rate, fidelity, numbering consistency
+  and throughput;
+- baseline adapters in [`eval/baselines/`](eval/baselines/) for `rules`, `ner`, Microsoft Presidio,
+  `bardsai-v2` and `openai/privacy-filter`, so every system is scored by the same code.
+
+```bash
+uv run python -m eval.run --system ner --checkpoint training/out/pii-5-v4 --bench v1 --split dev
+uv run python -m eval.compare <baseline-report.json> <candidate-report.json>   # exits 1 on recall regression
+```
+
+## Train your own
+
+The whole pipeline is config-driven; a YAML file is the only input.
 
 ```bash
 uv run python -m piitier.datagen build --templates src/piitier/datagen/templates --n 20000 --seed 42 --out data/synthetic/<version>/
 uv run python -m piitier.datagen check data/synthetic/<version>/
 
-uv run python -m training.train      training/configs/<run>.yaml   # HF Trainer + seqeval; config is the only input
-uv run python -m training.calibrate  training/configs/<run>.yaml   # recall-first threshold on dev
-uv run python -m training.export_onnx training/configs/<run>.yaml  # FP32 + INT8 ONNX, blocks on recall drop
-
-uv run python -m eval.run --system rules --bench v1 --split dev    # report in eval/reports/
+uv run python -m training.train       training/configs/<run>.yaml   # HF Trainer + seqeval
+uv run python -m training.calibrate   training/configs/<run>.yaml   # recall-first, privacy-gated threshold
+uv run python -m training.export_onnx training/configs/<run>.yaml   # FP32 + INT8 ONNX; blocks on recall drop
 ```
 
-Benchmark systems (`eval/baselines/`): `rules`, `ner` (`--checkpoint`), `presidio` (regex recognisers, no
-spaCy model), `bardsai-v2`, `privacy-filter` (`openai/privacy-filter`). Reports cover strict and partial
-P/R/F1 per label, risk-weighted recall, leak rate, fidelity, numbering consistency and throughput.
+`training.train` pins a single GPU when several are visible. See [`docs/PLAN.md`](docs/PLAN.md) for the
+design rationale and roadmap.
 
-Train on the RTX 3090 Ti alone. `training.train` pins a single GPU when several are visible, because mixing
-cards in one job is forbidden by `.claude/playbooks/model-training.md`.
-
-## Data policy
+## Data and privacy policy
 
 - Only synthetic documents enter the repository. Employer or client documents never do.
-- Templates derived from internal documents (`raw_data/`, `templatize`, `templatize-tables`) stay local and
-  are gitignored. A clean clone builds its corpus from the hand-written templates only.
-- `bench/<version>/test/` is the frozen gold split. It is never used for training, calibration or prompt
-  examples, and the config loader rejects it. `bench/v1` currently has only `dev/`.
+- Templates derived from internal documents stay local and gitignored; a clean clone builds its corpus from
+  the hand-written templates only.
+- Every checksum-valid identifier committed to the repository must be allowlisted by fingerprint in
+  `.pii-allowlist`; the `piitier scan` pre-commit hook and CI enforce it. Only synthetic values qualify.
+- The synthetic corpus and the benchmark are released under CC BY 4.0.
+
+## Roadmap
+
+| Milestone | Status |
+|---|---|
+| Rules + NER + fusion + renderer, CLI, TUI, CSV column control | done |
+| Privacy-gated calibration (`pii-5-v4`, threshold 0.78) | done |
+| Publish `pii-5-v4` on the Hugging Face Hub with a model card | in progress |
+| Load models by Hub id (`--model org/piitier-pl`) | planned |
+| Frozen `bench/v1/test` split, 300–500 double-annotated documents | planned |
+| Numbered coreference placeholders (`[OSOBA_1]`, `[OSOBA_2]`) | planned |
+| Reversible `pseudonymize` mode with an encrypted mapping | planned |
+| INT8 ONNX once the recall gate passes | blocked on quantisation quality |
+
+## Known limitations
+
+- Placeholders are not numbered yet: every mention of a person renders as `[OSOBA_n]` / `[IMIĘ_n]`.
+- The NER can split one word across two entity types (`[NAZWISKO_n][OSOBA_n]`).
+- The payment-card rule can match Luhn-valid 16-digit runs inside long decimals.
+- `bench/v1` has 6 documents; the `test/` split does not exist yet.
+- `pip install piitier` from a wheel gives rules-only masking; the NER extras come with `uv sync`.
+- Quasi-identifiers (job title, employer, event dates) and colloquial health descriptions are outside the
+  current taxonomy; see the roadmap section of `docs/TAXONOMY.md`.
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `src/piitier/` | library: `rules/` (checksum validators), `ner/` (inference), `fusion.py`, `render.py`, `loaders.py`, `cli.py`, `datagen/` |
+| `src/piitier/` | library: `rules/` (checksum validators), `ner/` (inference), `fusion.py`, `render.py`, `loaders.py`, `csvskip.py`, `cli.py`, `tui.py`, `datagen/` |
 | `training/` | fine-tuning, calibration and ONNX export, driven by `training/configs/*.yaml` |
 | `eval/` | metrics, baseline adapters, benchmark runner and reports |
 | `bench/` | PL-PII-Bench gold set (versioned) |
-| `docs/` | plan, `TAXONOMY.md`, `DATASET_CARD.md` |
+| `docs/` | `PLAN.md`, `TAXONOMY.md`, `DATASET_CARD.md`, `bench/PROTOCOL.md`, `labelling/GUIDELINES.md` |
 | `specs/` | one directory per ticket: `spec.md` with UC acceptance criteria, QA and PR records |
 
-## Development
+## Contributing
 
 ```bash
 uv sync --frozen
 uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run pre-commit run --all-files          # gitleaks, private keys, ruff, mypy, piitier scan
-uv run pytest -q -m "not integration"      # unit tests, no network (also run on push)
+uv run pytest -q -m "not integration"      # unit tests, no network
 uv run pytest -q -m integration            # downloads checkpoints from the Hugging Face Hub
 ```
 
-CI (`.github/workflows/ci.yml`) runs the hooks and unit tests on every pull request and push to `main`.
-A new checksum-valid identifier in any committed file fails the `piitier-scan` hook unless its fingerprint
-is in `.pii-allowlist`; only synthetic values may be allowlisted.
-
-Work is specced first: every change has a `specs/<TICKET>/spec.md` whose `UC-<n>` ids appear in test names.
-Agents and humans follow [`CLAUDE.md`](CLAUDE.md) (task router, invariants) and
-[`.claude/rules/python.md`](.claude/rules/python.md). Results and decisions so far are summarised in
-[`FINDINGS.md`](FINDINGS.md).
-
-## Known limitations
-
-- Placeholders are not numbered yet: every person is `[OSOBA_n]` (coreference is PII-6-b).
-- No `pseudonymize` mode with a reversible encrypted map yet (PII-6-c).
-- The NER can split one word across two entity types (`[NAZWISKO_n][OSOBA_n]`), issue #2 in the local tracker.
-- `bench/v1` has 6 documents; the planned gold set is 300–500 documents with a frozen `test/` split.
-- Threshold calibration targets strict recall ≥ 0.98, which pii-5-v3 does not reach (strict recall 0.944 on
-  synthetic dev), so the threshold stays at 0.0.
-- `torch`/`transformers` are dev dependencies, so `pip install piitier` gives rules-only masking.
-- Quasi-identifiers (job title, employer, event dates) and colloquial health data are outside the MVP
-  taxonomy.
+CI runs the hooks and unit tests on every pull request and push to `main`. Work is specced first: every
+change has a `specs/<TICKET>/spec.md` whose `UC-<n>` ids appear in test names. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CLAUDE.md`](CLAUDE.md).
 
 ## License
 
-Apache-2.0; see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). The base model is Apache-2.0.
+Code: Apache-2.0, see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Base model: Apache-2.0 (bards.ai).
+Synthetic corpus and benchmark: CC BY 4.0.

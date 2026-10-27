@@ -6,7 +6,7 @@ Results and decisions in one place. Detailed documents are linked, not repeated.
 
 | Finding | Evidence |
 |---|---|
-| `pii-5-v3` at its uncalibrated threshold 0.0 leaks **0/40** gold values on `bench/v1/dev`; the base model leaks 2/40 | [`eval/reports/2026-10-25-trening-pii-5.md`](eval/reports/2026-10-25-trening-pii-5.md) |
+| `pii-5-v3` at its uncalibrated threshold 0.0 leaks **0/40** gold values on `bench/v1/dev`; the base model leaks 2/40 | [`eval/reports/2026-10-25-training-pii-5.md`](eval/reports/2026-10-25-training-pii-5.md) |
 | `pii-5-v1` was rejected: 100% augmented (uppercased) training text leaked 22/40 on the hand-written bench while looking perfect on synthetic dev | same report |
 | Synthetic dev is not a substitute for the gold set: strict F1 there is ~0.9, against ~0.6 on `bench/v1/dev` | same report |
 | FP32 ONNX on synthetic dev (2 363 docs, per-document matching): F1 0.912, recall 0.944 | `training.export_onnx` run, PII-7 |
@@ -197,7 +197,7 @@ synthetic calibration set.
 ## Compared with warda
 
 [`pawelkiszczak/warda`](https://github.com/pawelkiszczak/warda) is a local allow/redact/ask/block decision model for
-coding-agent tool calls, not a span anonymiser. What piitier adopted and what is still open:
+coding-agent tool calls, not a span anonymiser. Practices piitier adopted from it, and what's still pending:
 
 | Practice | Where | Status |
 |---|---|---|

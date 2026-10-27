@@ -1,29 +1,29 @@
-# Raport: bardsai-v2 na bench/eval-sample/dev
+# Report: bardsai-v2 on bench/eval-sample/dev
 
 ## System
 - Name: bardsai-v2
-- Wersja: 0.1.0
-- Data: 2026-10-25T00:00:22.712428
-- Próg: brak — system bez progu
+- Version: 0.1.0
+- Date: 2026-10-25T00:00:22.712428
+- Threshold: none — threshold-free system
 
 ## Benchmark
-- Wersja: eval-sample
+- Version: eval-sample
 - Split: dev
-- Liczba dokumentów: 273
-- Liczba spanów gold: 2329
+- Number of documents: 273
+- Number of gold spans: 2329
 
-## Sprzęt
-- Platforma: Linux-7.0.0-38-generic-x86_64-with-glibc2.43
-- Procesor: N/A
+## Hardware
+- Platform: Linux-7.0.0-38-generic-x86_64-with-glibc2.43
+- CPU: N/A
 - GPU: NVIDIA GeForce RTX 3090 Ti
 - Peak RAM: 2572210176 bytes
 
-## Encje (strict)
+## Entities (strict)
 - Micro Precision: 0.3424
 - Micro Recall: 0.4058
 - Micro F1: 0.3714
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.1961 | 0.2326 | 0.2128 |
 | DATA_URODZENIA | 0.1333 | 1.0000 | 0.2353 |
@@ -47,12 +47,12 @@
 | TELEFON | 0.3333 | 0.4815 | 0.3939 |
 | VIN | 0.5000 | 0.2500 | 0.3333 |
 
-## Encje (partial)
+## Entities (partial)
 - Micro Precision: 0.5920
 - Micro Recall: 0.7016
 - Micro F1: 0.6422
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.8431 | 1.0000 | 0.9149 |
 | DATA_URODZENIA | 0.1333 | 1.0000 | 0.2353 |
@@ -76,8 +76,8 @@
 | TELEFON | 0.6923 | 1.0000 | 0.8182 |
 | VIN | 0.5000 | 0.2500 | 0.3333 |
 
-## Porównywalna podtaksonomia (bardsai_v2)
-- Etykiety: ADRES, CVV, DANE_ZDROWOTNE, DATA_URODZENIA, EMAIL, GEO, IBAN, IP, KWOTA, MIEJSCOWOSC, NIP, NR_DOKUMENTACJI, NR_DOWODU, NR_KARTY, NR_RACHUNKU, OSOBA, PESEL, PLACOWKA, TELEFON, VIN
+## Comparable subtaxonomy (bardsai_v2)
+- Labels: ADRES, CVV, DANE_ZDROWOTNE, DATA_URODZENIA, EMAIL, GEO, IBAN, IP, KWOTA, MIEJSCOWOSC, NIP, NR_DOKUMENTACJI, NR_DOWODU, NR_KARTY, NR_RACHUNKU, OSOBA, PESEL, PLACOWKA, TELEFON, VIN
 - Strict Micro Precision: 0.3424
 - Strict Micro Recall: 0.4657
 - Strict Micro F1: 0.3947
@@ -85,7 +85,7 @@
 - Partial Micro Recall: 0.8053
 - Partial Micro F1: 0.6824
 
-## Recall ważony ryzykiem
+## Risk-weighted recall
 - Risk-weighted recall: 0.3675
 
 ## Leak rate
@@ -93,10 +93,10 @@
 - Values leaked: 28 / 2329
 - Leaked doc IDs: doc_0000493, doc_0000964, doc_0001213, doc_0001933
 
-## Wierność
+## Fidelity
 - Changed chars outside spans: 35248
 
-## Numeracja
+## Numbering
 - Same entity consistent: 37 / 37
 - Different entity distinct: 0 / 3173
 
@@ -104,14 +104,14 @@
 - Throughput: 1.27 docs/s
 - P95 latency: 0.7732 s
 
-## Podział wg doc_type
+## Breakdown by doc_type
 
 ### mail_klienta
 - Strict Micro Precision: 0.4204
 - Strict Micro Recall: 0.4204
 - Strict Micro F1: 0.4204
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | IBAN | 0.5570 | 0.5695 | 0.5632 |
 | NIP | 0.4167 | 0.1121 | 0.1767 |
@@ -124,7 +124,7 @@
 - Strict Micro Recall: 0.2816
 - Strict Micro F1: 0.1760
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.1961 | 0.2326 | 0.2128 |
 | DATA_URODZENIA | 0.6667 | 1.0000 | 0.8000 |
@@ -150,7 +150,7 @@
 - Strict Micro Recall: 0.4186
 - Strict Micro F1: 0.3959
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | DATA_URODZENIA | 0.0000 | 0.0000 | 0.0000 |
 | IBAN | 0.7778 | 0.8750 | 0.8235 |

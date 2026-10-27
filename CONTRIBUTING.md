@@ -13,8 +13,7 @@ short path through them.
    implemented before that.
 3. **Branch.** `ai/<TICKET>-<slug>` off `main`. Never commit to `main`.
 4. **Pull request.** Label `ai-sdlc`, fill in the template, link the spec. CI must be green.
-5. **Review.** An independent review before every merge. It has caught a blocker that the tests had
-   missed in two of the last three feature batches (see [`FINDINGS.md`](FINDINGS.md)).
+5. **Review.** Get an independent review before merging. It has caught a blocker that tests missed in two of the last three feature batches (see [`FINDINGS.md`](FINDINGS.md)).
 6. **Merge**, then record new results or decisions in `FINDINGS.md`.
 
 One spec is one pull request. Budgets live in [`.claude/sdlc.md`](.claude/sdlc.md) ("Change budget").

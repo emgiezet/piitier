@@ -33,71 +33,71 @@ from piitier.labels import Label
 from piitier.spans import Span
 
 # ---------------------------------------------------------------------------
-# Group weights from docs/TAXONOMY.md "Wagi ryzyka" table.
+# Group weights from docs/TAXONOMY.md "Risk weights" table.
 # Sync test: tests/test_fusion.py::test_weights_match_taxonomy
 # ---------------------------------------------------------------------------
 
 GROUP_WEIGHTS: dict[str, float] = {
-    "Identyfikatory państwowe": 1.0,
-    "Finanse": 1.0,
-    "Ubezpieczenia": 0.9,
-    "Kontakt i lokalizacja": 0.8,
-    "Zdrowie — art. 9 RODO": 0.8,
-    "Identyfikacja osoby": 0.6,
+    "State identifiers": 1.0,
+    "Finance": 1.0,
+    "Insurance": 0.9,
+    "Contact and location": 0.8,
+    "Health — Art. 9 GDPR": 0.8,
+    "Personal identification": 0.6,
 }
 
 # Map from each Label member to its risk-group name.
 _LABEL_GROUP: dict[Label, str] = {
-    # Identyfikacja osoby
-    Label.OSOBA: "Identyfikacja osoby",
-    Label.IMIE: "Identyfikacja osoby",
-    Label.NAZWISKO: "Identyfikacja osoby",
-    Label.DATA_URODZENIA: "Identyfikacja osoby",
-    Label.WIEK: "Identyfikacja osoby",
-    Label.PLEC: "Identyfikacja osoby",
-    # Identyfikatory państwowe
-    Label.PESEL: "Identyfikatory państwowe",
-    Label.NR_DOWODU: "Identyfikatory państwowe",
-    Label.NR_PASZPORTU: "Identyfikatory państwowe",
-    Label.NR_PRAWA_JAZDY: "Identyfikatory państwowe",
-    Label.NIP: "Identyfikatory państwowe",
-    Label.REGON: "Identyfikatory państwowe",
-    # Kontakt i lokalizacja
-    Label.ADRES: "Kontakt i lokalizacja",
-    Label.KOD_POCZTOWY: "Kontakt i lokalizacja",
-    Label.MIEJSCOWOSC: "Kontakt i lokalizacja",
-    Label.TELEFON: "Kontakt i lokalizacja",
-    Label.EMAIL: "Kontakt i lokalizacja",
-    Label.IP: "Kontakt i lokalizacja",
-    Label.GEO: "Kontakt i lokalizacja",
-    # Finanse
-    Label.IBAN: "Finanse",
-    Label.NR_RACHUNKU: "Finanse",
-    Label.NR_KARTY: "Finanse",
-    Label.CVV: "Finanse",
-    Label.NR_UMOWY: "Finanse",
-    Label.KWOTA: "Finanse",
-    Label.DOCHOD: "Finanse",
-    # Ubezpieczenia
-    Label.NR_POLISY: "Ubezpieczenia",
-    Label.NR_SZKODY: "Ubezpieczenia",
-    Label.NR_REJESTRACYJNY: "Ubezpieczenia",
-    Label.VIN: "Ubezpieczenia",
-    Label.NR_KW: "Ubezpieczenia",
-    # Zdrowie — art. 9 RODO
-    Label.DANE_ZDROWOTNE: "Zdrowie — art. 9 RODO",
-    Label.ROZPOZNANIE: "Zdrowie — art. 9 RODO",
-    Label.ICD10: "Zdrowie — art. 9 RODO",
-    Label.LEK: "Zdrowie — art. 9 RODO",
-    Label.NR_DOKUMENTACJI: "Zdrowie — art. 9 RODO",
-    Label.PLACOWKA: "Zdrowie — art. 9 RODO",
-    Label.LEKARZ: "Zdrowie — art. 9 RODO",
-    Label.NPWZ: "Zdrowie — art. 9 RODO",
+    # Personal identification
+    Label.OSOBA: "Personal identification",
+    Label.IMIE: "Personal identification",
+    Label.NAZWISKO: "Personal identification",
+    Label.DATA_URODZENIA: "Personal identification",
+    Label.WIEK: "Personal identification",
+    Label.PLEC: "Personal identification",
+    # State identifiers
+    Label.PESEL: "State identifiers",
+    Label.NR_DOWODU: "State identifiers",
+    Label.NR_PASZPORTU: "State identifiers",
+    Label.NR_PRAWA_JAZDY: "State identifiers",
+    Label.NIP: "State identifiers",
+    Label.REGON: "State identifiers",
+    # Contact and location
+    Label.ADRES: "Contact and location",
+    Label.KOD_POCZTOWY: "Contact and location",
+    Label.MIEJSCOWOSC: "Contact and location",
+    Label.TELEFON: "Contact and location",
+    Label.EMAIL: "Contact and location",
+    Label.IP: "Contact and location",
+    Label.GEO: "Contact and location",
+    # Finance
+    Label.IBAN: "Finance",
+    Label.NR_RACHUNKU: "Finance",
+    Label.NR_KARTY: "Finance",
+    Label.CVV: "Finance",
+    Label.NR_UMOWY: "Finance",
+    Label.KWOTA: "Finance",
+    Label.DOCHOD: "Finance",
+    # Insurance
+    Label.NR_POLISY: "Insurance",
+    Label.NR_SZKODY: "Insurance",
+    Label.NR_REJESTRACYJNY: "Insurance",
+    Label.VIN: "Insurance",
+    Label.NR_KW: "Insurance",
+    # Health — Art. 9 GDPR
+    Label.DANE_ZDROWOTNE: "Health — Art. 9 GDPR",
+    Label.ROZPOZNANIE: "Health — Art. 9 GDPR",
+    Label.ICD10: "Health — Art. 9 GDPR",
+    Label.LEK: "Health — Art. 9 GDPR",
+    Label.NR_DOKUMENTACJI: "Health — Art. 9 GDPR",
+    Label.PLACOWKA: "Health — Art. 9 GDPR",
+    Label.LEKARZ: "Health — Art. 9 GDPR",
+    Label.NPWZ: "Health — Art. 9 GDPR",
 }
 
 
 def label_weight(label: Label) -> float:
-    """Return the group risk weight for *label* from the TAXONOMY Wagi ryzyka table."""
+    """Return the group risk weight for *label* from the TAXONOMY Risk weights table."""
     return GROUP_WEIGHTS[_LABEL_GROUP[label]]
 
 

@@ -1,100 +1,93 @@
-# Taksonomia encji PII — piitier
+# PII entity taxonomy: piitier
 
-Pojedyncze źródło typów encji dla całego projektu. Każda zmiana w tej tabeli wymaga
-jednoczesnej zmiany w `src/piitier/labels.py` (enum `Label`) i odwrotnie — test synchronizacji
-w CI wykryje rozbieżność.
+Single source of entity types for the entire project. Any change requires a simultaneous update to `src/piitier/labels.py` (enum `Label`); a CI synchronisation test catches any divergence.
 
-Kolumny: **Grupa** — jeden z sześciu obszarów ryzyka; **Encja** — symbol odpowiadający
-nazwie члена enuma `Label` (bez polskich liter, ASCII); **Placeholder** — ciąg wstawiany w
-miejsce encji; **Metoda** — sposób detekcji na MVP.
+Columns: **Group** — one of six risk areas; **Entity** — symbol matching the `Label` enum member name (no diacritics, ASCII); **Placeholder** — string inserted in place of the entity; **Method** — detection method for MVP.
 
-## Typy encji
+## Entity types
 
-| Grupa | Encja | Placeholder | Metoda |
-|-------|-------|-------------|--------|
-| Identyfikacja osoby | OSOBA | [OSOBA_n] | NER |
-| Identyfikacja osoby | IMIE | [IMIĘ_n] | NER |
-| Identyfikacja osoby | NAZWISKO | [NAZWISKO_n] | NER |
-| Identyfikacja osoby | DATA_URODZENIA | [DATA_URODZENIA] | NER |
-| Identyfikacja osoby | WIEK | [WIEK] | NER |
-| Identyfikacja osoby | PLEC | [PŁEĆ] | NER |
-| Identyfikatory państwowe | PESEL | [PESEL] | reguła + suma kontrolna |
-| Identyfikatory państwowe | NR_DOWODU | [NR_DOWODU] | reguła + suma kontrolna |
-| Identyfikatory państwowe | NR_PASZPORTU | [NR_PASZPORTU] | reguła |
-| Identyfikatory państwowe | NR_PRAWA_JAZDY | [NR_PRAWA_JAZDY] | reguła |
-| Identyfikatory państwowe | NIP | [NIP] | reguła + suma kontrolna |
-| Identyfikatory państwowe | REGON | [REGON] | reguła + suma kontrolna |
-| Kontakt i lokalizacja | ADRES | [ADRES_n] | NER |
-| Kontakt i lokalizacja | KOD_POCZTOWY | [KOD_POCZTOWY] | reguła |
-| Kontakt i lokalizacja | MIEJSCOWOSC | [MIEJSCOWOŚĆ] | NER |
-| Kontakt i lokalizacja | TELEFON | [TELEFON] | reguła |
-| Kontakt i lokalizacja | EMAIL | [EMAIL] | reguła |
-| Kontakt i lokalizacja | IP | [IP] | reguła |
-| Kontakt i lokalizacja | GEO | [GEO] | NER |
-| Finanse | IBAN | [IBAN] | reguła + mod97 |
-| Finanse | NR_RACHUNKU | [NR_RACHUNKU] | reguła |
-| Finanse | NR_KARTY | [NR_KARTY] | reguła + Luhn |
-| Finanse | CVV | [CVV] | reguła |
-| Finanse | NR_UMOWY | [NR_UMOWY] | reguła + NER |
-| Finanse | KWOTA | [KWOTA] | NER |
-| Finanse | DOCHOD | [DOCHÓD] | NER |
-| Ubezpieczenia | NR_POLISY | [NR_POLISY] | konfigurowalne wzorce + NER |
-| Ubezpieczenia | NR_SZKODY | [NR_SZKODY] | konfigurowalne wzorce + NER |
-| Ubezpieczenia | NR_REJESTRACYJNY | [NR_REJESTRACYJNY] | reguła |
-| Ubezpieczenia | VIN | [VIN] | reguła |
-| Ubezpieczenia | NR_KW | [NR_KW] | reguła |
-| Zdrowie — art. 9 RODO | DANE_ZDROWOTNE | [DANE_ZDROWOTNE] | NER |
-| Zdrowie — art. 9 RODO | ROZPOZNANIE | [ROZPOZNANIE] | NER + słowniki |
-| Zdrowie — art. 9 RODO | ICD10 | [ICD10] | reguła + słowniki |
-| Zdrowie — art. 9 RODO | LEK | [LEK] | NER + słowniki |
-| Zdrowie — art. 9 RODO | NR_DOKUMENTACJI | [NR_DOKUMENTACJI] | reguła |
-| Zdrowie — art. 9 RODO | PLACOWKA | [PLACÓWKA] | NER |
-| Zdrowie — art. 9 RODO | LEKARZ | [LEKARZ_n] | NER |
-| Zdrowie — art. 9 RODO | NPWZ | [NPWZ] | reguła |
+| Group | Entity | Placeholder | Method |
+|-------|--------|-------------|--------|
+| Personal identification | OSOBA | [OSOBA_n] | NER |
+| Personal identification | IMIE | [IMIĘ_n] | NER |
+| Personal identification | NAZWISKO | [NAZWISKO_n] | NER |
+| Personal identification | DATA_URODZENIA | [DATA_URODZENIA] | NER |
+| Personal identification | WIEK | [WIEK] | NER |
+| Personal identification | PLEC | [PŁEĆ] | NER |
+| State identifiers | PESEL | [PESEL] | rule + checksum |
+| State identifiers | NR_DOWODU | [NR_DOWODU] | rule + checksum |
+| State identifiers | NR_PASZPORTU | [NR_PASZPORTU] | rule |
+| State identifiers | NR_PRAWA_JAZDY | [NR_PRAWA_JAZDY] | rule |
+| State identifiers | NIP | [NIP] | rule + checksum |
+| State identifiers | REGON | [REGON] | rule + checksum |
+| Contact and location | ADRES | [ADRES_n] | NER |
+| Contact and location | KOD_POCZTOWY | [KOD_POCZTOWY] | rule |
+| Contact and location | MIEJSCOWOSC | [MIEJSCOWOŚĆ] | NER |
+| Contact and location | TELEFON | [TELEFON] | rule |
+| Contact and location | EMAIL | [EMAIL] | rule |
+| Contact and location | IP | [IP] | rule |
+| Contact and location | GEO | [GEO] | NER |
+| Finance | IBAN | [IBAN] | rule + mod97 |
+| Finance | NR_RACHUNKU | [NR_RACHUNKU] | rule |
+| Finance | NR_KARTY | [NR_KARTY] | rule + Luhn |
+| Finance | CVV | [CVV] | rule |
+| Finance | NR_UMOWY | [NR_UMOWY] | rule + NER |
+| Finance | KWOTA | [KWOTA] | NER |
+| Finance | DOCHOD | [DOCHÓD] | NER |
+| Insurance | NR_POLISY | [NR_POLISY] | configurable patterns + NER |
+| Insurance | NR_SZKODY | [NR_SZKODY] | configurable patterns + NER |
+| Insurance | NR_REJESTRACYJNY | [NR_REJESTRACYJNY] | rule |
+| Insurance | VIN | [VIN] | rule |
+| Insurance | NR_KW | [NR_KW] | rule |
+| Health — Art. 9 GDPR | DANE_ZDROWOTNE | [DANE_ZDROWOTNE] | NER |
+| Health — Art. 9 GDPR | ROZPOZNANIE | [ROZPOZNANIE] | NER + dictionaries |
+| Health — Art. 9 GDPR | ICD10 | [ICD10] | rule + dictionaries |
+| Health — Art. 9 GDPR | LEK | [LEK] | NER + dictionaries |
+| Health — Art. 9 GDPR | NR_DOKUMENTACJI | [NR_DOKUMENTACJI] | rule |
+| Health — Art. 9 GDPR | PLACOWKA | [PLACÓWKA] | NER |
+| Health — Art. 9 GDPR | LEKARZ | [LEKARZ_n] | NER |
+| Health — Art. 9 GDPR | NPWZ | [NPWZ] | rule |
 
-## Uwagi dotyczące formatu
+## Format notes
 
-| Encja | Uwaga |
-|-------|-------|
-| KWOTA | Span obejmuje przylegający token waluty gdy jest obecny w tekście: `1500 PLN`, `1 234,56 zł`. Generowane formaty: `1 234,56` (spacja+przecinek), `1234,56`, `1234.56`, `1.234,56`, `1500` (liczba całkowita) — każdy opcjonalnie z walutą (`PLN`, `zł`, `EUR`, `€`). |
-| DOCHOD | Takie same formaty i konwencja waluty jak KWOTA (dochód miesięczny lub roczny). |
-| NR_POLISY | Przyjmuje legacy (`PL0123456789`, `UB0123456789`) oraz slash-formaty: `POL/RRRR/N{1,6}`, `PL/RRRR/NNNNNNN` (lata 2015–2026). |
-| NR_SZKODY | Przyjmuje legacy (`SZK12345678`, `CLM12345678`) oraz slash-formaty: `SZK/RRRR/N{1,6}`, `CLM/RRRR/NNNNNN` (lata 2015–2026). |
+| Entity | Note |
+|--------|------|
+| KWOTA | Span includes the adjacent currency token when present in the text: `1500 PLN`, `1 234,56 zł`. Generated formats: `1 234,56` (space+comma), `1234,56`, `1234.56`, `1.234,56`, `1500` (integer) — each optionally with currency (`PLN`, `zł`, `EUR`, `€`). |
+| DOCHOD | Same formats and currency convention as KWOTA (monthly or annual income). |
+| NR_POLISY | Accepts legacy (`PL0123456789`, `UB0123456789`) and slash formats: `POL/RRRR/N{1,6}`, `PL/RRRR/NNNNNNN` (years 2015–2026). |
+| NR_SZKODY | Accepts legacy (`SZK12345678`, `CLM12345678`) and slash formats: `SZK/RRRR/N{1,6}`, `CLM/RRRR/NNNNNN` (years 2015–2026). |
 
 
-Łączna liczba typów: **39** w 6 grupach.
+Total entity types: **39** in 6 groups.
 
-## Roadmap — kategorie poza zakresem MVP
+## Roadmap — categories outside MVP scope
 
-Poniższe kategorie nie mają członka w enumie `Label` i nie są wykrywane przez model MVP.
-Pojawią się w przyszłych iteracjach.
+None have a `Label` member; the MVP model does not detect them. They may appear in future releases.
 
-**Art. 9/10 RODO — kategorie szczególne:**
-- Pochodzenie etniczne lub rasowe
-- Poglądy polityczne
-- Przekonania religijne lub światopoglądowe
-- Przynależność do związków zawodowych
-- Orientacja seksualna lub dane o życiu seksualnym
-- Dane biometryczne (o ile służą identyfikacji)
-- Dane o wyrokach skazujących i naruszeniach prawa
+**Art. 9/10 GDPR — special categories:**
+- Ethnic or racial origin
+- Political opinions
+- Religious or philosophical beliefs
+- Trade union membership
+- Sexual orientation or data on sex life
+- Biometric data (where used for identification)
+- Data on criminal convictions and offences
 
-**Quasi-identyfikatory:**
-- Stanowisko / tytuł zawodowy
-- Pracodawca / nazwa instytucji
-- Rzadkie zdarzenia życiowe powiązane z osobą
-- Daty zdarzeń (inne niż DATA_URODZENIA)
+**Quasi-identifiers:**
+- Job title / professional title
+- Employer / institution name
+- Rare life events linked to a person
+- Event dates (other than DATA_URODZENIA)
 
-## Wagi ryzyka
+## Risk weights
 
-Wagi grup do recall ważonego ryzykiem (eval/metrics.py — test synchronizacji
-`test_uc80` wymaga zgodności z tą tabelą):
+Group weights for risk-weighted recall (`eval/metrics.py`; `test_uc80` verifies consistency with this table):
 
-| Grupa | Waga |
-|-------|------|
-| Identyfikatory państwowe | 1.0 |
-| Finanse | 1.0 |
-| Ubezpieczenia | 0.9 |
-| Kontakt i lokalizacja | 0.8 |
-| Zdrowie — art. 9 RODO | 0.8 |
-| Identyfikacja osoby | 0.6 |
-
+| Group | Weight |
+|-------|--------|
+| State identifiers | 1.0 |
+| Finance | 1.0 |
+| Insurance | 0.9 |
+| Contact and location | 0.8 |
+| Health — Art. 9 GDPR | 0.8 |
+| Personal identification | 0.6 |

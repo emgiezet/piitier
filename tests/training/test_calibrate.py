@@ -94,5 +94,5 @@ def test_write_threshold(tmp_path: Path) -> None:
     model_card = tmp_path / "out" / "MODEL_CARD.md"
     assert model_card.exists()
     content = model_card.read_text(encoding="utf-8")
-    assert "Kalibracja progu" in content
+    assert "Threshold calibration" in content
     assert "0.42" in content

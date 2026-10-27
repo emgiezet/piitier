@@ -46,7 +46,7 @@ class Label(Enum):
         return self._numbered
 
     # ------------------------------------------------------------------ #
-    # Group 1 — Identyfikacja osoby                                        #
+    # Group 1 — Personal identification                                    #
     # ------------------------------------------------------------------ #
     OSOBA = ("[OSOBA_n]", True)
     IMIE = ("[IMIĘ_n]", True)
@@ -56,7 +56,7 @@ class Label(Enum):
     PLEC = ("[PŁEĆ]", False)
 
     # ------------------------------------------------------------------ #
-    # Group 2 — Identyfikatory państwowe                                   #
+    # Group 2 — State identifiers                                          #
     # ------------------------------------------------------------------ #
     PESEL = ("[PESEL]", False)
     NR_DOWODU = ("[NR_DOWODU]", False)
@@ -66,7 +66,7 @@ class Label(Enum):
     REGON = ("[REGON]", False)
 
     # ------------------------------------------------------------------ #
-    # Group 3 — Kontakt i lokalizacja                                      #
+    # Group 3 — Contact and location                                       #
     # ------------------------------------------------------------------ #
     ADRES = ("[ADRES_n]", True)
     KOD_POCZTOWY = ("[KOD_POCZTOWY]", False)
@@ -77,7 +77,7 @@ class Label(Enum):
     GEO = ("[GEO]", False)
 
     # ------------------------------------------------------------------ #
-    # Group 4 — Finanse                                                    #
+    # Group 4 — Finance                                                    #
     # ------------------------------------------------------------------ #
     IBAN = ("[IBAN]", False)
     NR_RACHUNKU = ("[NR_RACHUNKU]", False)
@@ -88,7 +88,7 @@ class Label(Enum):
     DOCHOD = ("[DOCHÓD]", False)
 
     # ------------------------------------------------------------------ #
-    # Group 5 — Ubezpieczenia                                              #
+    # Group 5 — Insurance                                                  #
     # ------------------------------------------------------------------ #
     NR_POLISY = ("[NR_POLISY]", False)
     NR_SZKODY = ("[NR_SZKODY]", False)
@@ -97,7 +97,7 @@ class Label(Enum):
     NR_KW = ("[NR_KW]", False)
 
     # ------------------------------------------------------------------ #
-    # Group 6 — Zdrowie — art. 9 RODO                                     #
+    # Group 6 — Health — Art. 9 GDPR                                      #
     # ------------------------------------------------------------------ #
     DANE_ZDROWOTNE = ("[DANE_ZDROWOTNE]", False)
     ROZPOZNANIE = ("[ROZPOZNANIE]", False)

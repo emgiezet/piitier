@@ -103,7 +103,7 @@ def write_report(
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    threshold_str = str(threshold) if threshold is not None else "brak — system bez progu"
+    threshold_str = str(threshold) if threshold is not None else "none — threshold-free system"
     date_str = datetime.now().isoformat()
     doc_count = len(result.doc_ids)
     gold_count = sum(len(g) for g in result.gold_spans_per_doc)
@@ -134,7 +134,7 @@ def write_report(
     numbering = cast(NumberingStats, metrics.get("numbering", NumberingStats(0, 0, 0, 0)))
     throughput = cast(ThroughputStats, metrics.get("throughput", ThroughputStats(0.0, 0.0)))
 
-    leaked_ids_str = ", ".join(leak.leaked_doc_ids) if leak.leaked_doc_ids else "brak"
+    leaked_ids_str = ", ".join(leak.leaked_doc_ids) if leak.leaked_doc_ids else "none"
     split_str = f"{split} (final numbers)" if is_final else split
 
     sha256_lines: list[str] = []
@@ -143,49 +143,49 @@ def write_report(
             sha256_lines.append(f"  - {fname}: {digest}")
 
     lines = [
-        f"# Raport: {system_name} na bench/{bench_version}/{split}",
+        f"# Report: {system_name} on bench/{bench_version}/{split}",
         "",
         "## System",
         f"- Name: {system_name}",
-        f"- Wersja: {system_version}",
-        f"- Data: {date_str}",
-        f"- Próg: {threshold_str}",
+        f"- Version: {system_version}",
+        f"- Date: {date_str}",
+        f"- Threshold: {threshold_str}",
         "",
-        "## Metadane",
+        "## Metadata",
         f"- Commit: {git_commit}",
-        f"- Dokumenty: {doc_count}",
+        f"- Documents: {doc_count}",
         f"- Split: {split_str}",
-        f"- Próg: {threshold_str}",
+        f"- Threshold: {threshold_str}",
     ]
 
     if sha256_lines:
         lines.append("- SHA-256 bench:")
         lines.extend(sha256_lines)
     else:
-        lines.append("- SHA-256 bench: (brak pliku bench lub dane syntetyczne)")
+        lines.append("- SHA-256 bench: (no bench file or synthetic data)")
 
     lines.extend(
         [
             "",
             "## Benchmark",
-            f"- Wersja: {bench_version}",
+            f"- Version: {bench_version}",
             f"- Split: {split_str}",
-            f"- Liczba dokumentów: {doc_count}",
-            f"- Liczba spanów gold: {gold_count}",
+            f"- Number of documents: {doc_count}",
+            f"- Number of gold spans: {gold_count}",
             "",
-            "## Sprzęt",
-            f"- Platforma: {platform.platform()}",
-            f"- Procesor: {platform.processor() or 'N/A'}",
+            "## Hardware",
+            f"- Platform: {platform.platform()}",
+            f"- CPU: {platform.processor() or 'N/A'}",
             f"- GPU: {gpu_name}",
             f"- Peak RAM: {peak_ram} bytes",
             "",
-            "## Encje (strict)",
+            "## Entities (strict)",
             f"- Micro Precision: {_fmt_p(strict_micro)}"
             f" (TP={strict_micro.tp}, FP={strict_micro.fp}, FN={strict_micro.fn})",
             f"- Micro Recall: {_fmt_r(strict_micro)}",
             f"- Micro F1: {_fmt_f1(strict_micro)}",
             "",
-            "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
+            "| Label | Precision | Recall | F1 | TP | FP | FN |",
             "|---|---|---|---|---|---|---|",
         ]
     )
@@ -199,13 +199,13 @@ def write_report(
     lines.extend(
         [
             "",
-            "## Encje (partial)",
+            "## Entities (partial)",
             f"- Micro Precision: {_fmt_p(partial_micro)}"
             f" (TP={partial_micro.tp}, FP={partial_micro.fp}, FN={partial_micro.fn})",
             f"- Micro Recall: {_fmt_r(partial_micro)}",
             f"- Micro F1: {_fmt_f1(partial_micro)}",
             "",
-            "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
+            "| Label | Precision | Recall | F1 | TP | FP | FN |",
             "|---|---|---|---|---|---|---|",
         ]
     )
@@ -230,8 +230,8 @@ def write_report(
         lines.extend(
             [
                 "",
-                "## Porównywalna podtaksonomia (bardsai_v2)",
-                f"- Etykiety: {label_names}",
+                "## Comparable subtaxonomy (bardsai_v2)",
+                f"- Labels: {label_names}",
                 f"- Strict Micro Precision: {_fmt_p(_comparable_strict)}"
                 f" (TP={_comparable_strict.tp}, FP={_comparable_strict.fp},"
                 f" FN={_comparable_strict.fn})",
@@ -253,7 +253,7 @@ def write_report(
     lines.extend(
         [
             "",
-            "## Recall ważony ryzykiem",
+            "## Risk-weighted recall",
             f"- Risk-weighted recall: {_fmt_rwr(rwr, undefined=rwr_undefined)}",
             "",
             "## Leak rate",
@@ -263,10 +263,10 @@ def write_report(
             f"- Values leaked: {_fmt_val_leak(leak)}",
             f"- Leaked doc IDs: {leaked_ids_str}",
             "",
-            "## Wierność",
+            "## Fidelity",
             f"- Changed chars outside spans: {fidelity_val}",
             "",
-            "## Numeracja",
+            "## Numbering",
             f"- Same entity consistent: {numbering.same_entity_consistent} "
             f"/ {numbering.same_entity_total}",
             f"- Different entity distinct: "
@@ -286,7 +286,7 @@ def write_report(
     _by_dt = by_doc_type or cast(dict[str, dict[str, object]] | None, metrics.get("by_doc_type"))
 
     if _by_dt:
-        lines.append("## Podział wg doc_type")
+        lines.append("## Breakdown by doc_type")
         lines.append("")
         for dt in sorted(_by_dt):
             dt_v = _by_dt[dt]
@@ -299,7 +299,7 @@ def write_report(
                     f"- Strict Micro Recall: {_fmt_r(sm)}",
                     f"- Strict Micro F1: {_fmt_f1(sm)}",
                     "",
-                    "| Etykieta | Precision | Recall | F1 | TP | FP | FN |",
+                    "| Label | Precision | Recall | F1 | TP | FP | FN |",
                     "|---|---|---|---|---|---|---|",
                 ]
             )

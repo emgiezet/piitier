@@ -102,9 +102,9 @@ def test_uc80_risk_weighted_recall() -> None:
     """UC-80: risk_weighted_recall hand computation and TAXONOMY sync.
 
     Fixture:
-      - g1: PESEL (Group: Identyfikatory państwowe, weight = 1.0) -> caught
-      - g2: IBAN (Group: Finanse, weight = 1.0) -> missed
-      - g3: OSOBA (Group: Identyfikacja osoby, weight = 0.6) -> caught
+      - g1: PESEL (Group: State identifiers, weight = 1.0) -> caught
+      - g2: IBAN (Group: Finance, weight = 1.0) -> missed
+      - g3: OSOBA (Group: Personal identification, weight = 0.6) -> caught
 
     Arithmetic:
       - Total weight = 1.0 + 1.0 + 0.6 = 2.6
@@ -131,16 +131,16 @@ def test_uc80_risk_weighted_recall() -> None:
     content = taxonomy_path.read_text(encoding="utf-8")
 
     match = re.search(
-        r"## Wagi ryzyka.*?\n\n(\|.*?\n\|[-| ]+\n(?:\|.*?\n)+)",
+        r"## Risk weights.*?\n\n(\|.*?\n\|[-| ]+\n(?:\|.*?\n)+)",
         content,
         re.DOTALL,
     )
-    assert match, "Wagi ryzyka section or table not found in docs/TAXONOMY.md"
+    assert match, "Risk weights section or table not found in docs/TAXONOMY.md"
 
     table_text = match.group(1)
     parsed_weights: dict[str, float] = {}
     for line in table_text.strip().split("\n"):
-        if "|" in line and "---" not in line and "Grupa" not in line:
+        if "|" in line and "---" not in line and "Group" not in line:
             parts = [p.strip() for p in line.split("|") if p.strip()]
             if len(parts) == 2:
                 group_name, weight_str = parts
@@ -355,7 +355,7 @@ def test_uc84_throughput_stats_and_ram() -> None:
 
 def test_group_for_label_and_direct_identifiers() -> None:
     """Additional assertions for group_for_label and DIRECT_IDENTIFIERS."""
-    assert group_for_label(Label.PESEL) == "Identyfikatory państwowe"
-    assert group_for_label(Label.OSOBA) == "Identyfikacja osoby"
+    assert group_for_label(Label.PESEL) == "State identifiers"
+    assert group_for_label(Label.OSOBA) == "Personal identification"
     assert Label.PESEL in DIRECT_IDENTIFIERS
     assert Label.OSOBA not in DIRECT_IDENTIFIERS

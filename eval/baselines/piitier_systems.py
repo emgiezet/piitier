@@ -12,7 +12,7 @@ from piitier.spans import Span
 if TYPE_CHECKING:
     pass
 
-# NER-only types according to docs/TAXONOMY.md column Metoda
+# NER-only types according to docs/TAXONOMY.md column Method
 # (entities with method containing 'NER' without rule/wzorzec):
 _RULES_UNMAPPED: frozenset[Label] = frozenset(
     {

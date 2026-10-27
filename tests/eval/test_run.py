@@ -77,16 +77,16 @@ def test_uc90_write_report_and_zero_gold(tmp_path: Path) -> None:
 
     content = report_file.read_text(encoding="utf-8")
     expected_headings = [
-        "# Raport:",
+        "# Report:",
         "## System",
         "## Benchmark",
-        "## Sprzęt",
-        "## Encje (strict)",
-        "## Encje (partial)",
-        "## Recall ważony ryzykiem",
+        "## Hardware",
+        "## Entities (strict)",
+        "## Entities (partial)",
+        "## Risk-weighted recall",
         "## Leak rate",
-        "## Wierność",
-        "## Numeracja",
+        "## Fidelity",
+        "## Numbering",
         "## Throughput",
     ]
     last_idx = 0

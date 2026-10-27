@@ -89,19 +89,19 @@ def _fidelity_ok(original: str, rendered: str, spans: list[Span]) -> bool:
 
 
 def test_weights_match_taxonomy() -> None:
-    """GROUP_WEIGHTS in fusion.py equals the Wagi ryzyka table in docs/TAXONOMY.md."""
+    """GROUP_WEIGHTS in fusion.py equals the Risk weights table in docs/TAXONOMY.md."""
     content = TAXONOMY_PATH.read_text(encoding="utf-8")
     match = re.search(
-        r"## Wagi ryzyka.*?\n\n(\|.*?\n\|[-| ]+\n(?:\|.*?\n)+)",
+        r"## Risk weights.*?\n\n(\|.*?\n\|[-| ]+\n(?:\|.*?\n)+)",
         content,
         re.DOTALL,
     )
-    assert match, "Wagi ryzyka section or table not found in docs/TAXONOMY.md"
+    assert match, "Risk weights section or table not found in docs/TAXONOMY.md"
 
     table_text = match.group(1)
     parsed: dict[str, float] = {}
     for line in table_text.strip().split("\n"):
-        if "|" in line and "---" not in line and "Grupa" not in line:
+        if "|" in line and "---" not in line and "Group" not in line:
             parts = [p.strip() for p in line.split("|") if p.strip()]
             if len(parts) == 2:
                 parsed[parts[0]] = float(parts[1])
@@ -126,12 +126,12 @@ def test_label_group_complete() -> None:
 
 def test_label_weight_returns_group_weight() -> None:
     """label_weight() returns the correct group weight for representative labels."""
-    assert label_weight(Label.PESEL) == 1.0  # Identyfikatory państwowe
-    assert label_weight(Label.IBAN) == 1.0  # Finanse
-    assert label_weight(Label.NR_POLISY) == pytest.approx(0.9)  # Ubezpieczenia
-    assert label_weight(Label.ADRES) == pytest.approx(0.8)  # Kontakt i lokalizacja
-    assert label_weight(Label.DANE_ZDROWOTNE) == pytest.approx(0.8)  # Zdrowie
-    assert label_weight(Label.OSOBA) == pytest.approx(0.6)  # Identyfikacja osoby
+    assert label_weight(Label.PESEL) == 1.0  # State identifiers
+    assert label_weight(Label.IBAN) == 1.0  # Finance
+    assert label_weight(Label.NR_POLISY) == pytest.approx(0.9)  # Insurance
+    assert label_weight(Label.ADRES) == pytest.approx(0.8)  # Contact and location
+    assert label_weight(Label.DANE_ZDROWOTNE) == pytest.approx(0.8)  # Health
+    assert label_weight(Label.OSOBA) == pytest.approx(0.6)  # Personal identification
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ def test_uc102_pesel_range_exactly_matches_rule() -> None:
 def test_uc102_real_detect_all_valid_rule_beats_longer_ner() -> None:
     """UC-102 (real sources): detect_all PESEL (rule, valid) beats a longer NER KWOTA.
 
-    PESEL has group weight 1.0; KWOTA (Finanse) also 1.0.  Normally longer span
+    PESEL has group weight 1.0; KWOTA (Finance) also 1.0.  Normally longer span
     wins, but valid rule precedence means PESEL beats KWOTA regardless of length.
     Before the _is_valid_rule fix (source.startswith("rule:")) this failed because
     detect_all emits source="rule", not "rule:pesel".
@@ -477,7 +477,7 @@ def test_uc105_rule_vs_rule_from_detect_all() -> None:
     by constructing rule spans with the real "rule" source and checking that
     the fuse output is always non-overlapping with full coverage.
     """
-    # Both rule+valid, same weight (Identyfikatory państwowe), different lengths
+    # Both rule+valid, same weight (State identifiers), different lengths
     s1 = Span(0, 11, Label.PESEL, "rule", 1.0, "valid")  # length 11
     s2 = Span(5, 20, Label.NIP, "rule", 1.0, "valid")  # length 15 → wins overlap [5,11)
 

@@ -374,7 +374,7 @@ def test_uc142_main_exits_1_config_unchanged_card_has_count_and_reason(
     card = (out_dir / "MODEL_CARD.md").read_text(encoding="utf-8")
     assert "unsupported" in card
     assert "40" in card
-    assert "nie zapisano" in card  # no numeric threshold shown on failure
+    assert "not written" in card  # no numeric threshold shown on failure
 
 
 def test_uc142_match_mode_honoured_in_unsupported_branch() -> None:
@@ -424,7 +424,7 @@ def test_uc143_calibrate_threshold_partial_returns_success() -> None:
 def test_uc143_strict_main_exits_1_config_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """UC-143: strict mode main exits 1; config byte-identical; card shows nie zapisano."""
+    """UC-143: strict mode main exits 1; config byte-identical; card shows not written."""
     eval_f = tmp_path / "eval.jsonl"
     cal_f = tmp_path / "cal.jsonl"
     eval_f.write_text('{"text": "a", "spans": []}\n', encoding="utf-8")
@@ -452,7 +452,7 @@ def test_uc143_strict_main_exits_1_config_unchanged(
     assert ret == 1
     assert cfg.read_bytes() == original_bytes
     card = (tmp_path / "out" / "MODEL_CARD.md").read_text(encoding="utf-8")
-    assert "nie zapisano" in card
+    assert "not written" in card
 
 
 def test_uc143_partial_main_exits_0_threshold_written(
@@ -595,13 +595,11 @@ def test_uc144_doc_count_appears_in_model_card(tmp_path: Path) -> None:
 
 
 def test_uc144_per_group_recall_pesel_group() -> None:
-    """UC-144: all spans PESEL → 'Identyfikatory państwowe' recall=0.9, span_count=100."""
+    """UC-144: all spans PESEL → 'State identifiers' recall=0.9, span_count=100."""
     result = calibrate_threshold(
         _make_pesel_docs_90_recall(), target_recall=0.85, match="strict", min_support=0
     )
-    id_group = next(
-        (gr for gr in result.group_recalls if gr.group == "Identyfikatory państwowe"), None
-    )
+    id_group = next((gr for gr in result.group_recalls if gr.group == "State identifiers"), None)
     assert id_group is not None
     assert id_group.span_count == 100
     assert abs(id_group.recall - 0.9) < 1e-6
@@ -648,9 +646,9 @@ def test_uc144_model_card_contains_wilson_and_groups(tmp_path: Path) -> None:
     )
     write_threshold(cfg, result, target_recall=0.85, match_mode="strict")
     content = (tmp_path / "out" / "MODEL_CARD.md").read_text(encoding="utf-8")
-    assert "Przedział ufności Wilsona" in content
-    assert "Recall per grupa ryzyka" in content
-    assert "Identyfikatory państwowe" in content
+    assert "Wilson 95% confidence interval" in content
+    assert "Recall per risk group" in content
+    assert "State identifiers" in content
 
 
 def test_uc144_performance_2000_docs_finishes_under_10s() -> None:
@@ -758,7 +756,7 @@ def test_write_threshold_success_writes_config_and_model_card(tmp_path: Path) ->
 
     assert yaml.safe_load(cfg.read_text(encoding="utf-8"))["threshold"] == pytest.approx(0.42)
     card = (tmp_path / "out" / "MODEL_CARD.md").read_text(encoding="utf-8")
-    assert "Kalibracja progu" in card
+    assert "Threshold calibration" in card
     assert "0.42" in card
 
 
@@ -783,7 +781,7 @@ def test_write_threshold_failure_preserves_previous_success_section(tmp_path: Pa
     assert cfg.read_bytes() == config_after_success, "config unchanged after failure"
     card = (tmp_path / "out" / "MODEL_CARD.md").read_text(encoding="utf-8")
     assert "0.7" in card, "previous success threshold still visible"
-    assert "nie zapisano" in card
+    assert "not written" in card
     assert "target_not_met" in card
 
 

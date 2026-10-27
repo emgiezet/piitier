@@ -256,4 +256,4 @@ def test_uc113_run_benchmark_cross_doc_collision_all_metrics_zero(tmp_path: Path
             "peak_ram": 0,
         },
     )
-    assert "Liczba spanów gold: 1" in report_file.read_text(encoding="utf-8")
+    assert "Number of gold spans: 1" in report_file.read_text(encoding="utf-8")

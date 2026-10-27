@@ -62,8 +62,7 @@ value, because the pipeline has nowhere to put its output otherwise.
 - **API contract directory:** `none`
   <!-- the planned gateway mirrors the external OpenAI API; no in-repo contract yet -->
 - **Architecture decision records:** `none`
-  <!-- the design rationale is docs/Plan MVP polskiego modelu do anonimizacji danych wrażliwych
-       dla fintech, insurtech i medtech.md — a plan, not an ADR log -->
+  <!-- the design rationale is docs/PLAN.md — a plan, not an ADR log -->
 - **Domain glossary skill:** `none`
 
 ## Stacks and verification

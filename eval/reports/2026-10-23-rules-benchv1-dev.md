@@ -1,29 +1,29 @@
-# Raport: rules na bench/v1/dev
+# Report: rules on bench/v1/dev
 
 ## System
 - Name: rules
-- Wersja: 0.1.0
-- Data: 2026-10-23T18:34:26.994462
-- Próg: brak — system bez progu
+- Version: 0.1.0
+- Date: 2026-10-23T18:34:26.994462
+- Threshold: none — threshold-free system
 
 ## Benchmark
-- Wersja: v1
+- Version: v1
 - Split: dev
-- Liczba dokumentów: 6
-- Liczba spanów gold: 40
+- Number of documents: 6
+- Number of gold spans: 40
 
-## Sprzęt
-- Platforma: Linux-7.0.0-38-generic-x86_64-with-glibc2.43
-- Procesor: N/A
+## Hardware
+- Platform: Linux-7.0.0-38-generic-x86_64-with-glibc2.43
+- CPU: N/A
 - GPU: NVIDIA GeForce RTX 3090 Ti
 - Peak RAM: 39944192 bytes
 
-## Encje (strict)
+## Entities (strict)
 - Micro Precision: 0.8750
 - Micro Recall: 0.1750
 - Micro F1: 0.2917
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.0000 | 0.0000 | 0.0000 |
 | DANE_ZDROWOTNE | 0.0000 | 0.0000 | 0.0000 |
@@ -46,12 +46,12 @@
 | ROZPOZNANIE | 0.0000 | 0.0000 | 0.0000 |
 | TELEFON | 0.0000 | 0.0000 | 0.0000 |
 
-## Encje (partial)
+## Entities (partial)
 - Micro Precision: 0.8750
 - Micro Recall: 0.1750
 - Micro F1: 0.2917
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.0000 | 0.0000 | 0.0000 |
 | DANE_ZDROWOTNE | 0.0000 | 0.0000 | 0.0000 |
@@ -74,7 +74,7 @@
 | ROZPOZNANIE | 0.0000 | 0.0000 | 0.0000 |
 | TELEFON | 0.0000 | 0.0000 | 0.0000 |
 
-## Recall ważony ryzykiem
+## Risk-weighted recall
 - Risk-weighted recall: 0.2134
 
 ## Leak rate
@@ -82,10 +82,10 @@
 - Values leaked: 32 / 40
 - Leaked doc IDs: doc_polisa_01, doc_szkoda_02, doc_umowa_03, doc_mail_05, doc_szpital_06
 
-## Wierność
+## Fidelity
 - Changed chars outside spans: 0
 
-## Numeracja
+## Numbering
 - Same entity consistent: 0 / 0
 - Different entity distinct: 0 / 0
 

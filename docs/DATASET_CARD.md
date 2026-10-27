@@ -1,70 +1,70 @@
-# Karta Datasetu: Syntetyczny Polski Korpus PII (piitier)
+# Dataset card: synthetic Polish PII corpus (piitier)
 
-## Cel Datasetu
-Zbiór danych służy do treningu i ewaluacji modeli rozpoznawania nazw własnych i danych wrażliwych (NER / anonimizacja PII) dla języka polskiego w domenach fintech, insurtech i medtech. Wszystkie dane są w 100% syntetyczne, generowane programowo przy użyciu zweryfikowanych generatorów, szablonów oraz technik augmentacji i twardych negatywów.
+## Dataset purpose
+Trains and evaluates NER and sensitive-data detection models (NER / PII anonymisation) for Polish across fintech, insurtech, and medtech domains. All data are 100% synthetic, generated from templates and code generators with augmentation and hard-negative sampling.
 
-## Schemat JSONL
-Każdy rekord w plikach `train.jsonl` oraz `dev.jsonl` jest obiektem JSON o następujących polach:
-- `id` (string): Unikalny identyfikator dokumentu (np. `doc_0000000` dla szablonów, `hn_0000000` dla twardych negatywów).
-- `doc_type` (string): Typ dokumentu (np. `polisa`, `umowa_kredytowa`, `wypis_szpitalny`, `mail_klienta`, `wyciag`, `skierowanie`, `zgloszenie_szkody`, `transkrypcja_infolinii`, `raport_towarzystwa`).
-- `template_id` (string): Identyfikator szablonu bazowego lub unikalnego identyfikatora negatywu.
-- `seed` (int): Ziarno generatora losowego (`random.Random`) użyte do wyrenderowania dokumentu.
-- `text` (string): Pełna treść tekstu dokumentu.
-- `spans` (lista obiektów): Lista dopasowanych spanów zawierających:
-  - `start` (int): Początkowy offset znakowy (inkluzywny).
-  - `end` (int): Końcowy offset znakowy (wykluczeniowy).
-  - `label` (string): Etykieta PII (np. `PESEL`, `ADRES`, `OSOBA`, itp.).
-  - `entity` (string | null): Identyfikator entity dla korelacji (np. `"1"`).
-  - `text` (string): Dokładny podciąg tekstu pokryty przez span (`text[start:end] == span["text"]`).
+## JSONL schema
+Each record in `train.jsonl` and `dev.jsonl` is a JSON object with the following fields:
+- `id` (string): Unique document identifier (e.g. `doc_0000000` for template-based documents, `hn_0000000` for hard negatives).
+- `doc_type` (string): Document type (e.g. `polisa`, `umowa_kredytowa`, `wypis_szpitalny`, `mail_klienta`, `wyciag`, `skierowanie`, `zgloszenie_szkody`, `transkrypcja_infolinii`, `raport_towarzystwa`).
+- `template_id` (string): Identifier of the base template or unique negative identifier.
+- `seed` (int): Random-generator seed (`random.Random`) used to render the document.
+- `text` (string): Full text content of the document.
+- `spans` (list of objects): List of matched spans, each containing:
+  - `start` (int): Character-level start offset (inclusive).
+  - `end` (int): Character-level end offset (exclusive).
+  - `label` (string): PII label (e.g. `PESEL`, `ADRES`, `OSOBA`, etc.).
+  - `entity` (string | null): Entity identifier for cross-span correlation (e.g. `"1"`).
+  - `text` (string): Exact substring covered by the span (`text[start:end] == span["text"]`).
 
-## Źródła i Licencje
+## Sources and licences
 1. **Faker (`pl_PL`)**:
-   - Używany do generowania imion, nazwisk, adresów i miast.
-   - Licencja: **MIT**.
+   - Used to generate first names, surnames, addresses, and cities.
+   - Licence: **MIT**.
 2. **Morfeusz 2**:
-   - Używany do odmiany nazwisk i rzeczowników w odpowiednich przypadkach gramatycznych.
-   - Licencja: **BSD-2-Clause**.
-3. **Listy autorskie w repozytorium**:
+   - Used to inflect surnames and nouns in the appropriate grammatical cases.
+   - Licence: **BSD-2-Clause**.
+3. **In-repository authored lists**:
    - Curated list of ICD-10 codes, medical drugs (INN), diagnosis terms, and identifiers.
-   - Licencja: Twórczość własna (w ramach projektu piitier).
-4. **Lokalne modele językowe (Ollama, tylko na lokalnym sprzęcie)**:
-   - `SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF` (`write-templates`) pisał tekst szablonów 8 pierwotnych typów dokumentów z placeholderami w miejscu PII. Wyjście zawierające wartość zamiast placeholdera jest odrzucane.
-   - `qwen3-coder:30b` (`templatize`) służy wyłącznie jako detektor spanów w tekście polis PDF: zwraca w JSON listę dosłownych fragmentów z etykietą (`text`, `label`); kod sprawdza, że fragment występuje dosłownie, i sam podmienia go na placeholder.
-   - Żaden LLM nie generuje wartości PII ani nie nadaje etykiet spanom w korpusie; wartości wstrzykuje kod.
-5. **Pliki PDF polis ubezpieczeniowych (dawcy układu)**:
-   - Pochodzenie: wewnętrzny zbiór dokumentów (polisy wefox, PZU, Inter Partner Assistance/AXA) z **fikcyjnymi tożsamościami** (nie są to dane osobowe, ale łudząco je przypominają); zatwierdzony do treningu przez właściciela danych; nigdy nie jest redystrybuowany.
-   - Tekst jest ekstrahowany za pomocą `pypdf`, normalizowany (zamiana NBSP→spacja, ligatur fi/fl, wielokrotnych spacji) i przekazywany do lokalnego LLM (`qwen3-coder:30b` via Ollama), który **wyłącznie wskazuje spany** do zastąpienia; reguły kodu zamieniają każdą wartość na placeholder `{{LABEL}}`. Bramka akceptacji (`_gate`) odrzuca każdy fragment, w którego literałach pozostaje cokolwiek o kształcie wartości PII: sprawdza parsowanie, przecieki (cyfry 9+, daty poza kontekstem daty urodzenia, numery kart, IBAN, kody pocztowe) i kształt etykiet.
-   - Szablony pochodne (`templates/polisa/polisa_pdf_<hash>.txt`) **nie trafiają do repozytorium** (`.gitignore`, CLAUDE.md niezmiennik 2 — dokumenty pracodawcy i klientów nigdy nie wchodzą do repo): powstają lokalnie z prawnie dopuszczonych PDF-ów przez `python -m piitier.datagen templatize`. Czysty klon zawiera tylko ręcznie pisane szablony `polisa`; korpus odtworzony bez lokalnych szablonów pochodnych różni się od historycznego `data/synthetic/v0.3`.
-   - Licencja źródłowa: **zastrzeżona — nie jest redystrybuowana**. Szablony pochodne są zatwierdzone do treningu przez właściciela danych i stanowią wyłącznie odwzorowanie układu dokumentów bez oryginalnych wartości. Wyjściowy syntetyczny dataset jest publikowany na **CC BY 4.0** wyłącznie jako produkt generatorów kodu i modeli generatywnych, nie oryginalnych PDF-ów.
+   - Licence: Original work (within the piitier project).
+4. **Local language models (Ollama, local hardware only)**:
+   - `SpeakLeash/Bielik-11B-v3.0-Instruct-GGUF` (`write-templates`) authored the text of templates for 8 original document types with PII placeholders. Output containing an actual value instead of a placeholder is rejected.
+   - `qwen3-coder:30b` (`templatize`) is used solely as a span detector on the text of insurance-policy PDFs: it returns a JSON list of literal fragments with a label (`text`, `label`); the code verifies that each fragment appears verbatim and replaces it with a placeholder itself.
+   - No LLM generates PII values or assigns span labels in the corpus; values are injected by code.
+5. **Insurance-policy PDF files (layout donors)**:
+   - Origin: internal document collection (wefox, PZU, Inter Partner Assistance/AXA policies) with **fictitious identities** (not real personal data, though they closely resemble it); approved for training by the data owner; never redistributed.
+   - Text is extracted with `pypdf`, normalised (NBSP→space, fi/fl ligature substitution, multiple-space collapsing) and passed to a local LLM (`qwen3-coder:30b` via Ollama), which **only identifies spans** for replacement; code rules replace each value with a `{{LABEL}}` placeholder. The acceptance gate (`_gate`) rejects any fragment whose literals retain anything shaped like a PII value: it checks parsing, leaks (9+ digits, dates outside a birth-date context, card numbers, IBANs, postal codes), and label shape.
+   - Derived templates (`templates/polisa/polisa_pdf_<hash>.txt`) **are not included in the repository** (`.gitignore`; CLAUDE.md invariant 2: employer and client documents never enter the repo): they are generated locally from legally permitted PDFs via `python -m piitier.datagen templatize`. A clean clone contains only the hand-written `polisa` templates; a corpus rebuilt without the derived local templates will differ from the historical `data/synthetic/v0.3`.
+   - Source licence: **proprietary, not redistributed**. Derived templates are approved for training by the data owner and represent only the layout of the documents without any original values. The output synthetic dataset is published under **CC BY 4.0** solely as a product of code generators and generative models, not of the original PDFs.
 
-6. **Raporty towarzystw ubezpieczeń (szablony syntetyczne)**:
-   - Repozytorium zawiera trzy ręcznie napisane szablony `raport_towarzystwa_01..03.txt`: raport portfela polis, raport likwidacji szkód i przegląd ochrony majątkowej. Układ i daty są fikcyjne; nie są to dokumenty otrzymane od towarzystw.
-   - `python -m piitier.datagen templatize-tables` może lokalnie przekształcić dopuszczone do użycia raporty XLSX/CSV w szablony z placeholderami. Mapuje nagłówki kolumn na etykiety PII; identyfikatory agentów i loginy są pomijane, a bramka akceptacji odrzuca literały o kształcie PII. Szablony pochodne pozostają lokalne (`.gitignore`); nie są częścią dystrybuowanego datasetu.
+6. **Insurance-company reports (synthetic templates)**:
+   - The repository contains three hand-written `raport_towarzystwa_01..03.txt` templates: a policy-portfolio report, a claims-settlement report, and a property-coverage review. The layout and dates are fictional; these are not documents received from insurers.
+   - `python -m piitier.datagen templatize-tables` can locally convert approved XLSX/CSV reports into templates with placeholders. It maps column headers to PII labels; agent identifiers and logins are skipped, and the acceptance gate rejects literals shaped like PII values. Derived templates remain local (`.gitignore`); they are not part of the distributed dataset.
 
-## Licencja Wyjściowa
-Wyjściowy syntetyczny dataset (pliki `train.jsonl` / `dev.jsonl`) jest udostępniany na licencji **CC BY 4.0** (Creative Commons Attribution 4.0 International). Licencja dotyczy wyłącznie syntetycznych danych generowanych przez kod i modele językowe. Szablony pochodne z niedystrybuowanych PDF/XLSX/CSV nie są redystrybuowane — pozostają lokalnie (`.gitignore`), nigdy w repozytorium ani jako surowe dokumenty czy wyekstrahowany tekst pierwotny.
+## Output licence
+The output synthetic dataset (`train.jsonl` / `dev.jsonl`) is released under **CC BY 4.0** (Creative Commons Attribution 4.0 International). The licence covers only the synthetic data produced by code and language models. Derived templates from non-distributed PDFs/XLSX/CSV files are not redistributed; they remain local (`.gitignore`), never in the repository, neither as raw documents nor as extracted source text.
 
-## Augmentacja
-Kiedy `--augment` jest aktywny, każdy dokument jest augmentowany niezależnie z zadanym prawdopodobieństwem (`augment_fraction`, domyślnie 0,25). Dla dokumentów wybranych do augmentacji stosowany jest losowy **niepusty** podzbiór transformacji:
+## Augmentation
+When `--augment` is active, each document is augmented independently with a given probability (`augment_fraction`, default 0.25). For documents selected for augmentation, a random **non-empty** subset of transformations is applied:
 
-| Transformacja | Prawdopodobieństwo włączenia |
+| Transformation | Inclusion probability |
 |---|---|
-| `ocr_confusions` (zamiana 0↔O, 1↔l) | 0,5 |
-| `space_digit_groups` (spacje w cyfrach) | 0,5 |
-| `strip_diacritics` (usunięcie polskich znaków diakrytycznych) | 0,5 |
-| `uppercase` (zamiana na wielkie litery) | 0,3 |
+| `ocr_confusions` (swap 0↔O, 1↔l) | 0.5 |
+| `space_digit_groups` (insert spaces in digit groups) | 0.5 |
+| `strip_diacritics` (remove Polish diacritics) | 0.5 |
+| `uppercase` (convert to upper case) | 0.3 |
 
-Jeśli losowanie nie wybrałoby żadnej transformacji, wybierana jest jedna losowa (gwarancja niepustości). Zarówno decyzja o augmentacji danego dokumentu, jak i wybór transformacji są w pełni deterministyczne — ziarno na poziomie dokumentu pochodzi z `seed + i`. Manifest zapisuje: `augment_fraction`, `augmented_doc_count` (liczba dokumentów faktycznie zaugmentowanych) oraz `transform_doc_counts` (liczba dokumentów, do których zastosowano każdą transformację).
+Both choices are fully deterministic; the per-document seed is `seed + i`. The manifest records: `augment_fraction`, `augmented_doc_count` (number of documents actually augmented), and `transform_doc_counts` (number of documents to which each transformation was applied).
 
-**Uzasadnienie:** korpus v0.1 był augmentowany w 100% (każdy dokument, wszystkie transformacje), co spowodowało wyciek stylu (model nauczył się identyfikować wersje wieloliterowe jako PII nawet bez kontekstu). Augmentacja ułamkowa z losowym podzbiorem transformacji redukuje ten efekt, zachowując różnorodność danych.
+**Rationale:** corpus v0.1 was augmented 100% (every document, all transformations), which caused a style leak (the model learned to identify upper-case versions as PII even without context). Fractional augmentation with a random subset of transformations reduces this effect and keeps data diversity.
 
-## Reprodukowalność
-Zbiór jest w pełni deterministyczny. Użycie tego samego ziarna (`seed`), wersji biblioteki `piitier` oraz zestawu szablonów gwarantuje uzyskanie identycznych plików wynikowych (bajt w bajt, potwierdzone sumą kontrolną SHA-256). Polecenie `build` przydziela szablony metodą round-robin po typach dokumentów (posortowanych leksykograficznie): iteracja `i` wybiera typ `doc_types[i % len(doc_types)]`, a w obrębie typu szablony cyklicznie.
+## Reproducibility
+The dataset is fully deterministic. Using the same seed (`seed`), version of the `piitier` library, and set of templates guarantees identical output files (byte-for-byte, verified by SHA-256 checksum). The `build` command allocates templates via round-robin across document types (sorted lexicographically): iteration `i` selects type `doc_types[i % len(doc_types)]`, and within a type templates cycle in order.
 
-Reguła podziału: `sha256(template_id) % 10 == 0 → dev`, pozostałe → `train`. Dodatkowa gwarancja: jeśli wszystkie szablony danego typu dokumentu trafiłyby do `dev`, cały ten typ jest przymusowo kierowany do `train` (gwarancja pokrycia treningu). Typy, dla których zastosowano tę korektę, są zapisywane w `manifest.json` pod kluczem `split_forced_train`. Mechanizm jest deterministyczny i niezależny od parametrów `n` oraz `seed`.
+Split rule: `sha256(template_id) % 10 == 0 → dev`, all others → `train`. Additional guarantee: if all templates of a given document type would be assigned to `dev`, the entire type is force-redirected to `train` (training-coverage guarantee). Types for which this correction was applied are recorded in `manifest.json` under the key `split_forced_train`. The mechanism is deterministic and independent of the `n` and `seed` parameters.
 
-## Pełny Bieg (Instrukcja dla Orchestratora)
-Aby wykonać pełny bieg produkcyjny (20 000 dokumentów szablonowych + 2 000 twardych negatywów, z augmentacją ułamkową), należy uruchomić następujące polecenie:
+## Full run (orchestrator instructions)
+To run a full production build (20,000 template documents + 2,000 hard negatives, fractional augmentation):
 
 ```bash
 python -m piitier.datagen build \
@@ -77,7 +77,7 @@ python -m piitier.datagen build \
   --out data/synthetic/v0.3/
 ```
 
-## Statystyki Biegu (pełny bieg, piitier 0.1.0, seed 42)
-> - Dokumenty: 22 000 łącznie (20 000 szablonowych + 2 000 twardych negatywów), split: `train` 21 283, `dev` 717; `augment: true`.
+## Run statistics (full run, piitier 0.1.0, seed 42)
+> - Documents: 22,000 total (20,000 template-based + 2,000 hard negatives), split: `train` 21,283, `dev` 717; `augment: true`.
 > - `span_counts`: KWOTA 38920, OSOBA 28428, PESEL 18466, IBAN 17056, NR_POLISY 16725, NIP 11388, NR_DOWODU 11143, REGON 6771, ADRES 6003, NR_KARTY 4455, NR_REJESTRACYJNY 3252, MIEJSCOWOSC 3020, NAZWISKO 2840, IMIE 2705, KOD_POCZTOWY 2653, TELEFON 2468, VIN 2283, PLACOWKA 2222, LEKARZ 2222, NPWZ 2222, LEK 2222, EMAIL 1451, DATA_URODZENIA 1259, NR_SZKODY 1205, NR_UMOWY 1111, NR_KW 1111, ROZPOZNANIE 1111, ICD10 1111.
-> - SHA-256: `train.jsonl` `1530afd5a5f5a2efb116cd3a12742165c88cdadd6cc878b5967b1ea9554c1a98`, `dev.jsonl` `36c757419e978b2ed8d1cf8450bb52edc95676d32a9778528316bc7b4df9c752`; offsety zweryfikowane (`check` → 0).
+> - SHA-256: `train.jsonl` `1530afd5a5f5a2efb116cd3a12742165c88cdadd6cc878b5967b1ea9554c1a98`, `dev.jsonl` `36c757419e978b2ed8d1cf8450bb52edc95676d32a9778528316bc7b4df9c752`; offsets verified (`check` → 0).

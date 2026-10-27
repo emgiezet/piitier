@@ -172,12 +172,12 @@ def corpus_entity_metrics_by_label(
 
 
 GROUP_WEIGHTS: dict[str, float] = {
-    "Identyfikatory państwowe": 1.0,
-    "Finanse": 1.0,
-    "Ubezpieczenia": 0.9,
-    "Kontakt i lokalizacja": 0.8,
-    "Zdrowie — art. 9 RODO": 0.8,
-    "Identyfikacja osoby": 0.6,
+    "State identifiers": 1.0,
+    "Finance": 1.0,
+    "Insurance": 0.9,
+    "Contact and location": 0.8,
+    "Health — Art. 9 GDPR": 0.8,
+    "Personal identification": 0.6,
 }
 
 
@@ -191,7 +191,7 @@ def group_for_label(label: Label) -> str:
         Label.WIEK,
         Label.PLEC,
     }:
-        return "Identyfikacja osoby"
+        return "Personal identification"
     if label in {
         Label.PESEL,
         Label.NR_DOWODU,
@@ -200,7 +200,7 @@ def group_for_label(label: Label) -> str:
         Label.NIP,
         Label.REGON,
     }:
-        return "Identyfikatory państwowe"
+        return "State identifiers"
     if label in {
         Label.ADRES,
         Label.KOD_POCZTOWY,
@@ -210,7 +210,7 @@ def group_for_label(label: Label) -> str:
         Label.IP,
         Label.GEO,
     }:
-        return "Kontakt i lokalizacja"
+        return "Contact and location"
     if label in {
         Label.IBAN,
         Label.NR_RACHUNKU,
@@ -220,7 +220,7 @@ def group_for_label(label: Label) -> str:
         Label.KWOTA,
         Label.DOCHOD,
     }:
-        return "Finanse"
+        return "Finance"
     if label in {
         Label.NR_POLISY,
         Label.NR_SZKODY,
@@ -228,7 +228,7 @@ def group_for_label(label: Label) -> str:
         Label.VIN,
         Label.NR_KW,
     }:
-        return "Ubezpieczenia"
+        return "Insurance"
     if label in {
         Label.DANE_ZDROWOTNE,
         Label.ROZPOZNANIE,
@@ -239,7 +239,7 @@ def group_for_label(label: Label) -> str:
         Label.LEKARZ,
         Label.NPWZ,
     }:
-        return "Zdrowie — art. 9 RODO"
+        return "Health — Art. 9 GDPR"
     raise ValueError(f"Unknown label: {label}")
 
 
