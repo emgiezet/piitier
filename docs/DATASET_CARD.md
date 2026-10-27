@@ -6,7 +6,7 @@ Zbiór danych służy do treningu i ewaluacji modeli rozpoznawania nazw własnyc
 ## Schemat JSONL
 Każdy rekord w plikach `train.jsonl` oraz `dev.jsonl` jest obiektem JSON o następujących polach:
 - `id` (string): Unikalny identyfikator dokumentu (np. `doc_0000000` dla szablonów, `hn_0000000` dla twardych negatywów).
-- `doc_type` (string): Typ dokumentu (np. `polisa`, `umowa_kredytowa`, `wypis_szpitalny`, `mail_klienta`, `wyciag`, `skierowanie`, `zgloszenie_szkody`, `transkrypcja_infolinii`, `zestawienie_prowizyjne`).
+- `doc_type` (string): Typ dokumentu (np. `polisa`, `umowa_kredytowa`, `wypis_szpitalny`, `mail_klienta`, `wyciag`, `skierowanie`, `zgloszenie_szkody`, `transkrypcja_infolinii`, `raport_towarzystwa`).
 - `template_id` (string): Identyfikator szablonu bazowego lub unikalnego identyfikatora negatywu.
 - `seed` (int): Ziarno generatora losowego (`random.Random`) użyte do wyrenderowania dokumentu.
 - `text` (string): Pełna treść tekstu dokumentu.
@@ -34,17 +34,15 @@ Każdy rekord w plikach `train.jsonl` oraz `dev.jsonl` jest obiektem JSON o nast
 5. **Pliki PDF polis ubezpieczeniowych (dawcy układu)**:
    - Pochodzenie: wewnętrzny zbiór dokumentów (polisy wefox, PZU, Inter Partner Assistance/AXA) z **fikcyjnymi tożsamościami** (nie są to dane osobowe, ale łudząco je przypominają); zatwierdzony do treningu przez właściciela danych; nigdy nie jest redystrybuowany.
    - Tekst jest ekstrahowany za pomocą `pypdf`, normalizowany (zamiana NBSP→spacja, ligatur fi/fl, wielokrotnych spacji) i przekazywany do lokalnego LLM (`qwen3-coder:30b` via Ollama), który **wyłącznie wskazuje spany** do zastąpienia; reguły kodu zamieniają każdą wartość na placeholder `{{LABEL}}`. Bramka akceptacji (`_gate`) odrzuca każdy fragment, w którego literałach pozostaje cokolwiek o kształcie wartości PII: sprawdza parsowanie, przecieki (cyfry 9+, daty poza kontekstem daty urodzenia, numery kart, IBAN, kody pocztowe) i kształt etykiet.
-   - Szablony pochodne (`templates/polisa/polisa_pdf_<hash>.txt`) **nie trafiają do repozytorium** (`.gitignore`, CLAUDE.md niezmiennik 2 — dokumenty pracodawcy i klientów nigdy nie wchodzą do repo): powstają lokalnie z `raw_data/poland-policy-parser/pdf/` (katalog w `.gitignore`) przez `python -m piitier.datagen templatize`. Czysty klon zawiera tylko ręcznie pisane szablony `polisa`; korpus odtworzony bez lokalnych szablonów pochodnych różni się od `data/synthetic/v0.3`.
+   - Szablony pochodne (`templates/polisa/polisa_pdf_<hash>.txt`) **nie trafiają do repozytorium** (`.gitignore`, CLAUDE.md niezmiennik 2 — dokumenty pracodawcy i klientów nigdy nie wchodzą do repo): powstają lokalnie z prawnie dopuszczonych PDF-ów przez `python -m piitier.datagen templatize`. Czysty klon zawiera tylko ręcznie pisane szablony `polisa`; korpus odtworzony bez lokalnych szablonów pochodnych różni się od historycznego `data/synthetic/v0.3`.
    - Licencja źródłowa: **zastrzeżona — nie jest redystrybuowana**. Szablony pochodne są zatwierdzone do treningu przez właściciela danych i stanowią wyłącznie odwzorowanie układu dokumentów bez oryginalnych wartości. Wyjściowy syntetyczny dataset jest publikowany na **CC BY 4.0** wyłącznie jako produkt generatorów kodu i modeli generatywnych, nie oryginalnych PDF-ów.
 
-6. **Zestawienia prowizyjne (dawcy układu)**:
-   - Pochodzenie: wewnętrzne zestawienia prowizyjne z **fikcyjnymi tożsamościami** (dane syntetyczne, zatwierdzone do treningu przez właściciela danych). Służą wyłącznie jako dawcy układu (layoutu) szablonów `zestawienie_prowizyjne`.
-   - Przetwarzanie: `python -m piitier.datagen templatize-tables` mapuje nagłówki kolumn na etykiety PII (mapowanie nagłówek→`{{LABEL}}`); kolumny identyfikatorów (loginy agentów, identyfikatory agentów i podobne) są pomijane i nie trafiają do szablonów; nie jest używany żaden LLM. Bramka akceptacji odrzuca każdy szablon zawierający w literałach wartości o kształcie PII.
-   - Szablony pochodne (`templates/zestawienie_prowizyjne/zestawienie_prowizyjne_<hash>.txt`) **nie trafiają do repozytorium** (`.gitignore`): powstają lokalnie z `raw_data/poland-commission-settlement/` przez `python -m piitier.datagen templatize-tables`. Repozytorium zawiera trzy ręcznie pisane szablony syntetyczne `zestawienie_prowizyjne_01..03.txt` (zmyślone daty i układ).
-   - Licencja źródłowa: **zastrzeżona — nie jest redystrybuowana**. Szablony pochodne zatwierdzone do treningu przez właściciela danych.
+6. **Raporty towarzystw ubezpieczeń (szablony syntetyczne)**:
+   - Repozytorium zawiera trzy ręcznie napisane szablony `raport_towarzystwa_01..03.txt`: raport portfela polis, raport likwidacji szkód i przegląd ochrony majątkowej. Układ i daty są fikcyjne; nie są to dokumenty otrzymane od towarzystw.
+   - `python -m piitier.datagen templatize-tables` może lokalnie przekształcić dopuszczone do użycia raporty XLSX/CSV w szablony z placeholderami. Mapuje nagłówki kolumn na etykiety PII; identyfikatory agentów i loginy są pomijane, a bramka akceptacji odrzuca literały o kształcie PII. Szablony pochodne pozostają lokalne (`.gitignore`); nie są częścią dystrybuowanego datasetu.
 
 ## Licencja Wyjściowa
-Wyjściowy syntetyczny dataset (pliki `train.jsonl` / `dev.jsonl`) jest udostępniany na licencji **CC BY 4.0** (Creative Commons Attribution 4.0 International). Licencja ta odnosi się wyłącznie do syntetycznych danych wyjściowych generowanych przez kod i generatywne modele językowe. Szablony pochodne z polis PDF i zestawień prowizyjnych są zatwierdzone do treningu, lecz **nie są redystrybuowane** — pozostają wyłącznie lokalnie (`.gitignore`), nigdy w repozytorium ani jako surowe dokumenty czy wyekstrahowany tekst pierwotny.
+Wyjściowy syntetyczny dataset (pliki `train.jsonl` / `dev.jsonl`) jest udostępniany na licencji **CC BY 4.0** (Creative Commons Attribution 4.0 International). Licencja dotyczy wyłącznie syntetycznych danych generowanych przez kod i modele językowe. Szablony pochodne z niedystrybuowanych PDF/XLSX/CSV nie są redystrybuowane — pozostają lokalnie (`.gitignore`), nigdy w repozytorium ani jako surowe dokumenty czy wyekstrahowany tekst pierwotny.
 
 ## Augmentacja
 Kiedy `--augment` jest aktywny, każdy dokument jest augmentowany niezależnie z zadanym prawdopodobieństwem (`augment_fraction`, domyślnie 0,25). Dla dokumentów wybranych do augmentacji stosowany jest losowy **niepusty** podzbiór transformacji:

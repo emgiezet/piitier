@@ -1,0 +1,9 @@
+RAPORT TOWARZYSTWA UBEZPIECZEŃ – likwidacja szkód za czerwiec 2024
+Sporządził: {{OSOBA#1}}, kontakt: {{EMAIL}}
+
+Lp.	Nr szkody	Nr polisy	Poszkodowany	Pojazd	Odszkodowanie
+1	{{NR_SZKODY}}	{{NR_POLISY}}	{{OSOBA#2}}	{{NR_REJESTRACYJNY}}	{{KWOTA}} PLN
+2	{{NR_SZKODY}}	{{NR_POLISY}}	{{OSOBA#3}}	{{NR_REJESTRACYJNY}}	{{KWOTA}} PLN
+3	{{NR_SZKODY}}	{{NR_POLISY}}	{{OSOBA#4}}	{{NR_REJESTRACYJNY}}	{{KWOTA}} PLN
+
+Łączna kwota wypłat: {{KWOTA}} PLN

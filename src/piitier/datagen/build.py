@@ -45,7 +45,7 @@ DOC_TYPES: frozenset[str] = frozenset(
         "umowa_kredytowa",
         "wypis_szpitalny",
         "wyciag",
-        "zestawienie_prowizyjne",
+        "raport_towarzystwa",
         "zgloszenie_szkody",
     }
 )

@@ -1,4 +1,4 @@
-Przeformułuj i przepisz wyłącznie tekst narracyjny poniższego wzorcowego dokumentu, zmieniając słownictwo i sformułowania w opisie, ale ZACHOWAJ KAŻDY ISTNIEJĄCY ZNACZNIK PII (placeholder w nawiasach klamrowych {{...}}) DOKŁADNIE BEZ ZMIAN (ta sama kolejność, te same nazwy, te same znaczniki). Nie dodawaj żadnych nowych znaczników ani pól.
+Przeformułuj i przepisz wyłącznie tekst narracyjny poniższego wzorcowego raportu towarzystwa ubezpieczeń, zmieniając słownictwo i sformułowania w opisie, ale ZACHOWAJ KAŻDY ISTNIEJĄCY ZNACZNIK PII (placeholder w nawiasach klamrowych {{...}}) DOKŁADNIE BEZ ZMIAN (ta sama kolejność, te same nazwy, te same znaczniki). Nie dodawaj żadnych nowych znaczników ani pól.
 
 Informacyjna lista 30 obsługiwanych znaczników:
 - {{PESEL}}, {{NIP}}, {{REGON}}, {{IBAN}}, {{NR_DOWODU}}, {{NR_KARTY}}, {{OSOBA}}, {{IMIE}}, {{NAZWISKO}}, {{DATA_URODZENIA}}, {{ADRES}}, {{KOD_POCZTOWY}}, {{MIEJSCOWOSC}}, {{TELEFON}}, {{EMAIL}}, {{NR_UMOWY}}, {{KWOTA}}, {{NR_POLISY}}, {{NR_SZKODY}}, {{NR_REJESTRACYJNY}}, {{VIN}}, {{NR_KW}}, {{ICD10}}, {{LEK}}, {{ROZPOZNANIE}}, {{PLACOWKA}}, {{LEKARZ}}, {{NPWZ}}, {{DOCHOD}}, {{DANE_ZDROWOTNE}}
@@ -6,11 +6,11 @@ Informacyjna lista 30 obsługiwanych znaczników:
 W tej operacji używaj WYŁĄCZNIE znaczników, które znajdują się już we wzorcu poniżej. Nie wymyślaj żadnych nowych etykiet ani pól.
 
 Wzorcowy dokument:
-ZESTAWIENIE PROWIZYJNE
+RAPORT TOWARZYSTWA UBEZPIECZEŃ – przegląd szkód
 
-Nr polisy	Ubezpieczający	PESEL	Agent	Składka	Prowizja
-{{NR_POLISY}}	{{OSOBA#1}}	{{PESEL#1}}	{{OSOBA#2}}	{{KWOTA}}	{{KWOTA}}
-{{NR_POLISY}}	{{OSOBA#3}}	{{PESEL#3}}	{{OSOBA#4}}	{{KWOTA}}	{{KWOTA}}
-{{NR_POLISY}}	{{OSOBA#5}}	{{PESEL#5}}	{{OSOBA#6}}	{{KWOTA}}	{{KWOTA}}
+Nr polisy	Nr szkody	Ubezpieczony	PESEL	Odszkodowanie
+{{NR_POLISY}}	{{NR_SZKODY}}	{{OSOBA#1}}	{{PESEL#1}}	{{KWOTA}}
+{{NR_POLISY}}	{{NR_SZKODY}}	{{OSOBA#2}}	{{PESEL#2}}	{{KWOTA}}
+{{NR_POLISY}}	{{NR_SZKODY}}	{{OSOBA#3}}	{{PESEL#3}}	{{KWOTA}}
 
 Przypomnienie: Przepisz powyższy tekst, zmieniając prozę i styl, ale ZACHOWAJ WSZYSTKIE ISTNIEJĄCE ZNACZNIKI BEZ ZMIAN. Zwróć WYŁĄCZNIE surowy dokument wynikowy bez dodatkowych wyjaśnień, nagłówków i bez bloków kodu.

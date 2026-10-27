@@ -1,7 +1,7 @@
 """Tabular-document → placeholder-template harvester (``templatize-tables`` command).
 
-Reads commission-settlement XLSX and CSV files and produces placeholder-only templates
-for the ``zestawienie_prowizyjne`` document type.
+Reads insurer-report XLSX and CSV files and produces placeholder-only templates
+for the ``raport_towarzystwa`` document type.
 Public entry point: :func:`templatize_tables`.
 """
 
@@ -152,20 +152,18 @@ _COL_MAP: list[tuple[re.Pattern[str], Label, str]] = [
     (_c(r"inkaso$"), Label.KWOTA, "other"),
     (_c(r"^sk[lł]adka"), Label.KWOTA, "other"),
     (_c(r"sk[lł]adka$"), Label.KWOTA, "other"),
-    (_c(r"^prowizja"), Label.KWOTA, "other"),
-    (_c(r"prowizja$"), Label.KWOTA, "other"),
+    (_c(r"^odszkodowani"), Label.KWOTA, "other"),
+    (_c(r"odszkodowani[ae]$"), Label.KWOTA, "other"),
     (_c(r"^do\s+wyp[lł]aty$"), Label.KWOTA, "other"),
     (_c(r"^podstawa$"), Label.KWOTA, "other"),
     (_c(r"^podst(?:awa)?\s+nal"), Label.KWOTA, "other"),
     (_c(r"^prow(?:\s+\[pln\])?$"), Label.KWOTA, "other"),
     (_c(r"^gwp"), Label.KWOTA, "other"),
     (_c(r"^przypis"), Label.KWOTA, "other"),
-    (_c(r"^warto[śs][ćc]\s+prowizji"), Label.KWOTA, "other"),
     (_c(r"^potr[aą]cen"), Label.KWOTA, "other"),
     (_c(r"^balans$|^saldo$"), Label.KWOTA, "other"),
     (_c(r"^kwota_oplacona\d*$|^yearly\s+premium$"), Label.KWOTA, "other"),
     (_c(r".*\[pln\]$"), Label.KWOTA, "other"),
-    (_c(r"^stawka\s+prow"), Label.KWOTA, "other"),
 ]
 
 # Columns dropped by header: logins and agent/user/intermediary identifiers. They have no
@@ -519,11 +517,11 @@ def templatize_tables(
     src_dir: Path,
     out: Path,
     *,
-    doc_type: str = "zestawienie_prowizyjne",
+    doc_type: str = "raport_towarzystwa",
     max_per_file: int = 3,
     reject_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Convert tabular commission-settlement files into placeholder-only templates.
+    """Convert tabular insurer reports into placeholder-only templates.
 
     Reads every ``*.xlsx`` (all worksheets) and ``*.csv`` under *src_dir*.
     Skips ``~$`` lock files and all other file extensions.

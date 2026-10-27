@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from piitier.labels import Label
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -31,7 +33,7 @@ DOC_TYPES = frozenset(
         "transkrypcja_infolinii",
         "wypis_szpitalny",
         "skierowanie",
-        "zestawienie_prowizyjne",
+        "raport_towarzystwa",
     }
 )
 
@@ -417,12 +419,12 @@ def test_manifest_fallback_aggregation_sum(monkeypatch, tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# UC-29 — every packaged template renders without error; all 8 doc types present
+# UC-29 — every packaged template renders without error; all 9 doc types present
 # ---------------------------------------------------------------------------
 
 
 def test_uc29_packaged_templates_render_all_doc_types() -> None:
-    """Render every packaged template at seed 0; no TemplateError; all 8 doc types covered."""
+    """Render every packaged template at seed 0; no TemplateError; all 9 doc types covered."""
     from piitier.datagen.build import collect_templates
     from piitier.datagen.render import render
 
@@ -442,6 +444,22 @@ def test_uc29_packaged_templates_render_all_doc_types() -> None:
             )
 
     assert doc_types_seen == DOC_TYPES, f"Missing doc types: {DOC_TYPES - doc_types_seen}"
+
+
+def test_insurer_reports_include_policy_and_claim_context() -> None:
+    """Bundled insurer reports render with policy/claim spans, not agency settlements."""
+    from piitier.datagen.build import collect_templates
+    from piitier.datagen.render import render
+
+    reports = [
+        render(tmpl, seed=0)
+        for tmpl in collect_templates(PACKAGED_TEMPLATES)
+        if tmpl.doc_type == "raport_towarzystwa"
+    ]
+    assert len(reports) == 3
+    assert all("RAPORT" in doc.text.upper() for doc in reports)
+    assert all(any(span.label == Label.NR_POLISY for span in doc.spans) for doc in reports)
+    assert any(any(span.label == Label.NR_SZKODY for span in doc.spans) for doc in reports)
 
 
 # ---------------------------------------------------------------------------
