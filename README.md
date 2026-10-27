@@ -175,7 +175,7 @@ test keeps it in sync with the `Label` enum.
 | Hub repo id | `emgiezet/piitier-pl` — upload is a manual step and the weights are not yet published |
 | Base | [`bardsai/eu-pii-anonimization-multilang-v2`](https://huggingface.co/bardsai/eu-pii-anonimization-multilang-v2) — ModernBERT, 307M parameters, Apache-2.0 |
 | Training data | synthetic Polish corpus, 9 document types, see [`docs/DATASET_CARD.md`](docs/DATASET_CARD.md) |
-| Formats | PyTorch safetensors and FP32 ONNX. INT8 is deliberately withheld: it drops recall by 0.018, above the 0.01 tolerance, so `training.export_onnx` refuses to ship it |
+| Formats | PyTorch safetensors, FP32 ONNX and dynamic INT8 ONNX. The INT8 export passes the recall gate for `pii-5-v4` (recall 0.9814 vs 0.9868 FP32 on synthetic dev, delta 0.0054 < 0.01); it had failed for `pii-5-v3` (delta 0.018) |
 | Hardware | trains in hours on a single consumer GPU; CPU inference |
 
 ### Results
@@ -257,7 +257,7 @@ design rationale and roadmap.
 | Frozen `bench/v1/test` split, 300–500 double-annotated documents | planned |
 | Numbered coreference placeholders (`[OSOBA_1]`, `[OSOBA_2]`) | done |
 | Reversible `pseudonymize` mode with an encrypted mapping | planned |
-| INT8 ONNX once the recall gate passes | blocked on quantisation quality |
+| INT8 ONNX once the recall gate passes | done for `pii-5-v4` (delta 0.0054) |
 
 ## Known limitations
 

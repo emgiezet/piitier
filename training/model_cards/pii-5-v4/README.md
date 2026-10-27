@@ -87,10 +87,14 @@ The intermediate `pii-5-v4a` checkpoint is local-only and not distributed; its
 
 ### Formats
 
-- **safetensors** (FP32) — primary, shipped.
-- **FP32 ONNX** — shipped; F1 0.912 on synthetic dev (source: `FINDINGS.md`).
-- **INT8 ONNX** — withheld; dynamic INT8 quantisation reduces recall by 0.018, which exceeds
-  the 0.01 tolerance (source: `FINDINGS.md`, `specs/PII-7/spec.md`).
+- **safetensors** (FP32): primary.
+- **FP32 ONNX** (`onnx/model.onnx` + `onnx/model.onnx.data`): strict F1 0.9832, recall 0.9868
+  on `data/synthetic/v0.3/dev.jsonl` (2 363 documents) at threshold 0.78.
+- **INT8 ONNX** (`model_int8.onnx`, dynamic quantisation, 310 MB): strict F1 0.9745, recall
+  0.9814 on the same split. Recall delta against FP32 is 0.0054, inside the 0.01 tolerance,
+  so the export gate passed for this checkpoint. The earlier `pii-5-v3` INT8 export failed
+  the same gate (delta 0.018). Source: `training/out/pii-5-v4/export_report.json`, copied
+  to this repository as `export_report.json`.
 
 ---
 
