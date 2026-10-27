@@ -2,10 +2,13 @@
 
 Entry points:
 
-- ``piitier mask <path> [-o <out>] [--model <dir>] [--threshold T]`` reads a .txt, .md, .csv or
-  text-layer .pdf file and masks PII with ``piitier.mask()`` (rules only, default) or
-  ``piitier.Anonymizer`` (rules + NER when --model is given). Output goes to stdout or ``-o``.
+- ``piitier mask <path> [-o <out>] [--model <dir>] [--threshold T]``
+  ``[--skip-columns COLS] [--delimiter CHAR]`` reads a .txt, .md, .csv or text-layer .pdf
+  file and masks PII with ``piitier.mask()`` (rules only, default) or ``piitier.Anonymizer``
+  (rules + NER when --model is given). Selected CSV columns remain unmasked.
   Exit 0 on success, 2 on usage/input error, 3 on a PDF with no text layer.
+- ``piitier compare <path> --model <dir> [--threshold T] [--device cpu|cuda]`` opens
+  a local two-pane TUI to inspect replacements without printing the document.
 - ``piitier scan [--allowlist F] [--write-allowlist F] <path>...`` reports checksum-valid
   identifiers as ``path:line:column: LABEL`` (never the value). Exit 0 when nothing outside the
   allowlist is found, 1 when something is, 2 on a missing path or allowlist.
@@ -18,6 +21,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 import piitier
+from piitier.csvskip import parse_csv_field_ranges, sniff_delimiter
 from piitier.loaders import PdfNoTextError, get_loader
 from piitier.scan import Finding, read_allowlist, scan_file
 
@@ -27,6 +31,8 @@ def mask_file(
     output_path: Path | None,
     model: Path | None = None,
     threshold: float = 0.0,
+    skip_columns: list[str] | None = None,
+    delimiter: str | None = None,
 ) -> int:
     """Mask PII in a file and write output.
 
@@ -35,6 +41,8 @@ def mask_file(
         output_path: Path to the output file (None = stdout).
         model: Optional path to a local NER checkpoint directory.
         threshold: Minimum NER score; ignored when model is None.
+        skip_columns: CSV header names or 1-based indices to leave unmasked.
+        delimiter: Optional single-character CSV delimiter.
 
     Returns:
         Exit code: 0 on success, 2 on error.
@@ -47,6 +55,19 @@ def mask_file(
     # `not (0 <= t <= 1)` is also True for NaN, which fails every comparison.
     if model is not None and not (0.0 <= threshold <= 1.0):
         print(f"invalid threshold: {threshold} (expected a number in [0, 1])", file=sys.stderr)
+        return 2
+    if input_path.suffix.lower() != ".csv":
+        if skip_columns:
+            print(f"--skip-columns is only supported for .csv files: {input_path}", file=sys.stderr)
+            return 2
+        if delimiter is not None:
+            print(f"--delimiter is only supported for .csv files: {input_path}", file=sys.stderr)
+            return 2
+    if delimiter is not None and not skip_columns:
+        print("cannot use --delimiter without --skip-columns", file=sys.stderr)
+        return 2
+    if delimiter is not None and len(delimiter) != 1:
+        print(f"invalid delimiter: {delimiter!r} (must be exactly 1 character)", file=sys.stderr)
         return 2
 
     # 2. Refuse to overwrite input with output — check early, before model
@@ -82,17 +103,45 @@ def mask_file(
         print(str(e), file=sys.stderr)
         return 2
 
+    if skip_columns and any("," in item for item in skip_columns):
+        rows = parse_csv_field_ranges(text, delimiter or sniff_delimiter(text)).rows
+        headers = {cell.value.strip().casefold() for cell in rows[0]} if rows else set()
+        skip_columns = [
+            token.strip()
+            for item in skip_columns
+            for token in ([item] if item.casefold() in headers else item.split(","))
+            if token.strip()
+        ]
+
     # 5. Mask the content.
+    def warn_unknown(col: str) -> None:
+        print(f"warning: unknown column: {col}", file=sys.stderr)
+
     if model is not None:
-        # Catch construction and inference errors (empty dir, bad checkpoint,
-        # NaN/out-of-range threshold, missing torch/transformers) so that the
-        # CLI always exits cleanly without a traceback (finding 3 & 4).
+        # Catch model construction and inference errors without a traceback.
         try:
             anonymizer = piitier.Anonymizer(model=model, threshold=threshold)
-            masked_text = anonymizer.mask(text)
+            if skip_columns:
+                masked_text = piitier.mask_csv(
+                    text,
+                    skip_columns=skip_columns,
+                    delimiter=delimiter,
+                    detector=anonymizer.detect,
+                    on_unknown_column=warn_unknown,
+                )
+            else:
+                masked_text = anonymizer.mask(text)
         except (OSError, ValueError, ImportError):
             print(f"model error: {model}", file=sys.stderr)
             return 2
+    elif skip_columns:
+        masked_text = piitier.mask_csv(
+            text,
+            skip_columns=skip_columns,
+            delimiter=delimiter,
+            detector=piitier.detect,
+            on_unknown_column=warn_unknown,
+        )
     else:
         masked_text = piitier.mask(text)
 
@@ -182,6 +231,29 @@ def main() -> int:
         default=0.0,
         help="Minimum NER span score to keep (default: 0.0); ignored without --model",
     )
+    mask_parser.add_argument(
+        "--skip-columns",
+        action="append",
+        default=None,
+        metavar="COLS",
+        help="Comma-separated column names or 1-based indices to leave unmasked (CSV only)",
+    )
+    mask_parser.add_argument(
+        "--delimiter",
+        type=str,
+        default=None,
+        metavar="CHAR",
+        help="CSV field delimiter override, e.g. ';' or ',' (CSV only; default: auto-detected)",
+    )
+
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Inspect original and anonymized text side by side in a terminal",
+    )
+    compare_parser.add_argument("input", type=Path, help="Input file (.txt, .md, .csv, .pdf)")
+    compare_parser.add_argument("--model", type=Path, required=True, help="Local NER checkpoint")
+    compare_parser.add_argument("--threshold", type=float, default=0.0, help="Minimum NER score")
+    compare_parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
 
     scan_parser = subparsers.add_parser(
         "scan",
@@ -205,9 +277,21 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == "mask":
-        return mask_file(args.input, args.output, args.model, args.threshold)
+        skip_columns = (
+            [item.strip() for item in args.skip_columns if item.strip()]
+            if args.skip_columns is not None
+            else None
+        )
+        delimiter = "\t" if args.delimiter == "\\t" else args.delimiter
+        return mask_file(
+            args.input, args.output, args.model, args.threshold, skip_columns, delimiter
+        )
     if args.command == "scan":
         return scan_files(args.paths, args.allowlist, args.write_allowlist)
+    if args.command == "compare":
+        from piitier.tui import compare_file
+
+        return compare_file(args.input, args.model, args.threshold, args.device)
 
     return 1
 
