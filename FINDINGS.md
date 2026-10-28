@@ -220,7 +220,7 @@ The following items are open going into the stable release:
 
 - **Frozen test split**: `bench/v1/test` does not exist yet; the full held-out set needs human annotators and double-labelling with kappa ≥ 0.7 (PII-11 tooling done).
 - **Data provenance**: the layout-donor documents behind the local templates belong to the project author, who also releases the weights; no third-party data licence applies (recorded 2026-10-27, model card "Training data and provenance").
-- **Hub upload**: `emgiezet/piitier` weights have not been pushed; the publish checklist is at `training/model_cards/pii-5-v4/PUBLISH.md`.
+- **Hub upload**: done 2026-10-28, [`emgiezet/piitier`](https://huggingface.co/emgiezet/piitier) commit `04e50590` (safetensors, FP32 + INT8 ONNX, card, calibration sweep, export report); `piitier mask --model emgiezet/piitier --threshold 0.78` downloads and runs it.
 - **PII-6-b coreference numbering**: implemented in 0.1.0 (see Pipeline table above).
 - **PII-6-c pseudonymize mode**: consistent replacement with synthetic values (name → name, PESEL → valid PESEL) is not implemented.
 - **INT8 export gate**: passed for `pii-5-v4` (FP32 recall 0.9868, INT8 0.9814, delta 0.0054 < 0.01 on `data/synthetic/v0.3/dev.jsonl`; `training/out/pii-5-v4/export_report.json`, 2026-10-27). The `pii-5-v3` export had failed it (delta 0.018).

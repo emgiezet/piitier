@@ -53,7 +53,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `uv.lock` is excluded from `piitier scan` because NIP/PESEL/REGON rules fire inside package hashes; no fix yet.
 - No frozen `bench/v1/test` split: the full test set needs human annotators.
 - INT8 ONNX passes the recall gate for `pii-5-v4` (delta 0.0054) but had failed for `pii-5-v3`; the gate is still the single arbiter per checkpoint.
-- Hub upload of `emgiezet/piitier` weights is manual and has not been performed.
 - TUI button labels are Polish (`Maskuj kolumny`, `Anonimizuj`).
 
 ---

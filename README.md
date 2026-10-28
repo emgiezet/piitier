@@ -19,9 +19,9 @@ tel. [TELEFON], e-mail [EMAIL]. Rozpoznanie: [ROZPOZNANIE].
 Kwota roszczenia: [KWOTA]. Lekarz prowadzący: [LEKARZ_1].
 ```
 
-> **Status: 0.1.0.** Library, CLI, TUI, training and evaluation pipeline are complete.
-> The `pii-5-v4` checkpoint is being prepared for the Hugging Face Hub; it is not yet published
-> there. piitier is a tool, not a certificate of anonymisation; review its output before you rely on it.
+> **Status: 0.1.0.** Library, CLI, TUI, training and evaluation pipeline are complete and the
+> `pii-5-v4` checkpoint is published at [huggingface.co/emgiezet/piitier](https://huggingface.co/emgiezet/piitier).
+> piitier is a tool, not a certificate of anonymisation; review its output before you rely on it.
 
 ## Why piitier
 
@@ -172,7 +172,7 @@ test keeps it in sync with the `Label` enum.
 
 | Release candidate | `pii-5-v4`, calibrated threshold **0.78** ([`training/configs/pii-5-v4.yaml`](training/configs/pii-5-v4.yaml)) |
 | Model card | [`training/model_cards/pii-5-v4/README.md`](training/model_cards/pii-5-v4/README.md) |
-| Hub repo id | `emgiezet/piitier` — upload is a manual step and the weights are not yet published |
+| Hub repo | [`emgiezet/piitier`](https://huggingface.co/emgiezet/piitier): safetensors, FP32 ONNX, INT8 ONNX, model card (commit `04e50590`) |
 | Base | [`bardsai/eu-pii-anonimization-multilang-v2`](https://huggingface.co/bardsai/eu-pii-anonimization-multilang-v2) — ModernBERT, 307M parameters, Apache-2.0 |
 | Training data | synthetic Polish corpus, 9 document types, see [`docs/DATASET_CARD.md`](docs/DATASET_CARD.md) |
 | Formats | PyTorch safetensors, FP32 ONNX and dynamic INT8 ONNX. The INT8 export passes the recall gate for `pii-5-v4` (recall 0.9814 vs 0.9868 FP32 on synthetic dev, delta 0.0054 < 0.01); it had failed for `pii-5-v3` (delta 0.018) |
@@ -253,7 +253,7 @@ design rationale and roadmap.
 | Rules + NER + fusion + renderer, CLI, TUI, CSV column control | done |
 | Privacy-gated calibration (`pii-5-v4`, threshold 0.78) | done |
 | Load models by Hub id (`--model owner/name`, `--revision`) | done |
-| Publish `pii-5-v4` on the Hugging Face Hub with a model card | in progress — weights upload is a manual step |
+| Publish `pii-5-v4` on the Hugging Face Hub with a model card | done, 2026-10-28 |
 | Frozen `bench/v1/test` split, 300–500 double-annotated documents | planned |
 | Numbered coreference placeholders (`[OSOBA_1]`, `[OSOBA_2]`) | done |
 | Reversible `pseudonymize` mode with an encrypted mapping | planned |
