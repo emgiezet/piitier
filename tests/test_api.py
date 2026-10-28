@@ -365,12 +365,12 @@ def test_resolve_checkpoint_hub_id_calls_seam(
     fake_path = str(tmp_path)
 
     def fake_download(*, repo_id: str, revision: str | None = None) -> str:
-        assert repo_id == "emgiezet/piitier-pl"
+        assert repo_id == "emgiezet/piitier"
         assert revision == "abc123"
         return fake_path
 
     monkeypatch.setattr(hub, "_snapshot_download", fake_download)
-    result = hub.resolve_checkpoint("emgiezet/piitier-pl", revision="abc123")
+    result = hub.resolve_checkpoint("emgiezet/piitier", revision="abc123")
     assert result == tmp_path
 
 
@@ -388,8 +388,8 @@ def test_resolve_checkpoint_hub_id_no_revision(
         return fake_path
 
     monkeypatch.setattr(hub, "_snapshot_download", fake_download)
-    hub.resolve_checkpoint("emgiezet/piitier-pl")
-    assert calls == [{"repo_id": "emgiezet/piitier-pl", "revision": None}]
+    hub.resolve_checkpoint("emgiezet/piitier")
+    assert calls == [{"repo_id": "emgiezet/piitier", "revision": None}]
 
 
 def test_resolve_checkpoint_non_dir_non_id_raises_valueerror() -> None:
@@ -419,8 +419,8 @@ def test_resolve_checkpoint_seam_raising_wraps_as_could_not_download(
         raise OSError("network unreachable")
 
     monkeypatch.setattr(hub, "_snapshot_download", boom)
-    with pytest.raises(ValueError, match="could not download emgiezet/piitier-pl"):
-        hub.resolve_checkpoint("emgiezet/piitier-pl")
+    with pytest.raises(ValueError, match="could not download emgiezet/piitier"):
+        hub.resolve_checkpoint("emgiezet/piitier")
 
 
 def test_resolve_checkpoint_import_error_mentions_ner_extra(
@@ -444,7 +444,7 @@ def test_resolve_checkpoint_import_error_mentions_ner_extra(
 
     monkeypatch.setattr(builtins, "__import__", patched_import)
     with pytest.raises(ValueError, match="piitier\\[ner\\]"):
-        hub.resolve_checkpoint("emgiezet/piitier-pl")
+        hub.resolve_checkpoint("emgiezet/piitier")
 
 
 def test_anonymizer_revision_passed_to_resolve_checkpoint(
@@ -469,7 +469,7 @@ def test_anonymizer_revision_passed_to_resolve_checkpoint(
 
     # NerPredictor will fail to load (empty dir) — catch that separately.
     with pytest.raises((ValueError, OSError, Exception)):
-        piitier.Anonymizer(model="emgiezet/piitier-pl", revision="v0.1.0")
+        piitier.Anonymizer(model="emgiezet/piitier", revision="v0.1.0")
 
     # The seam was called with the correct arguments.
-    assert calls == [{"repo_id": "emgiezet/piitier-pl", "revision": "v0.1.0"}]
+    assert calls == [{"repo_id": "emgiezet/piitier", "revision": "v0.1.0"}]

@@ -1,4 +1,4 @@
-# Publishing pii-5-v4 → emgiezet/piitier-pl
+# Publishing pii-5-v4 → emgiezet/piitier
 
 ## Pre-upload checklist
 
@@ -26,7 +26,7 @@ cp training/model_cards/pii-5-v4/README.md training/out/pii-5-v4/README.md
 Human-run only. The agent never pushes to the Hub.
 
 ```bash
-hf upload emgiezet/piitier-pl training/out/pii-5-v4 . --repo-type model \
+hf upload emgiezet/piitier training/out/pii-5-v4 . --repo-type model \
   --exclude "training_args.bin" --exclude "MODEL_CARD.md" --exclude "*.lock"
 ```
 

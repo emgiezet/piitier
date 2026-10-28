@@ -35,7 +35,7 @@ Conventions for the code live in `.claude/rules/python.md`.
    ```
    Then upload (human-run only — the agent never pushes to the Hub):
    ```bash
-   hf upload emgiezet/piitier-pl training/out/<run> . --repo-type model
+   hf upload emgiezet/piitier training/out/<run> . --repo-type model
    ```
    (`--repo-type dataset` for the synthetic corpus or PL-PII-Bench.)
    The card must contain:

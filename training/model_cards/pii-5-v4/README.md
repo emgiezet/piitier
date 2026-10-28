@@ -13,7 +13,7 @@ tags:
   - polish
   - modernbert
 model-index:
-  - name: emgiezet/piitier-pl
+  - name: emgiezet/piitier
     results:
       - task:
           type: token-classification
@@ -46,11 +46,11 @@ model-index:
             name: Leaked values (bench/v1/dev)
 ---
 
-# piitier-pl — Polish PII Anonymisation (pii-5-v4)
+# piitier — Polish PII Anonymisation (pii-5-v4)
 
 ## Model description
 
-**piitier-pl** is a `ModernBertForTokenClassification` fine-tuned for Polish PII detection
+**piitier** is a `ModernBertForTokenClassification` fine-tuned for Polish PII detection
 and anonymisation. It recognises **39 entity types** encoded as **79 BIO tags** (78 B-/I-
 tags + O).
 
@@ -124,14 +124,14 @@ span renderer. Rules win over the NER model on any overlapping identifier span.
 
 **CLI:**
 ```bash
-piitier mask file.txt --model emgiezet/piitier-pl --threshold 0.78
+piitier mask file.txt --model emgiezet/piitier --threshold 0.78
 ```
 
 **Python API:**
 ```python
 from piitier import Anonymizer
 
-anon = Anonymizer(model="emgiezet/piitier-pl", threshold=0.78)
+anon = Anonymizer(model="emgiezet/piitier", threshold=0.78)
 result = anon.mask("Jan Kowalski, PESEL 44051401359, zam. Warszawa")
 print(result.text)
 ```
@@ -145,7 +145,7 @@ print(result.text)
 ```python
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
 
-model_id = "emgiezet/piitier-pl"
+model_id = "emgiezet/piitier"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForTokenClassification.from_pretrained(model_id)
 

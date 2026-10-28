@@ -563,8 +563,8 @@ def test_revision_passed_through_to_seam(tmp_path: Path, monkeypatch: pytest.Mon
 
     # The seam returns an empty directory; NerPredictor will fail with ValueError/OSError.
     # We only care that the seam was called with the right args.
-    mask_file(in_file, None, model="emgiezet/piitier-pl", revision="abc")
-    assert calls == [{"repo_id": "emgiezet/piitier-pl", "revision": "abc"}]
+    mask_file(in_file, None, model="emgiezet/piitier", revision="abc")
+    assert calls == [{"repo_id": "emgiezet/piitier", "revision": "abc"}]
 
 
 # ---------------------------------------------------------------------------

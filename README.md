@@ -72,11 +72,11 @@ Rules-only masking (`piitier mask` without `--model`) needs only the base packag
 piitier --version
 uv run piitier mask document.pdf                                        # rules only; .txt .md .csv .pdf (text layer)
 uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold 0.78
-uv run piitier mask document.pdf --model emgiezet/piitier-pl --revision <sha> --threshold 0.78  # Hub repo id
+uv run piitier mask document.pdf --model emgiezet/piitier --revision <sha> --threshold 0.78  # Hub repo id
 uv run piitier mask customers.csv --skip-columns "ID,2"                 # keep columns by header name or 1-based index
 uv run piitier mask customers.csv --skip-columns "ID" --delimiter ";"   # override delimiter auto-detection
 uv run piitier compare claims.csv --model <checkpoint-dir> --device cuda  # interactive TUI: pick columns, mask, export
-uv run piitier compare claims.csv --model emgiezet/piitier-pl --revision <sha>  # Hub repo id form
+uv run piitier compare claims.csv --model emgiezet/piitier --revision <sha>  # Hub repo id form
 uv run piitier scan src/ docs/                                          # list checksum-valid identifiers, never their values
 uv run piitier scan src/ --write-allowlist .pii-allowlist               # write all fingerprints and exit 0
 ```
@@ -112,7 +112,7 @@ anon.mask(text)
 # -> 'Poszkodowana [IMIĘ_1] [NAZWISKO_1], PESEL [PESEL].'
 
 hub_anon = piitier.Anonymizer(
-    model="emgiezet/piitier-pl",  # Hugging Face Hub repo id; requires piitier[ner]
+    model="emgiezet/piitier",  # Hugging Face Hub repo id; requires piitier[ner]
     revision="main",              # branch, tag, or commit hash
     threshold=0.78,
 )
@@ -172,7 +172,7 @@ test keeps it in sync with the `Label` enum.
 
 | Release candidate | `pii-5-v4`, calibrated threshold **0.78** ([`training/configs/pii-5-v4.yaml`](training/configs/pii-5-v4.yaml)) |
 | Model card | [`training/model_cards/pii-5-v4/README.md`](training/model_cards/pii-5-v4/README.md) |
-| Hub repo id | `emgiezet/piitier-pl` — upload is a manual step and the weights are not yet published |
+| Hub repo id | `emgiezet/piitier` — upload is a manual step and the weights are not yet published |
 | Base | [`bardsai/eu-pii-anonimization-multilang-v2`](https://huggingface.co/bardsai/eu-pii-anonimization-multilang-v2) — ModernBERT, 307M parameters, Apache-2.0 |
 | Training data | synthetic Polish corpus, 9 document types, see [`docs/DATASET_CARD.md`](docs/DATASET_CARD.md) |
 | Formats | PyTorch safetensors, FP32 ONNX and dynamic INT8 ONNX. The INT8 export passes the recall gate for `pii-5-v4` (recall 0.9814 vs 0.9868 FP32 on synthetic dev, delta 0.0054 < 0.01); it had failed for `pii-5-v3` (delta 0.018) |
