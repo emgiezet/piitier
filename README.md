@@ -64,13 +64,21 @@ uv sync            # runtime + dev dependencies (torch/transformers for the NER 
 Rules-only masking (`piitier mask` without `--model`) needs only the base package; importing
 `piitier` never loads torch.
 
+### Download the model
+
+The published model is available on Hugging Face:
+**[emgiezet/piitier](https://huggingface.co/emgiezet/piitier)**.
+
+Pass `--model emgiezet/piitier` to `mask`, `mask-batch` or `compare` to download and
+cache it automatically, without preparing a local checkpoint directory first.
+
 ## Quick start
 
 ### Command line
 
 ```bash
 piitier --version
-uv run piitier mask document.pdf                                        # rules only; .txt .md .csv .pdf (text layer)
+uv run piitier mask document.pdf                                        # rules only; .txt .md .csv .json .pdf (text layer)
 uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold 0.78
 uv run piitier mask document.pdf --model emgiezet/piitier --revision <sha> --threshold 0.78  # Hub repo id
 uv run piitier mask customers.csv --skip-columns "ID,2"                 # keep columns by header name or 1-based index
@@ -93,6 +101,86 @@ uv run piitier scan src/ --write-allowlist .pii-allowlist               # write 
   missing path or missing allowlist file. `--write-allowlist <file>` writes fingerprints of all
   findings (merged with any existing allowlist) and exits 0 without printing findings. Run as a
   pre-commit hook to gate your own repository.
+
+### JSON documents
+
+`mask`, `mask-batch` and `compare` accept `.json` files (case-insensitive):
+
+```bash
+uv run piitier mask record.json -o masked.json
+uv run piitier mask record.json -o masked.json --model <checkpoint-dir> --threshold 0.78
+uv run piitier compare record.json --model <checkpoint-dir>
+```
+
+Only **string values** are anonymised, including nested object/array values and a
+top-level string. Detection sees decoded characters, so Unicode-escaped identifiers
+are masked too. Keys, numbers, booleans and null remain unchanged: identifiers stored
+as JSON numbers or object keys are **not anonymised**. Store sensitive identifiers in
+string values when using this mode.
+
+Replacements are applied to the original serialization, not to a re-encoded object.
+Whitespace, CRLF, key order, duplicate keys, numeric spelling and escapes outside
+replacements remain intact. Model-backed entity numbering is shared across values
+within one document and resets for the next document. `compare` uses the existing
+before/after panes and navigation; CSV-specific column selection/export is unchanged.
+
+Input must be one valid UTF-8 JSON document; an optional leading UTF-8 BOM is retained.
+Malformed JSON, invalid UTF-8 and non-JSON constants such as `NaN`/`Infinity` fail safely,
+without echoing input. Single-file failures exit 2 before model loading or output
+creation; batch failures affect only that file. JSONL, comments, field selectors and
+machine-readable detection reports are not part of this input mode.
+
+### Password-protected PDFs
+
+`mask` accepts RC4, AES-128 and AES-256 PDFs with a user or owner password. Without a
+credential it first tries the empty password, then offers up to three hidden attempts
+when stdin and stderr are terminals:
+
+```bash
+uv run piitier mask locked.pdf -o masked.txt
+uv run piitier mask locked.pdf --password-stdin -o masked.txt
+```
+
+`--password-stdin` reads one line, removing only its LF/CRLF terminator. A blank line is
+an empty password; EOF is an input error. It never prompts. `--password VALUE` is also
+available, but exposes the argument in process listings and shell history. The options
+are mutually exclusive and PDF-only. No passwords or decrypted intermediate PDFs are
+saved. Missing/wrong credentials exit 2 without creating or truncating the output;
+authenticated PDFs without a text layer exit 3. EOF cancels entry; Ctrl-C exits 130.
+
+`compare locked.pdf --model <checkpoint-dir>` opens a masked password dialog before
+loading the model or showing the existing comparison panes. Enter/Unlock submits the
+exact value (including empty); Escape/Cancel exits 2. It requires terminal stdin and
+stdout for credential entry, permits three attempts, and retains no password history.
+
+### Directory batches
+
+```bash
+uv run piitier mask-batch ./inputs -o ./masked --passwords ./inputs/passwords.csv
+uv run piitier mask-batch ./inputs -o ./masked --model <checkpoint-dir> --threshold 0.78
+```
+
+`--passwords` is optional. Its CSV must be UTF-8 (optional BOM) with exactly the header
+`filename,password` or `filename;password`. Filenames are case-sensitive basenames,
+not paths, and cannot repeat. Standard CSV quoting preserves punctuation, whitespace,
+embedded newlines and empty passwords. Blank records are ignored; a header-only map
+is valid. Invalid records fail before processing and report only the map path/line.
+Treat the mapping as a secret file; never commit it.
+
+Batch processes supported regular files once in filename order, without recursion.
+The mapping file and its resolved aliases are excluded, even inside inputs.
+Text and JSON filenames are retained; PDFs become `.txt`. Outputs must be outside the input
+directory, and existing files/symlinks or earlier colliding outputs are never overwritten.
+Each output is created only after extraction and masking succeed.
+
+Model options match `mask`, including `--revision`; one model instance is reused while
+numbering stays document-local. CSV inputs are masked as whole documents (no column
+selection in batch). Missing/wrong passwords can be corrected through hidden terminal
+entry; EOF fails only that file. Other per-file failures also allow later files to run.
+Ctrl-C exits 130, preserves completed outputs and removes the active partial write.
+Stdout remains empty. Stderr ends with `batch: N masked, M failed`; exit 0 means all
+selected files succeeded (including empty selection), 4 means per-file failures, and 2
+means invalid configuration or initial model failure.
 
 ### Python
 
@@ -275,7 +363,7 @@ design rationale and roadmap.
 
 | Path | Contents |
 |---|---|
-| `src/piitier/` | library: `rules/` (checksum validators), `ner/` (inference), `fusion.py`, `render.py`, `loaders.py`, `csvskip.py`, `cli.py`, `tui.py`, `datagen/` |
+| `src/piitier/` | library: `rules/` (checksum validators), `ner/` (inference), `fusion.py`, `render.py`, `loaders.py`, `csvskip.py`, `jsonmask.py`, `cli.py`, `tui.py`, `datagen/` |
 | `training/` | fine-tuning, calibration and ONNX export, driven by `training/configs/*.yaml` |
 | `training/model_cards/` | model cards for each released checkpoint |
 | `eval/` | metrics, baseline adapters, benchmark runner and reports |
