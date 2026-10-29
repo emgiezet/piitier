@@ -21,6 +21,7 @@ description = "Polish PII anonymiser for regulated sectors (fintech, insurtech, 
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography==50.0.2",
     "faker==40.43.0",
     "morfeusz2==1.99.15",
     "openpyxl==3.1.5",

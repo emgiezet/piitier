@@ -94,6 +94,58 @@ uv run piitier scan src/ --write-allowlist .pii-allowlist               # write 
   findings (merged with any existing allowlist) and exits 0 without printing findings. Run as a
   pre-commit hook to gate your own repository.
 
+### Password-protected PDFs
+
+`mask` accepts RC4, AES-128 and AES-256 PDFs with a user or owner password. Without a
+credential it first tries the empty password, then offers up to three hidden attempts
+when stdin and stderr are terminals:
+
+```bash
+uv run piitier mask locked.pdf -o masked.txt
+uv run piitier mask locked.pdf --password-stdin -o masked.txt
+```
+
+`--password-stdin` reads one line, removing only its LF/CRLF terminator. A blank line is
+an empty password; EOF is an input error. It never prompts. `--password VALUE` is also
+available, but exposes the argument in process listings and shell history. The options
+are mutually exclusive and PDF-only. No passwords or decrypted intermediate PDFs are
+saved. Missing/wrong credentials exit 2 without creating or truncating the output;
+authenticated PDFs without a text layer exit 3. EOF cancels entry; Ctrl-C exits 130.
+
+`compare locked.pdf --model <checkpoint-dir>` opens a masked password dialog before
+loading the model or showing the existing comparison panes. Enter/Unlock submits the
+exact value (including empty); Escape/Cancel exits 2. It requires terminal stdin and
+stdout for credential entry, permits three attempts, and retains no password history.
+
+### Directory batches
+
+```bash
+uv run piitier mask-batch ./inputs -o ./masked --passwords ./inputs/passwords.csv
+uv run piitier mask-batch ./inputs -o ./masked --model <checkpoint-dir> --threshold 0.78
+```
+
+`--passwords` is optional. Its CSV must be UTF-8 (optional BOM) with exactly the header
+`filename,password` or `filename;password`. Filenames are case-sensitive basenames,
+not paths, and cannot repeat. Standard CSV quoting preserves punctuation, whitespace,
+embedded newlines and empty passwords. Blank records are ignored; a header-only map
+is valid. Invalid records fail before processing and report only the map path/line.
+Treat the mapping as a secret file; never commit it.
+
+Batch processes supported regular files once in filename order, without recursion.
+The mapping file and its resolved aliases are excluded, even inside inputs.
+Text filenames are retained; PDFs become `.txt`. Outputs must be outside the input
+directory, and existing files/symlinks or earlier colliding outputs are never overwritten.
+Each output is created only after extraction and masking succeed.
+
+Model options match `mask`, including `--revision`; one model instance is reused while
+numbering stays document-local. CSV inputs are masked as whole documents (no column
+selection in batch). Missing/wrong passwords can be corrected through hidden terminal
+entry; EOF fails only that file. Other per-file failures also allow later files to run.
+Ctrl-C exits 130, preserves completed outputs and removes the active partial write.
+Stdout remains empty. Stderr ends with `batch: N masked, M failed`; exit 0 means all
+selected files succeeded (including empty selection), 4 means per-file failures, and 2
+means invalid configuration or initial model failure.
+
 ### Python
 
 ```python

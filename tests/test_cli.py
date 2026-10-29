@@ -589,3 +589,111 @@ def test_hub_repo_id_offline_exits_2_could_not_download(tmp_path: Path) -> None:
     assert result.returncode == 2
     assert "could not download" in result.stderr
     assert "no/such-repo" in result.stderr
+
+
+@pytest.mark.parametrize("case", ["conflict", "nonpdf", "eof"])
+def test_uc177_password_input_errors(tmp_path: Path, case: str) -> None:
+    import secrets
+
+    from test_loaders_pdf import password_pdf
+
+    secret = secrets.token_hex(12)
+    path = password_pdf(tmp_path, secret)
+    flags = ["--password-stdin"]
+    if case == "conflict":
+        flags += ["--password", secret]
+    elif case == "nonpdf":
+        path = tmp_path / "source.txt"
+        path.write_text("PESEL: 90051512340")
+    output = tmp_path / "out.txt"
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask", str(path), "-o", str(output), *flags],
+        input=b"",
+        capture_output=True,
+    )
+    assert result.returncode == 2
+    assert result.stdout == b""
+    assert not output.exists()
+    assert secret.encode() not in result.stderr
+
+
+@pytest.mark.parametrize("ending", ["\n", "\r\n", ""])
+def test_uc177_stdin_preserves_bare_cr(tmp_path: Path, ending: str) -> None:
+    import secrets
+
+    from test_loaders_pdf import password_pdf
+
+    secret = " " + secrets.token_hex(8) + "\r"
+    path = password_pdf(tmp_path, secret)
+    data = secret + ("\r\n" if ending == "\n" else ending)
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask", str(path), "--password-stdin"],
+        input=data.encode(),
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == b"  PESEL: [PESEL]  \n\nEnd."
+
+
+@pytest.mark.parametrize("outcome", ["correct", "eof", "fallback", "interrupt", "exhaust"])
+def test_uc176_hidden_cli_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    outcome: str,
+) -> None:
+    import getpass
+    import secrets
+    import warnings
+
+    from test_loaders_pdf import password_pdf
+
+    from piitier.cli import main
+
+    secret = secrets.token_hex(12)
+    path = password_pdf(tmp_path, secret)
+    output = tmp_path / "out.txt"
+    monkeypatch.setattr(sys, "argv", ["piitier", "mask", str(path), "-o", str(output)])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
+    answers = iter(["wrong", secret] if outcome == "correct" else ["wrong"] * 3)
+    entered = []
+
+    def hidden(prompt: str, stream: object) -> str:
+        entered.append(prompt)
+        if outcome == "eof":
+            raise EOFError
+        if outcome == "interrupt":
+            raise KeyboardInterrupt
+        if outcome == "fallback":
+            warnings.warn("echo fallback", getpass.GetPassWarning)
+            pytest.fail("echoed read must not be reached")
+        return next(answers)
+
+    monkeypatch.setattr(getpass, "getpass", hidden)
+    assert main() == (0 if outcome == "correct" else 130 if outcome == "interrupt" else 2)
+    if outcome == "correct":
+        assert output.read_text() == "  PESEL: [PESEL]  \n\nEnd."
+        assert len(entered) == 2
+    else:
+        assert not output.exists()
+        assert len(entered) == (3 if outcome == "exhaust" else 1)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert secret not in captured.err and "90051512340" not in captured.err
+
+
+def test_uc181_uc182_batch_command(tmp_path: Path) -> None:
+    source = tmp_path / "input"
+    source.mkdir()
+    (source / "a.txt").write_text("PESEL: 90051512340")
+    (source / "b.pdf").write_bytes(b"not a PDF")
+    output = tmp_path / "output"
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask-batch", str(source), "-o", str(output)],
+        capture_output=True,
+    )
+    assert result.returncode == 4 and result.stdout == b""
+    assert result.stderr.endswith(b"batch: 1 masked, 1 failed\n")
+    assert (output / "a.txt").read_text() == "PESEL: [PESEL]"
+    assert not (output / "b.txt").exists()

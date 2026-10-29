@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (
     DecodedStreamObject,
@@ -225,17 +226,181 @@ def test_uc32_boundary_image_page_then_text_page_exact_stdout(tmp_path: Path) ->
 # ---------------------------------------------------------------------------
 
 
-def test_uc42_encrypted_pdf_exit2_exact_stderr(tmp_path: Path) -> None:
-    """UC-42: piitier mask locked.pdf exits 2; stderr 'encrypted pdf: <path>\\n'.
-
-    reader.is_encrypted is True before page access; implementation must check it
-    before iterating pages (no auto-decrypt attempted).
-    stdout is empty; PESEL does not appear in stderr.
-    """
+def test_uc42_encrypted_pdf_refuses_unauthenticated_extraction(tmp_path: Path) -> None:
+    """UC-42 protection remains; PII-14-a supersedes blanket rejection wording."""
     pdf_path = _encrypted_pdf(tmp_path)
     exit_code, stdout, stderr = _run([str(pdf_path)])
 
     assert exit_code == 2, f"expected exit 2, got {exit_code}; stderr={stderr!r}"
-    assert stderr == f"encrypted pdf: {pdf_path}\n".encode(), f"stderr mismatch: {stderr!r}"
     assert stdout == b""
     assert SYNTHETIC_PESEL.encode() not in stderr
+
+
+def password_pdf(
+    tmp_path: Path,
+    password: str,
+    *,
+    owner: str | None = None,
+    algorithm: str = "RC4-128",
+    image: bool = False,
+) -> Path:
+    writer = PdfWriter()
+    if image:
+        _add_image_only_page(writer)
+    else:
+        _add_text_page(writer, "  PESEL: 90051512340  ")
+        writer.add_blank_page(width=595, height=842)
+        _add_text_page(writer, "End.")
+    writer.encrypt(password, owner_password=owner, algorithm=algorithm)
+    path = tmp_path / "authenticated.pdf"
+    writer.write(path)
+    return path
+
+
+@pytest.mark.parametrize("algorithm", ["RC4-128", "AES-128", "AES-256"])
+@pytest.mark.parametrize("kind", ["user", "owner"])
+def test_uc173_authenticated_pdf_fidelity(tmp_path: Path, algorithm: str, kind: str) -> None:
+    from piitier.loaders import load_pdf
+
+    user, owner = secrets.token_hex(12), secrets.token_hex(12)
+    path = password_pdf(tmp_path, user, owner=owner, algorithm=algorithm)
+    assert load_pdf(path, user if kind == "user" else owner) == "  PESEL: 90051512340  \n\nEnd."
+
+
+def test_uc174_missing_wrong_empty_and_no_text(tmp_path: Path) -> None:
+    from piitier.loaders import (
+        IncorrectPasswordError,
+        PasswordRequiredError,
+        PdfNoTextError,
+        load_pdf,
+    )
+
+    password = secrets.token_hex(12)
+    path = password_pdf(tmp_path, password)
+    with pytest.raises(PasswordRequiredError, match="password required:"):
+        load_pdf(path)
+    for value in ("", secrets.token_hex(12)):
+        with pytest.raises(IncorrectPasswordError, match="wrong password:") as error:
+            load_pdf(path, value)
+        assert password not in str(error.value)
+        assert isinstance(error.value, ValueError)
+    path = password_pdf(tmp_path, "", owner=password)
+    assert load_pdf(path) == "  PESEL: 90051512340  \n\nEnd."
+    path = password_pdf(tmp_path, password, image=True)
+    with pytest.raises(PdfNoTextError, match="no text layer:"):
+        load_pdf(path, password)
+
+
+@pytest.mark.parametrize("mode", ["explicit", "stdin"])
+@pytest.mark.parametrize("password", ["", "  padded\t", "runtime"])
+def test_uc175_uc177_cli_credentials_exact(
+    tmp_path: Path,
+    mode: str,
+    password: str,
+) -> None:
+    if password == "runtime":
+        password = secrets.token_hex(12)
+    path = password_pdf(tmp_path, password)
+    flags = ["--password", password] if mode == "explicit" else ["--password-stdin"]
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask", str(path), *flags],
+        input=(password + "\r\n").encode(),
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == b"  PESEL: [PESEL]  \n\nEnd."
+    assert result.stderr == b""
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_uc175_authentication_failure_preserves_destination(tmp_path: Path, existing: bool) -> None:
+    password = secrets.token_hex(12)
+    path = password_pdf(tmp_path, password)
+    output = tmp_path / "out.txt"
+    if existing:
+        output.write_bytes(b"keep")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "piitier.cli",
+            "mask",
+            str(path),
+            "--password-stdin",
+            "-o",
+            str(output),
+        ],
+        input=b"wrong\n",
+        capture_output=True,
+    )
+    assert result.returncode == 2
+    assert result.stdout == b""
+    assert password.encode() not in result.stderr and b"90051512340" not in result.stderr
+    assert output.read_bytes() == b"keep" if existing else not output.exists()
+
+
+def test_uc176_callback_retries_cancel_and_interrupt(tmp_path: Path) -> None:
+    from piitier.loaders import IncorrectPasswordError, PasswordRequiredError, load_with_password
+
+    password = secrets.token_hex(12)
+    path = password_pdf(tmp_path, password)
+    attempts = []
+    answers = iter(["wrong", password])
+
+    def prompt(path: Path, attempt: int, incorrect: bool) -> str:
+        attempts.append((attempt, incorrect))
+        return next(answers)
+
+    assert load_with_password(path, prompt=prompt) == "  PESEL: 90051512340  \n\nEnd."
+    assert attempts == [(1, False), (2, True)]
+    attempts.clear()
+    answers = iter(["wrong"] * 3)
+    with pytest.raises(IncorrectPasswordError):
+        load_with_password(path, prompt=prompt)
+    assert attempts == [(1, False), (2, True), (3, True)]
+    with pytest.raises(PasswordRequiredError):
+        load_with_password(path, prompt=lambda *_: None)
+
+    def interrupt(*_: object) -> str:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        load_with_password(path, prompt=interrupt)
+
+
+def test_uc178_registry_and_parser_diagnostics(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pypdf.errors import PdfReadError
+
+    from piitier.loaders import get_loader, load_with_password
+
+    password = secrets.token_hex(12)
+    path = password_pdf(tmp_path, password)
+    loader = get_loader(path, password=password)
+    assert loader is not None
+    assert loader(path) == "  PESEL: 90051512340  \n\nEnd."
+    path.write_bytes(b"SECRET-PII-90051512340 not a PDF")
+    with pytest.raises(PdfReadError) as error:
+        load_with_password(path)
+    assert "SECRET-PII" not in str(error.value)
+    assert capsys.readouterr() == ("", "")
+
+
+def test_uc178_explicit_parser_logger_cannot_leak(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from pypdf.errors import PdfReadError
+
+    from piitier.loaders import load_pdf
+
+    path = tmp_path / "bad.pdf"
+    path.write_bytes(b"PRIVATE-PARSER-CONTENT")
+    with caplog.at_level(logging.WARNING, logger="pypdf._reader"):
+        with pytest.raises(PdfReadError):
+            load_pdf(path)
+        assert caplog.records == []
+        assert logging.getLogger("pypdf._reader").level == logging.WARNING
