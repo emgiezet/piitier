@@ -13,7 +13,16 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Input, RichLog, Static
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    RichLog,
+    Static,
+)
 
 from piitier import Anonymizer
 from piitier.csvskip import (
@@ -23,6 +32,7 @@ from piitier.csvskip import (
     plan_skips,
     sniff_delimiter,
 )
+from piitier.jsonmask import detect_json
 from piitier.loaders import (
     IncorrectPasswordError,
     PasswordRequiredError,
@@ -452,7 +462,8 @@ def compare_file(
 
     try:
         anonymizer = Anonymizer(model=model, revision=revision, threshold=threshold, device=device)
-        if input_path.suffix.lower() == ".csv":
+        suffix = input_path.suffix.lower()
+        if suffix == ".csv":
             app = AnonymizationDiffApp(
                 text,
                 [],
@@ -460,6 +471,13 @@ def compare_file(
                 detector=anonymizer.detect,
                 numbering_fn=anonymizer.assign,
             )
+        elif suffix == ".json":
+            spans, numbering = detect_json(
+                text,
+                detector=anonymizer.detect,
+                numbering_fn=anonymizer.assign,
+            )
+            app = AnonymizationDiffApp(text, spans, numbering=numbering)
         else:
             spans = anonymizer.detect(text)
             numbering = anonymizer.assign(text, spans)

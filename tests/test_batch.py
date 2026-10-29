@@ -251,3 +251,55 @@ def test_uc183_interrupt_during_output_ownership(
     monkeypatch.setattr(os, "fstat", interrupt)
     assert mask_batch(source, target) == 130
     assert not (target / "a.txt").exists()
+
+
+def test_json_batch_isolates_invalid_files_and_retains_existing_outputs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source, target = tmp_path / "inputs", tmp_path / "outputs"
+    source.mkdir()
+    target.mkdir()
+    (source / "a-bad.json").write_bytes(b'{"private":"90051512340",}')
+    (source / "b.JSON").write_bytes(b'{"id": "\\u00390051512340", "n": 90051512340}\r\n')
+    (source / "c.txt").write_bytes(b"PESEL: 90051512340\r\n")
+    (source / "d.json").write_text('"90051512340"')
+    (target / "d.json").write_bytes(b"existing content\r\n")
+    assert mask_batch(source, target) == 4
+    assert {path.name: path.read_bytes() for path in target.iterdir()} == {
+        "b.JSON": b'{"id": "[PESEL]", "n": 90051512340}\r\n',
+        "c.txt": b"PESEL: [PESEL]\r\n",
+        "d.json": b"existing content\r\n",
+    }
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.endswith("batch: 2 masked, 2 failed\n")
+    assert "private" not in captured.err and "90051512340" not in captured.err
+
+
+def test_json_batch_model_numbering_is_shared_within_but_not_across_documents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test_jsonmask import JsonNamePredictor
+
+    real_anonymizer = piitier.Anonymizer
+    constructions = []
+
+    def construct(**kwargs):
+        constructions.append(kwargs)
+        return real_anonymizer(predictor=JsonNamePredictor())
+
+    monkeypatch.setattr(piitier, "Anonymizer", construct)
+    source, target = tmp_path / "inputs", tmp_path / "outputs"
+    source.mkdir()
+    (source / "a.json").write_text(
+        r'["Zoja Testowa", {"alias": "\u005aoja Testowa"}, "Mira Fikcyjna"]'
+    )
+    (source / "b.json").write_text('["Mira Fikcyjna", "Zoja Testowa"]')
+    (source / "c.txt").write_text("Zoja Testowa 90051512340")
+    assert mask_batch(source, target, model="offline-test-model") == 0
+    assert {path.name: path.read_text() for path in target.iterdir()} == {
+        "a.json": '["[OSOBA_1]", {"alias": "[OSOBA_1]"}, "[OSOBA_2]"]',
+        "b.json": '["[OSOBA_1]", "[OSOBA_2]"]',
+        "c.txt": "[OSOBA_1] [PESEL]",
+    }
+    assert len(constructions) == 1

@@ -3,7 +3,7 @@
 Entry points:
 
 - ``piitier mask <path> [-o <out>] [--model <dir>] [--threshold T]``
-  ``[--skip-columns COLS] [--delimiter CHAR]`` reads a .txt, .md, .csv or text-layer .pdf
+  ``[--skip-columns COLS] [--delimiter CHAR]`` reads .txt, .md, .csv, .json or text-layer .pdf
   file and masks PII with ``piitier.mask()`` (rules only, default) or ``piitier.Anonymizer``
   (rules + NER when --model is given). Selected CSV columns remain unmasked.
   Exit 0 on success, 2 on usage/input error, 3 on a PDF with no text layer.
@@ -24,6 +24,7 @@ from pathlib import Path
 
 import piitier
 from piitier.csvskip import parse_csv_field_ranges, sniff_delimiter
+from piitier.jsonmask import mask_json
 from piitier.loaders import PdfNoTextError, get_loader, load_with_password
 from piitier.scan import Finding, read_allowlist, scan_file
 
@@ -157,6 +158,8 @@ def mask_file(
         ]
 
     # 5. Mask the content.
+    suffix = input_path.suffix.lower()
+
     def warn_unknown(col: str) -> None:
         print(f"warning: unknown column: {col}", file=sys.stderr)
 
@@ -164,7 +167,11 @@ def mask_file(
         # Catch model construction and inference errors without a traceback.
         try:
             anonymizer = piitier.Anonymizer(model=model, revision=revision, threshold=threshold)
-            if skip_columns:
+            if suffix == ".json":
+                masked_text = mask_json(
+                    text, detector=anonymizer.detect, numbering_fn=anonymizer.assign
+                )
+            elif skip_columns:
                 masked_text = piitier.mask_csv(
                     text,
                     skip_columns=skip_columns,
@@ -177,6 +184,8 @@ def mask_file(
         except (OSError, ValueError, ImportError):
             print(f"model error: could not download or use model: {model}", file=sys.stderr)
             return 2
+    elif suffix == ".json":
+        masked_text = mask_json(text, detector=piitier.detect)
     elif skip_columns:
         masked_text = piitier.mask_csv(
             text,
@@ -270,7 +279,7 @@ def _main() -> int:
     mask_parser.add_argument(
         "input",
         type=Path,
-        help="Input file path (.txt, .md, .csv, .pdf)",
+        help="Input file path (.txt, .md, .csv, .pdf, .json)",
     )
     mask_parser.add_argument(
         "-o",
@@ -331,7 +340,9 @@ def _main() -> int:
         "compare",
         help="Inspect original and anonymized text side by side in a terminal",
     )
-    compare_parser.add_argument("input", type=Path, help="Input file (.txt, .md, .csv, .pdf)")
+    compare_parser.add_argument(
+        "input", type=Path, help="Input file (.txt, .md, .csv, .json, .pdf)"
+    )
     compare_parser.add_argument(
         "--model", type=str, required=True, help="Local checkpoint path or Hub repo id (owner/name)"
     )

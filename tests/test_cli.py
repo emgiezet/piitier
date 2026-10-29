@@ -697,3 +697,63 @@ def test_uc181_uc182_batch_command(tmp_path: Path) -> None:
     assert result.stderr.endswith(b"batch: 1 masked, 1 failed\n")
     assert (output / "a.txt").read_text() == "PESEL: [PESEL]"
     assert not (output / "b.txt").exists()
+
+
+def test_json_model_masking_uses_decoded_aliases_and_keeps_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test_jsonmask import JsonNamePredictor
+
+    import piitier
+    from piitier.cli import mask_file
+
+    real_anonymizer = piitier.Anonymizer
+    monkeypatch.setattr(
+        piitier, "Anonymizer", lambda **kwargs: real_anonymizer(predictor=JsonNamePredictor())
+    )
+    source = tmp_path / "names.JSON"
+    output = tmp_path / "masked.json"
+    source.write_bytes(
+        b'{\r\n "Zoja Testowa": ["\\u005aoja Testowa", "Mira Fikcyjna", '
+        b'{"alias": "Zoja Testowa"}], "n": 90051512340\r\n}\r\n'
+    )
+    assert mask_file(source, output, model="offline-test-model") == 0
+    assert output.read_bytes() == (
+        b'{\r\n "Zoja Testowa": ["[OSOBA_1]", "[OSOBA_2]", '
+        b'{"alias": "[OSOBA_1]"}], "n": 90051512340\r\n}\r\n'
+    )
+
+
+@pytest.mark.parametrize("existing_output", [False, True])
+@pytest.mark.parametrize(
+    "payload",
+    [b'{"private":"90051512340",}', b'{"private":"90051512340\xff"}'],
+)
+def test_invalid_json_preserves_output_before_model_initialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    existing_output: bool,
+    payload: bytes,
+) -> None:
+    import piitier
+    from piitier.cli import mask_file
+
+    def forbidden_model(**kwargs):
+        raise AssertionError("invalid input must fail before model loading")
+
+    monkeypatch.setattr(piitier, "Anonymizer", forbidden_model)
+    source = tmp_path / "bad.json"
+    output = tmp_path / "output.json"
+    source.write_bytes(payload)
+    if existing_output:
+        output.write_bytes(b"existing content\r\n")
+    assert mask_file(source, output, model="must-not-load") == 2
+    assert source.read_bytes() == payload
+    if existing_output:
+        assert output.read_bytes() == b"existing content\r\n"
+    else:
+        assert not output.exists()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "private" not in captured.err and "90051512340" not in captured.err

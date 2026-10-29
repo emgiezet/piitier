@@ -12,6 +12,7 @@ from pathlib import Path
 from types import FrameType
 
 import piitier
+from piitier.jsonmask import mask_json
 from piitier.loaders import PasswordPrompt, get_loader, load_with_password
 from piitier.passwords import parse_passwords_csv
 
@@ -106,10 +107,10 @@ def mask_batch(
         print("batch: 0 masked, 0 failed", file=sys.stderr)
         return 0
     try:
-        mask = (
-            piitier.Anonymizer(model=model, threshold=threshold, revision=revision).mask
+        anonymizer = (
+            piitier.Anonymizer(model=model, threshold=threshold, revision=revision)
             if model is not None
-            else piitier.mask
+            else None
         )
     except KeyboardInterrupt:
         return 130
@@ -119,7 +120,8 @@ def mask_batch(
 
     masked = failed = 0
     for path in files:
-        is_pdf = path.suffix.lower() == ".pdf"
+        suffix = path.suffix.lower()
+        is_pdf = suffix == ".pdf"
         destination = output_dir / (path.with_suffix(".txt").name if is_pdf else path.name)
         try:
             text = load_with_password(
@@ -127,7 +129,15 @@ def mask_batch(
                 password=passwords.get(path.name) if is_pdf else None,
                 prompt=prompt,
             )
-            result = mask(text)
+            if suffix == ".json":
+                if anonymizer is not None:
+                    result = mask_json(
+                        text, detector=anonymizer.detect, numbering_fn=anonymizer.assign
+                    )
+                else:
+                    result = mask_json(text, detector=piitier.detect)
+            else:
+                result = anonymizer.mask(text) if anonymizer is not None else piitier.mask(text)
             _write_output(destination, result)
         except KeyboardInterrupt:
             return 130

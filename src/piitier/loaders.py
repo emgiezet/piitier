@@ -1,11 +1,11 @@
 """File loaders with encoding detection.
 
-Supports .txt, .md, .csv, and .pdf files. Registry keyed by extension allows
-adding file type support without touching cli.py.
+Supports .txt, .md, .csv, .json and .pdf files through an extension registry.
 
 Invariant: text files (.txt, .md, .csv) are read as strings and masked as one,
 preserving byte-for-byte structure (Markdown syntax, delimiters, line endings).
 PDF files: all pages extracted verbatim and joined with '\\n'; empty pages preserved.
+JSON files: validate UTF-8 JSON while retaining BOM, whitespace and source escapes.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ import logging
 from functools import partial
 from pathlib import Path
 from typing import Callable
+
+from piitier.jsonmask import validate_json
 
 
 class PdfNoTextError(Exception):
@@ -78,6 +80,16 @@ def load_text_file(path: Path) -> str:
         ) from None
 
 
+def load_json(path: Path) -> str:
+    """Read validated UTF-8 JSON without normalizing its serialization."""
+    try:
+        text = path.read_bytes().decode("utf-8")
+        validate_json(text)
+    except ValueError:
+        raise ValueError(f"invalid JSON: {path}") from None
+    return text
+
+
 def load_pdf(path: Path, password: str | None = None) -> str:
     """Authenticate before page access; preserve every page and its whitespace."""
     from pypdf import PdfReader
@@ -123,6 +135,7 @@ _LOADERS: dict[str, Callable[[Path], str]] = {
     ".txt": load_text_file,
     ".md": load_text_file,
     ".csv": load_text_file,
+    ".json": load_json,
     ".pdf": load_pdf,
 }
 

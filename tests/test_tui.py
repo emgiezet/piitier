@@ -485,3 +485,70 @@ def test_uc189_comparison_interrupt_and_csv_export(tmp_path: Path) -> None:
             assert app.interrupted
 
     asyncio.run(exercise())
+
+
+def test_json_comparison_shows_exact_source_and_masked_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test_jsonmask import JsonNamePredictor
+
+    from piitier import tui
+
+    source = tmp_path / "test.json"
+    text = (
+        '{\n  "Zoja Testowa": ["\\u005aoja Testowa", "Mira Fikcyjna"],\n'
+        '  "alias": "Zoja Testowa", "number": 90051512340\n}\n'
+    )
+    expected = (
+        '{\n  "Zoja Testowa": ["[OSOBA_1]", "[OSOBA_2]"],\n'
+        '  "alias": "[OSOBA_1]", "number": 90051512340\n}\n'
+    )
+    source.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(
+        tui, "Anonymizer", lambda **kwargs: piitier.Anonymizer(predictor=JsonNamePredictor())
+    )
+    panes = []
+
+    def run_comparison(app):
+        async def exercise():
+            async with app.run_test(size=(110, 30)) as pilot:
+                before = "\n".join(line.text for line in app.query_one("#before", RichLog).lines)
+                after = "\n".join(line.text for line in app.query_one("#after", RichLog).lines)
+                panes.append((before, after))
+                await pilot.press("down", "down")
+                assert app.active == 2
+                await pilot.press("up")
+                assert app.active == 1
+                await pilot.press("q")
+
+        asyncio.run(exercise())
+
+    monkeypatch.setattr(tui.AnonymizationDiffApp, "run", run_comparison)
+    assert tui.compare_file(source, "offline-test-model", 0.0, "cpu") == 0
+    assert panes == [(text, expected)]
+    assert source.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b'{"private":"90051512340",}', b'{"private":"90051512340\xff"}'],
+)
+def test_json_comparison_rejects_invalid_input_before_model_or_display(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    payload: bytes,
+) -> None:
+    from piitier import tui
+
+    def forbidden_model(**kwargs):
+        raise AssertionError("invalid input must fail before model loading")
+
+    monkeypatch.setattr(tui, "Anonymizer", forbidden_model)
+    source = tmp_path / "bad.json"
+    source.write_bytes(payload)
+    assert tui.compare_file(source, "must-not-load", 0.0, "cpu") == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "private" not in captured.err and "90051512340" not in captured.err
+    assert {path.name for path in tmp_path.iterdir()} == {"bad.json"}
