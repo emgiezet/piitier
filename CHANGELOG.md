@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Password-protected PDF extraction with user or owner credentials for RC4, AES-128 and AES-256, including empty-user restricted PDFs.
+- `mask --password-stdin`, `mask --password` and bounded hidden terminal entry. Authentication failures preserve existing destinations and do not create new outputs.
+- `mask-batch` with strict filename/password CSV mapping, isolated per-file failures, exclusive text outputs and a final success/failure summary.
+- Masked credential entry before the existing comparison UI, with cancellation and Ctrl-C handling before model loading.
+
 ## [0.1.0] - 2026-10-27
 
 ### Added

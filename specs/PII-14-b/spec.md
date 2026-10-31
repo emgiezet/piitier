@@ -1,7 +1,7 @@
 ---
 ticket: PII-14-b
 title: Filename-password CSV mapping and directory batch anonymisation
-status: draft
+status: approved
 stacks: [python]
 depends-on: PII-14-a
 ---
