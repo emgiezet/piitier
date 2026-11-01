@@ -260,13 +260,13 @@ def test_json_batch_isolates_invalid_files_and_retains_existing_outputs(
     source.mkdir()
     target.mkdir()
     (source / "a-bad.json").write_bytes(b'{"private":"90051512340",}')
-    (source / "b.JSON").write_bytes(b'{"id": "\\u00390051512340", "n": 90051512340}\r\n')
+    (source / "b.JSON").write_bytes(b'{"id": "\\u00390051512340", "n": 42}\r\n')
     (source / "c.txt").write_bytes(b"PESEL: 90051512340\r\n")
     (source / "d.json").write_text('"90051512340"')
     (target / "d.json").write_bytes(b"existing content\r\n")
     assert mask_batch(source, target) == 4
     assert {path.name: path.read_bytes() for path in target.iterdir()} == {
-        "b.JSON": b'{"id": "[PESEL]", "n": 90051512340}\r\n',
+        "b.JSON": b'{"id": "[PESEL]", "n": 42}\r\n',
         "c.txt": b"PESEL: [PESEL]\r\n",
         "d.json": b"existing content\r\n",
     }

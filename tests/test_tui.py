@@ -9,12 +9,18 @@ from pathlib import Path
 
 import pytest
 from rich.text import Text
-from textual.widgets import Checkbox, DataTable, Input, RichLog, Static
+from textual.containers import VerticalScroll
+from textual.widgets import Button, Checkbox, DataTable, Input, RichLog, Static
 
 import piitier
 from piitier.labels import Label
 from piitier.spans import Span
-from piitier.tui import AnonymizationDiffApp, CsvSelectionScreen, build_diff
+from piitier.tui import (
+    AnonymizationDiffApp,
+    CsvSelectionScreen,
+    JsonSelectionScreen,
+    build_diff,
+)
 
 
 def span(start: int, end: int, label: Label) -> Span:
@@ -23,6 +29,18 @@ def span(start: int, end: int, label: Label) -> Span:
 
 def styles_at(text: Text, offset: int) -> list[str]:
     return [str(style.style) for style in text.spans if style.start <= offset < style.end]
+
+
+def segment_styles_at(line_text: str, line, offset: int) -> list[str]:
+    """Return style strings covering a character offset in a RichLog line."""
+    pos = 0
+    styles: list[str] = []
+    for segment in line._segments:
+        text = str(segment.text if hasattr(segment, "text") else segment)
+        if pos <= offset < pos + len(text):
+            styles.append(str(segment.style))
+        pos += len(text)
+    return styles
 
 
 def test_diff_preserves_unchanged_text_and_marks_replacements_green() -> None:
@@ -497,11 +515,11 @@ def test_json_comparison_shows_exact_source_and_masked_values(
     source = tmp_path / "test.json"
     text = (
         '{\n  "Zoja Testowa": ["\\u005aoja Testowa", "Mira Fikcyjna"],\n'
-        '  "alias": "Zoja Testowa", "number": 90051512340\n}\n'
+        '  "alias": "Zoja Testowa", "number": 123456\n}\n'
     )
     expected = (
         '{\n  "Zoja Testowa": ["[OSOBA_1]", "[OSOBA_2]"],\n'
-        '  "alias": "[OSOBA_1]", "number": 90051512340\n}\n'
+        '  "alias": "[OSOBA_1]", "number": 123456\n}\n'
     )
     source.write_text(text, encoding="utf-8")
     monkeypatch.setattr(
@@ -512,13 +530,18 @@ def test_json_comparison_shows_exact_source_and_masked_values(
     def run_comparison(app):
         async def exercise():
             async with app.run_test(size=(110, 30)) as pilot:
+                assert isinstance(app.screen, JsonSelectionScreen)
+                await pilot.click("#anonymize")
+                await pilot.pause()
                 before = "\n".join(line.text for line in app.query_one("#before", RichLog).lines)
                 after = "\n".join(line.text for line in app.query_one("#after", RichLog).lines)
                 panes.append((before, after))
-                await pilot.press("down", "down")
-                assert app.active == 2
-                await pilot.press("up")
+                await pilot.press("down")
                 assert app.active == 1
+                await pilot.press("down")
+                assert app.active == 2
+                await pilot.press("up", "up")
+                assert app.active == 0
                 await pilot.press("q")
 
         asyncio.run(exercise())
@@ -531,7 +554,7 @@ def test_json_comparison_shows_exact_source_and_masked_values(
 
 @pytest.mark.parametrize(
     "payload",
-    [b'{"private":"90051512340",}', b'{"private":"90051512340\xff"}'],
+    [b'{"private":"90051512340",}', b'{"private":"90051512340\x81"}'],
 )
 def test_json_comparison_rejects_invalid_input_before_model_or_display(
     tmp_path: Path,
@@ -552,3 +575,344 @@ def test_json_comparison_rejects_invalid_input_before_model_or_display(
     assert captured.out == ""
     assert "private" not in captured.err and "90051512340" not in captured.err
     assert {path.name for path in tmp_path.iterdir()} == {"bad.json"}
+
+
+def test_uc176_issue21_json_checkbox_toggles_value_highlights_only(tmp_path: Path) -> None:
+    text = '{\n  "osoby": ["Zoja Testowa", "Mira Fikcyjna"],\n  "alias": "Zoja Testowa"\n}\n'
+    source = tmp_path / "in.json"
+    source.write_text(text, encoding="utf-8")
+    app = AnonymizationDiffApp(
+        text, [], json_path=source, detector=piitier.detect, numbering_fn=lambda _t, _s: {}
+    )
+
+    def value_offsets(text: str, value: str) -> tuple[int, int]:
+        start = text.index(value)
+        return start, start + len(value)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            screen = app.screen
+            assert isinstance(screen, JsonSelectionScreen)
+            checkboxes = list(screen.query(Checkbox))
+            labels = [cb.label for cb in checkboxes]
+            assert ".osoby[]" in labels
+            assert ".osoby[0]" in labels
+            assert ".osoby[1]" in labels
+            assert ".alias" in labels
+
+            # line 1 contains both the key and the first array values
+            value_line = '  "osoby": ["Zoja Testowa", "Mira Fikcyjna"],'
+            first_value_start = value_line.index('"Zoja Testowa"')
+            first_value_end = first_value_start + len('"Zoja Testowa"')
+            key_start = value_line.index('"osoby"')
+            key_end = key_start + len('"osoby"')
+
+            log = screen.query_one("#json-source", RichLog)
+            await pilot.pause()
+            line1 = log.lines[1]
+            assert line1.text == value_line
+            assert all(
+                "blue" not in style
+                for offset in range(first_value_start, first_value_end)
+                for style in segment_styles_at(line1.text, line1, offset)
+            )
+
+            wildcard = next(cb for cb in checkboxes if cb.label == ".osoby[]")
+            await pilot.click(f"#{wildcard.id}")
+            await pilot.pause()
+            line1 = log.lines[1]
+            assert all(
+                any("blue" in style for style in segment_styles_at(line1.text, line1, offset))
+                for offset in range(first_value_start, first_value_end)
+            )
+            # key remains unhighlighted
+            assert all(
+                "blue" not in style
+                for offset in range(key_start, key_end)
+                for style in segment_styles_at(line1.text, line1, offset)
+            )
+
+            await pilot.click(f"#{wildcard.id}")
+            await pilot.pause()
+            line1 = log.lines[1]
+            assert all(
+                "blue" not in style
+                for offset in range(first_value_start, first_value_end)
+                for style in segment_styles_at(line1.text, line1, offset)
+            )
+
+    asyncio.run(exercise())
+
+
+def test_uc177_issue21_json_select_and_compare_masks_unskipped_values(tmp_path: Path) -> None:
+    from test_jsonmask import JsonNamePredictor
+
+    text = '{\n  "osoby": ["Zoja Testowa", "Mira Fikcyjna"],\n  "alias": "Zoja Testowa"\n}\n'
+    source = tmp_path / "in.json"
+    source.write_text(text, encoding="utf-8")
+
+    def numbering_fn(_t: str, spans: list[Span]) -> dict[tuple[int, int], int]:
+        # detect_json calls numbering_fn on decoded concatenated values, so the
+        # only remaining span is the alias "Zoja Testowa".
+        return {(spans[0].start, spans[0].end): 1} if spans else {}
+
+    app = AnonymizationDiffApp(
+        text,
+        [],
+        json_path=source,
+        detector=JsonNamePredictor().predict,
+        numbering_fn=numbering_fn,
+    )
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            screen = app.screen
+            assert isinstance(screen, JsonSelectionScreen)
+            cb = next(cb for cb in screen.query(Checkbox) if cb.label == ".osoby[]")
+            await pilot.click(f"#{cb.id}")
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            assert not isinstance(app.screen, JsonSelectionScreen)
+            after = app.query_one("#after", RichLog)
+            after_text = "\n".join(line.text for line in after.lines)
+            assert '"osoby": ["Zoja Testowa", "Mira Fikcyjna"]' in after_text
+            assert '"alias": "[OSOBA_1]"' in after_text
+            await pilot.press("q")
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "cp1250"])
+def test_uc178_issue21_json_export_preserves_encoding_and_rejects_overwrite(
+    tmp_path: Path,
+    encoding: str,
+) -> None:
+    body = '{\r\n "city": "Łódź", "v": "90051512340"\r\n}\r\n'
+    original = body.encode(encoding)
+    text = ("\ufeff" if encoding == "utf-8-sig" else "") + body
+    expected = '{\r\n "city": "Łódź", "v": "[PESEL]"\r\n}\r\n'.encode(encoding)
+    source = tmp_path / "in.json"
+    source.write_bytes(original)
+    app = AnonymizationDiffApp(text, [], json_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            filename = app.query_one("#export-filename", Input)
+            assert filename.value == "in_anonymised.json"
+            assert await pilot.click("#export")
+            output = tmp_path / "in_anonymised.json"
+            assert output.read_bytes() == expected
+            assert source.read_bytes() == original
+
+            output.write_bytes(b"EXISTING")
+            await pilot.pause(0.25)
+            assert await pilot.click("#export")
+            await pilot.pause()
+            assert output.read_bytes() == b"EXISTING"
+            assert "istnieje" in str(app.query_one("#export-status", Static).render())
+
+            filename.value = "in.json"
+            await pilot.pause(0.25)
+            assert await pilot.click("#export")
+            assert source.read_bytes() == original
+
+            filename.value = "renamed.json"
+            await pilot.pause(0.25)
+            assert await pilot.click("#export")
+            assert (tmp_path / "renamed.json").read_bytes() == expected
+
+    asyncio.run(exercise())
+
+
+def test_uc179_issue21_json_numeric_pii_blocks_export(tmp_path: Path) -> None:
+    text = '{"v": "Zoja Testowa", "id": 90051512340}'
+    source = tmp_path / "in.json"
+    source.write_text(text, encoding="utf-8")
+    app = AnonymizationDiffApp(
+        text, [], json_path=source, detector=piitier.detect, numbering_fn=lambda _t, _s: {}
+    )
+
+    async def exercise() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            screen = app.screen
+            assert isinstance(screen, JsonSelectionScreen)
+            # Selecting the numeric field must not bypass the numeric guard.
+            cb = next(cb for cb in screen.query(Checkbox) if cb.label == ".id")
+            await pilot.click(f"#{cb.id}")
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            assert isinstance(app.screen, JsonSelectionScreen)
+            assert "numeryczne" in str(screen.query_one("#json-error", Static).render())
+            assert not (tmp_path / "in_anonymised.json").exists()
+            await pilot.press("ctrl+c")
+            assert app.interrupted
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("ending", ["\n", "\r\n"])
+def test_uc176_issue21_quoted_paths_mount_literally_and_highlight_only_values(
+    tmp_path: Path,
+    ending: str,
+) -> None:
+    text = (
+        '{\n "dane osobowe":{"a,b":"90051512340","[b]":"90051512340"},\n "plain":"90051512340"\n}'
+    )
+    text = text.replace("\n", ending)
+    source = tmp_path / "quoted.json"
+    source.write_text(text)
+    app = AnonymizationDiffApp(text, [], json_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(130, 32)) as pilot:
+            screen = app.screen
+            assert isinstance(screen, JsonSelectionScreen)
+            checkboxes = list(screen.query(Checkbox))
+            comma = next(cb for cb in checkboxes if str(cb.label) == '."dane osobowe"."a,b"')
+            markup = next(cb for cb in checkboxes if str(cb.label) == '."dane osobowe"."[b]"')
+            assert str(markup.label) == '."dane osobowe"."[b]"'
+            await pilot.click(f"#{comma.id}")
+            await pilot.pause()
+            log = screen.query_one("#json-source", RichLog)
+            line = log.lines[1]
+            assert line.text == ' "dane osobowe":{"a,b":"90051512340","[b]":"90051512340"},'
+            value_start = line.text.index('"90051512340"')
+            offset = 0
+            highlighted = set()
+            for segment in line._segments:
+                if segment.style is not None and segment.style.bgcolor is not None:
+                    highlighted.update(range(offset, offset + len(segment.text)))
+                offset += len(segment.text)
+            assert highlighted == set(range(value_start, value_start + len('"90051512340"')))
+            await pilot.click(f"#{comma.id}")
+            await pilot.pause()
+            assert all(
+                segment.style is None or segment.style.bgcolor is None
+                for segment in log.lines[1]._segments
+            )
+
+    asyncio.run(exercise())
+
+
+def test_uc176_issue21_overlapping_choices_keep_remaining_value_highlighted(tmp_path: Path) -> None:
+    text = '{"osoby":["first","second"],"other":"third"}'
+    source = tmp_path / "overlap.json"
+    source.write_text(text)
+    app = AnonymizationDiffApp(text, [], json_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 32)) as pilot:
+            screen = app.screen
+            boxes = list(screen.query(Checkbox))
+            wildcard = next(cb for cb in boxes if str(cb.label) == ".osoby[]")
+            indexed = next(cb for cb in boxes if str(cb.label) == ".osoby[0]")
+            await pilot.click(f"#{wildcard.id}")
+            await pilot.click(f"#{indexed.id}")
+            await pilot.click(f"#{wildcard.id}")
+            await pilot.pause()
+            line = screen.query_one("#json-source", RichLog).lines[0]
+            highlighted = ""
+            for segment in line._segments:
+                if segment.style is not None and segment.style.bgcolor is not None:
+                    highlighted += segment.text
+            assert line.text == text
+            assert highlighted == '"first"'
+
+    asyncio.run(exercise())
+
+
+def test_uc176_issue21_long_selector_list_scrolls_and_accepts_keyboard_toggle(
+    tmp_path: Path,
+) -> None:
+    text = "{" + ",".join(f'"field{i:02}":"value{i:02}"' for i in range(35)) + "}"
+    source = tmp_path / "many.json"
+    source.write_text(text)
+    app = AnonymizationDiffApp(text, [], json_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(100, 24)) as pilot:
+            screen = app.screen
+            last = next(cb for cb in screen.query(Checkbox) if str(cb.label) == ".field34")
+            last.focus()
+            await pilot.pause()
+            await pilot.press("space")
+            await pilot.pause()
+            assert screen.query_one("#json-checkboxes", VerticalScroll).scroll_y > 0
+            line = screen.query_one("#json-source", RichLog).lines[0]
+            highlighted = "".join(
+                segment.text
+                for segment in line._segments
+                if segment.style is not None and segment.style.bgcolor is not None
+            )
+            assert highlighted == '"value34"'
+
+    asyncio.run(exercise())
+
+
+def test_uc178_issue21_json_export_rejects_dangling_symlink(tmp_path: Path) -> None:
+    source = tmp_path / "input.json"
+    source.write_text('{"v":"90051512340"}')
+    destination = tmp_path / "linked.json"
+    missing = tmp_path / "not-created"
+    destination.symlink_to(missing)
+    app = AnonymizationDiffApp(source.read_text(), [], json_path=source, detector=piitier.detect)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            app.query_one("#export-filename", Input).value = destination.name
+            await pilot.click("#export")
+            await pilot.pause()
+            assert destination.is_symlink() and not missing.exists()
+            assert source.read_text() == '{"v":"90051512340"}'
+            assert "istnieje" in str(app.query_one("#export-status", Static).render())
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("failure", [OSError, KeyboardInterrupt])
+def test_uc178_issue21_failed_or_interrupted_export_removes_partial_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: type[BaseException],
+) -> None:
+    source = tmp_path / "input.json"
+    source.write_text('{"v":"90051512340"}')
+    target = tmp_path / "input_anonymised.json"
+    real_open = Path.open
+    app = AnonymizationDiffApp(source.read_text(), [], json_path=source, detector=piitier.detect)
+
+    class BrokenOutput:
+        def __enter__(self):
+            self.stream = real_open(target, "xb")
+            return self
+
+        def write(self, data: bytes) -> None:
+            self.stream.write(data[:5])
+            raise failure()
+
+        def __exit__(self, *args: object) -> None:
+            self.stream.close()
+
+    def open_path(path: Path, *args: object, **kwargs: object):
+        return BrokenOutput() if path == target else real_open(path, *args, **kwargs)
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            monkeypatch.setattr(Path, "open", open_path)
+            event = Button.Pressed(app.query_one("#export", Button))
+            if failure is KeyboardInterrupt:
+                with pytest.raises(KeyboardInterrupt):
+                    app.on_button_pressed(event)
+            else:
+                app.on_button_pressed(event)
+                assert "zapisać" in str(app.query_one("#export-status", Static).render())
+            assert not target.exists()
+            assert source.read_text() == '{"v":"90051512340"}'
+
+    asyncio.run(exercise())

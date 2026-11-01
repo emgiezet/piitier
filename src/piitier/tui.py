@@ -32,11 +32,20 @@ from piitier.csvskip import (
     plan_skips,
     sniff_delimiter,
 )
-from piitier.jsonmask import detect_json
+from piitier.jsonmask import (
+    JsonSelectorError,
+    JsonValue,
+    NumericPiiError,
+    detect_json,
+    json_selectors,
+    parse_json_values,
+    plan_json_skips,
+)
 from piitier.loaders import (
     IncorrectPasswordError,
     PasswordRequiredError,
     PdfNoTextError,
+    decode_json_bytes,
     get_loader,
     load_with_password,
 )
@@ -264,6 +273,102 @@ class CsvSelectionScreen(Screen[None]):
         app.call_after_refresh(app._show_selection)
 
 
+class JsonSelectionScreen(Screen[None]):
+    """Preview original JSON and select jq paths to leave untouched."""
+
+    def __init__(self, text: str, values: list[JsonValue]) -> None:
+        super().__init__()
+        self.text = text
+        self.values = values
+        self.selectors = json_selectors(values)
+        self._checked: set[str] = set()
+        self._protected_ranges: list[tuple[int, int]] = []
+        self._unknown_selectors: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Horizontal(id="json-columns"):
+            with Vertical(id="json-source-wrap"):
+                yield Static("PRZED · źródło JSON", classes="pane-title")
+                yield RichLog(id="json-source", min_width=1, auto_scroll=False, wrap=False)
+            with Vertical(id="json-selectors"):
+                yield Static("POMIŃ ŚCIEŻKI", classes="pane-title")
+                yield Static("Zaznaczone: pozostaną bez zmian")
+                with VerticalScroll(id="json-checkboxes"):
+                    for index, selector in enumerate(self.selectors):
+                        yield Checkbox(Text(selector), value=False, id=f"skip-{index}")
+        yield Static("", id="json-error")
+        yield Button("Anonimizuj", id="anonymize", variant="primary")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._render_source()
+
+    def _render_source(self) -> None:
+        log = self.query_one("#json-source", RichLog)
+        text = Text()
+        cursor = 0
+        for start, end in self._protected_ranges:
+            text.append(self.text[cursor:start])
+            text.append(self.text[start:end], style="bold white on blue")
+            cursor = end
+        text.append(self.text[cursor:])
+        log.clear().write(text)
+
+    def _refresh_plan(self) -> None:
+        error = self.query_one("#json-error", Static)
+        try:
+            plan = plan_json_skips(self.values, sorted(self._checked))
+        except JsonSelectorError:
+            error.update("Nieobsługiwana ścieżka JSON")
+            self._protected_ranges = []
+            self._render_source()
+            return
+        self._protected_ranges = plan.protected_ranges
+        self._unknown_selectors = plan.unknown_selectors
+        self._render_source()
+        if self._unknown_selectors:
+            error.update("Niektóre ścieżki nie pasują do żadnej wartości")
+        else:
+            error.update("")
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        event.stop()
+        if event.checkbox.id is None or not event.checkbox.id.startswith("skip-"):
+            return
+        selector = self.selectors[int(event.checkbox.id.removeprefix("skip-"))]
+        if event.checkbox.value:
+            self._checked.add(selector)
+        else:
+            self._checked.discard(selector)
+        self._refresh_plan()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id != "anonymize":
+            return
+        app = cast(AnonymizationDiffApp, self.app)
+        assert app.detector is not None
+        try:
+            spans, numbering = detect_json(
+                app.text,
+                detector=app.detector,
+                numbering_fn=app._numbering_fn,
+                skip_fields=sorted(self._checked) or None,
+            )
+        except NumericPiiError:
+            self.query_one("#json-error", Static).update(
+                "Wykryto numeryczne dane osobowe — anonimizacja zablokowana"
+            )
+            return
+        except (OSError, ValueError, ImportError):
+            self.query_one("#json-error", Static).update("Nie udało się uruchomić anonimizacji")
+            return
+        app.spans = sorted(spans, key=lambda span: span.start)
+        app._numbering = numbering
+        app.pop_screen()
+        app.call_after_refresh(app._show_selection)
+
+
 class AnonymizationDiffApp(App[None]):
     """Navigate detected replacements without writing the source document to disk."""
 
@@ -281,6 +386,12 @@ class AnonymizationDiffApp(App[None]):
     #csv-checkboxes { height: 1fr; }
     #csv-error { height: 1; }
     #anonymize { width: 100%; }
+    #json-columns { height: 1fr; }
+    #json-source-wrap { width: 1fr; }
+    #json-source { height: 1fr; border: round $primary; }
+    #json-selectors { width: 34; border: round $primary; padding: 0 1; }
+    #json-checkboxes { height: 1fr; }
+    #json-error { height: 2; }
     #export-controls { height: 3; }
     #export-filename { width: 1fr; }
     #export-status { height: 1; }
@@ -304,6 +415,7 @@ class AnonymizationDiffApp(App[None]):
         spans: list[Span],
         *,
         csv_path: Path | None = None,
+        json_path: Path | None = None,
         detector: Callable[[str], list[Span]] | None = None,
         numbering: dict[tuple[int, int], int] | None = None,
         numbering_fn: Callable[[str, list[Span]], dict[tuple[int, int], int]] | None = None,
@@ -314,6 +426,7 @@ class AnonymizationDiffApp(App[None]):
         self.spans = sorted(spans, key=lambda span: span.start)
         self.active = 0
         self.csv_path = csv_path
+        self.json_path = json_path
         self.detector = detector
         self._numbering = numbering
         self._numbering_fn = numbering_fn
@@ -327,11 +440,11 @@ class AnonymizationDiffApp(App[None]):
             with Vertical(classes="pane"):
                 yield Static("PO · zamaskowane etykiety", classes="pane-title")
                 yield RichLog(id="after", min_width=1, auto_scroll=False, wrap=False)
-        if self.csv_path is not None:
+        if self.csv_path is not None or self.json_path is not None:
             with Horizontal(id="export-controls"):
                 yield Input(
-                    value=f"{self.csv_path.stem}_anonymised.csv",
-                    placeholder="Nazwa pliku CSV",
+                    value=self._default_export_name(),
+                    placeholder="Nazwa pliku wyjściowego",
                     id="export-filename",
                 )
                 yield Button("Eksportuj", id="export", variant="primary")
@@ -339,14 +452,23 @@ class AnonymizationDiffApp(App[None]):
         yield Static(id="status")
         yield Footer()
 
+    def _default_export_name(self) -> str:
+        path = self.csv_path if self.csv_path is not None else self.json_path
+        assert path is not None
+        suffix = path.suffix.lower()
+        return f"{path.stem}_anonymised{suffix}"
+
     def on_mount(self) -> None:
         self._show_selection()
         if self.csv_path is not None:
             self.push_screen(CsvSelectionScreen(self.text))
+        elif self.json_path is not None:
+            self.push_screen(JsonSelectionScreen(self.text, parse_json_values(self.text)))
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action in {"next_change", "previous_change"} and (
-            isinstance(self.screen, CsvSelectionScreen) or isinstance(self.focused, Input)
+            isinstance(self.screen, (CsvSelectionScreen, JsonSelectionScreen))
+            or isinstance(self.focused, Input)
         ):
             return False
         return True
@@ -362,33 +484,53 @@ class AnonymizationDiffApp(App[None]):
             self._show_selection()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id != "export" or self.csv_path is None:
+        if event.button.id != "export":
+            return
+        source_path = self.csv_path if self.csv_path is not None else self.json_path
+        if source_path is None:
             return
         name = self.query_one("#export-filename", Input).value.strip()
         status = self.query_one("#export-status", Static)
-        if not name or "/" in name or "\\" in name or not name.lower().endswith(".csv"):
-            status.update("Podaj nazwę pliku CSV bez ścieżki")
+        expected_suffix = source_path.suffix.lower()
+        if not name or "/" in name or "\\" in name or not name.lower().endswith(expected_suffix):
+            status.update("Podaj nazwę pliku bez ścieżki i z właściwym rozszerzeniem")
             return
-        target = self.csv_path.parent / name
-        if target.resolve() == self.csv_path.resolve():
+        target = source_path.parent / name
+        if target.resolve() == source_path.resolve():
             status.update("Nie można nadpisać pliku źródłowego")
             return
+        if target.is_symlink() or (target.exists() and target.is_file()):
+            status.update("Plik już istnieje")
+            return
         try:
-            raw = self.csv_path.read_bytes()
-            encoding = "utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8"
-            try:
-                raw.decode(encoding)
-            except UnicodeDecodeError:
-                encoding = "cp1250"
+            if self.json_path is not None:
+                _, encoding = decode_json_bytes(source_path.read_bytes())
+            else:
+                raw = source_path.read_bytes()
+                encoding = "utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8"
+                try:
+                    raw.decode(encoding)
+                except UnicodeDecodeError:
+                    encoding = "cp1250"
             data = render_mask(self.text, self.spans, self._numbering).encode(encoding)
-            with target.open("xb") as output:
-                output.write(data)
+            created = False
+            try:
+                with target.open("xb") as output:
+                    created = True
+                    output.write(data)
+            except BaseException:
+                if created:
+                    try:
+                        target.unlink()
+                    except OSError:
+                        pass
+                raise
         except FileExistsError:
             status.update("Plik już istnieje")
         except (OSError, ValueError):
             status.update("Nie udało się zapisać pliku")
         else:
-            status.update("Zapisano plik CSV")
+            status.update("Zapisano plik")
 
     def _show_selection(self) -> None:
         before, after, lines = build_diff(self.text, self.spans, self.active, self._numbering)
@@ -472,12 +614,13 @@ def compare_file(
                 numbering_fn=anonymizer.assign,
             )
         elif suffix == ".json":
-            spans, numbering = detect_json(
+            app = AnonymizationDiffApp(
                 text,
+                [],
+                json_path=input_path,
                 detector=anonymizer.detect,
                 numbering_fn=anonymizer.assign,
             )
-            app = AnonymizationDiffApp(text, spans, numbering=numbering)
         else:
             spans = anonymizer.detect(text)
             numbering = anonymizer.assign(text, spans)

@@ -727,19 +727,19 @@ def test_json_model_masking_uses_decoded_aliases_and_keeps_keys(
     output = tmp_path / "masked.json"
     source.write_bytes(
         b'{\r\n "Zoja Testowa": ["\\u005aoja Testowa", "Mira Fikcyjna", '
-        b'{"alias": "Zoja Testowa"}], "n": 90051512340\r\n}\r\n'
+        b'{"alias": "Zoja Testowa"}], "n": 42\r\n}\r\n'
     )
     assert mask_file(source, output, model="offline-test-model") == 0
     assert output.read_bytes() == (
         b'{\r\n "Zoja Testowa": ["[OSOBA_1]", "[OSOBA_2]", '
-        b'{"alias": "[OSOBA_1]"}], "n": 90051512340\r\n}\r\n'
+        b'{"alias": "[OSOBA_1]"}], "n": 42\r\n}\r\n'
     )
 
 
 @pytest.mark.parametrize("existing_output", [False, True])
 @pytest.mark.parametrize(
     "payload",
-    [b'{"private":"90051512340",}', b'{"private":"90051512340\xff"}'],
+    [b'{"private":"90051512340",}', b'{"private":"90051512340\x81"}'],
 )
 def test_invalid_json_preserves_output_before_model_initialization(
     tmp_path: Path,

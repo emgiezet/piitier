@@ -24,8 +24,8 @@ from pathlib import Path
 
 import piitier
 from piitier.csvskip import parse_csv_field_ranges, sniff_delimiter
-from piitier.jsonmask import mask_json
-from piitier.loaders import PdfNoTextError, get_loader, load_with_password
+from piitier.jsonmask import JsonSelectorError, NumericPiiError, mask_json, parse_json_selector
+from piitier.loaders import PdfNoTextError, decode_json_bytes, get_loader, load_with_password
 from piitier.scan import Finding, read_allowlist, scan_file
 
 
@@ -56,6 +56,7 @@ def mask_file(
     *,
     password: str | None = None,
     password_stdin: bool = False,
+    skip_fields: list[str] | None = None,
 ) -> int:
     """Mask PII in a file and write output.
 
@@ -67,10 +68,21 @@ def mask_file(
         skip_columns: CSV header names or 1-based indices to leave unmasked.
         delimiter: Optional single-character CSV delimiter.
         revision: Hub branch/tag/commit; ignored for local paths.
+        skip_fields: Restricted jq paths whose JSON string values remain unchanged.
 
     Returns:
         Exit code: 0 on success, 2 on error.
     """
+    suffix = input_path.suffix.lower()
+    if skip_fields is not None and suffix != ".json":
+        print("--skip-fields is only supported for .json files", file=sys.stderr)
+        return 2
+    try:
+        for selector in skip_fields or []:
+            parse_json_selector(selector)
+    except JsonSelectorError:
+        print("unsupported JSON path selector", file=sys.stderr)
+        return 2
     if password is not None and password_stdin:
         print("password options are mutually exclusive", file=sys.stderr)
         return 2
@@ -114,6 +126,7 @@ def mask_file(
         return 2
 
     # 4. Load the file text.
+    source_encoding = "utf-8"
     try:
         if password_stdin:
             stream = getattr(sys.stdin, "buffer", sys.stdin)
@@ -126,11 +139,14 @@ def mask_file(
             )
             if password.endswith("\n"):
                 password = password[:-1].removesuffix("\r")
-        text = load_with_password(
-            input_path,
-            password=password,
-            prompt=None if password_stdin else terminal_password_prompt,
-        )
+        if suffix == ".json":
+            text, source_encoding = decode_json_bytes(input_path.read_bytes())
+        else:
+            text = load_with_password(
+                input_path,
+                password=password,
+                prompt=None if password_stdin else terminal_password_prompt,
+            )
     except FileNotFoundError:
         print(f"not found: {input_path}", file=sys.stderr)
         return 2
@@ -158,7 +174,8 @@ def mask_file(
         ]
 
     # 5. Mask the content.
-    suffix = input_path.suffix.lower()
+    def warn_unknown_field(selector: str) -> None:
+        print("warning: JSON selector matched no values", file=sys.stderr)
 
     def warn_unknown(col: str) -> None:
         print(f"warning: unknown column: {col}", file=sys.stderr)
@@ -169,7 +186,11 @@ def mask_file(
             anonymizer = piitier.Anonymizer(model=model, revision=revision, threshold=threshold)
             if suffix == ".json":
                 masked_text = mask_json(
-                    text, detector=anonymizer.detect, numbering_fn=anonymizer.assign
+                    text,
+                    detector=anonymizer.detect,
+                    numbering_fn=anonymizer.assign,
+                    skip_fields=skip_fields,
+                    on_unknown_field=warn_unknown_field,
                 )
             elif skip_columns:
                 masked_text = piitier.mask_csv(
@@ -181,11 +202,23 @@ def mask_file(
                 )
             else:
                 masked_text = anonymizer.mask(text)
+        except (NumericPiiError, JsonSelectorError):
+            print("cannot mask JSON: numeric PII or unsupported path", file=sys.stderr)
+            return 2
         except (OSError, ValueError, ImportError):
             print(f"model error: could not download or use model: {model}", file=sys.stderr)
             return 2
     elif suffix == ".json":
-        masked_text = mask_json(text, detector=piitier.detect)
+        try:
+            masked_text = mask_json(
+                text,
+                detector=piitier.detect,
+                skip_fields=skip_fields,
+                on_unknown_field=warn_unknown_field,
+            )
+        except (NumericPiiError, JsonSelectorError):
+            print("cannot mask JSON: numeric PII or unsupported path", file=sys.stderr)
+            return 2
     elif skip_columns:
         masked_text = piitier.mask_csv(
             text,
@@ -202,8 +235,8 @@ def mask_file(
         if output_path is None:
             sys.stdout.write(masked_text)
         else:
-            output_path.write_text(masked_text, encoding="utf-8")
-    except OSError:
+            output_path.write_bytes(masked_text.encode(source_encoding))
+    except (OSError, UnicodeError):
         print(f"could not write: {output_path}", file=sys.stderr)
         return 2
 
@@ -335,6 +368,13 @@ def _main() -> int:
         metavar="CHAR",
         help="CSV field delimiter override, e.g. ';' or ',' (CSV only; default: auto-detected)",
     )
+    mask_parser.add_argument(
+        "--skip-fields",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help="Repeat a jq path to leave matching JSON values unchanged (JSON only)",
+    )
 
     compare_parser = subparsers.add_parser(
         "compare",
@@ -436,6 +476,7 @@ def _main() -> int:
             args.revision,
             password=args.password,
             password_stdin=args.password_stdin,
+            skip_fields=args.skip_fields,
         )
     if args.command == "scan":
         return scan_files(args.paths, args.allowlist, args.write_allowlist)

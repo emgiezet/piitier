@@ -80,14 +80,25 @@ def load_text_file(path: Path) -> str:
         ) from None
 
 
-def load_json(path: Path) -> str:
-    """Read validated UTF-8 JSON without normalizing its serialization."""
+def decode_json_bytes(data: bytes) -> tuple[str, str]:
+    """Decode supported JSON bytes without discarding BOMs or normalizing line endings."""
     try:
-        text = path.read_bytes().decode("utf-8")
+        try:
+            text, encoding = data.decode("utf-8"), "utf-8"
+        except UnicodeDecodeError:
+            text, encoding = data.decode("cp1250"), "cp1250"
         validate_json(text)
     except ValueError:
+        raise ValueError("invalid JSON or unsupported encoding") from None
+    return text, encoding
+
+
+def load_json(path: Path) -> str:
+    """Read validated JSON, retaining its BOM, source characters and line endings."""
+    try:
+        return decode_json_bytes(path.read_bytes())[0]
+    except ValueError:
         raise ValueError(f"invalid JSON: {path}") from None
-    return text
 
 
 def load_pdf(path: Path, password: str | None = None) -> str:

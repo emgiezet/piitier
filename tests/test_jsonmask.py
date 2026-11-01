@@ -30,15 +30,28 @@ def test_json_cli_preserves_structure_and_masks_only_string_values(tmp_path: Pat
     output = tmp_path / "output.json"
     text = (
         '{\r\n  "90051512340": ["PESEL: \\u00390051512340", '
-        '{"value": 90051512340}], "flag": true, "empty": null\r\n}\r\n'
+        '{"value": 42}], "flag": true, "empty": null\r\n}\r\n'
     )
     source.write_bytes(text.encode())
     assert mask_file(source, output) == 0
     assert output.read_bytes() == (
         b'{\r\n  "90051512340": ["PESEL: [PESEL]", '
-        b'{"value": 90051512340}], "flag": true, "empty": null\r\n}\r\n'
+        b'{"value": 42}], "flag": true, "empty": null\r\n}\r\n'
     )
     assert source.read_bytes() == text.encode()
+
+
+def test_json_numeric_pii_is_rejected_with_safe_error() -> None:
+    from piitier.jsonmask import NumericPiiError, mask_json
+
+    with pytest.raises(NumericPiiError) as error:
+        mask_json('{"value": 90051512340}', detector=piitier.detect)
+    assert "90051512340" not in str(error.value)
+    # Skip selection does not bypass numeric safety.
+    with pytest.raises(NumericPiiError):
+        mask_json('{"value": 90051512340}', detector=piitier.detect, skip_fields=[".value"])
+    with pytest.raises(NumericPiiError):
+        mask_json('{"value": 90051512340}', detector=piitier.detect, skip_fields=["."])
 
 
 @pytest.mark.parametrize(
@@ -54,8 +67,8 @@ def test_json_cli_preserves_structure_and_masks_only_string_values(tmp_path: Pat
             r'["\ud83e\uddea PESEL: [PESEL]\nnext", "\"[PESEL]\""]',
         ),
         (
-            r'{"a\"b:c": ["900515", "12340"], "numeric": 90051512340, "n": -0.012300e+999}',
-            r'{"a\"b:c": ["900515", "12340"], "numeric": 90051512340, "n": -0.012300e+999}',
+            r'{"a\"b:c": ["900515", "12340"], "numeric": 42, "n": -0.012300e+999}',
+            r'{"a\"b:c": ["900515", "12340"], "numeric": 42, "n": -0.012300e+999}',
         ),
         (' \r\n[true, false, null, {}, [], ""]\t', ' \r\n[true, false, null, {}, [], ""]\t'),
         ('\ufeff{"a":"90051512340"}\r\n', '\ufeff{"a":"[PESEL]"}\r\n'),
@@ -146,8 +159,7 @@ def test_json_rejects_invalid_documents_without_content_diagnostics(text: str) -
     "payload",
     [
         b'{"private":"90051512340",}',
-        b'{"private":"90051512340\xff"}',
-        '{"private":"Łódź 90051512340"}'.encode("cp1250"),
+        b'{"private":"90051512340\x81"}',
         b'{"private":"90051512340\x00"}',
     ],
 )
@@ -163,6 +175,15 @@ def test_json_loader_rejects_bad_encoding_and_syntax_privately(
     assert "90051512340" not in str(error.value)
     assert "private" not in str(error.value)
     assert source.read_bytes() == payload
+
+
+def test_json_loader_supports_cp1250_roundtrip(tmp_path: Path) -> None:
+    from piitier.loaders import load_with_password
+
+    source = tmp_path / "data.JSON"
+    payload = '{"private":"Łódź 90051512340"}'.encode("cp1250")
+    source.write_bytes(payload)
+    assert load_with_password(source).encode("cp1250") == payload
 
 
 def test_json_loader_retains_utf8_bom_and_line_endings(tmp_path: Path) -> None:

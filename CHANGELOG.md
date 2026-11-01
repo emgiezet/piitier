@@ -12,6 +12,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `mask --password-stdin`, `mask --password` and bounded hidden terminal entry. Authentication failures preserve existing destinations and do not create new outputs.
 - `mask-batch` with strict filename/password CSV mapping, isolated per-file failures, exclusive text outputs and a final success/failure summary.
 - Masked credential entry before the existing comparison UI, with cancellation and Ctrl-C handling before model loading.
+- JSON field exclusions via repeated `mask --skip-fields` jq paths, `piitier.mask_json` and `Anonymizer.mask_json`; quoted keys, array wildcards and indexed selections preserve source serialization.
+- Live JSON selection preview in `compare` with value-only highlights and safe sibling-file export preserving UTF-8/BOM/cp1250, whitespace and skipped raw values.
+
+### Changed
+
+- JSON masking now rejects detectable PII in numeric tokens, including skipped fields, instead of silently retaining it; booleans, null and safe numbers remain unchanged.
+- JSON file loading and outputs support the existing cp1250 fallback while preserving source encoding. Invalid selectors and parser failures expose no document values.
 
 ## [0.1.0] - 2026-10-27
 

@@ -109,26 +109,45 @@ uv run piitier scan src/ --write-allowlist .pii-allowlist               # write 
 ```bash
 uv run piitier mask record.json -o masked.json
 uv run piitier mask record.json -o masked.json --model <checkpoint-dir> --threshold 0.78
+uv run piitier mask record.json --skip-fields '.klient.pesel' --skip-fields '.osoby[].email'
+uv run piitier mask record.json --skip-fields '."dane osobowe"."a,b"' -o masked.json
 uv run piitier compare record.json --model <checkpoint-dir>
 ```
 
 Only **string values** are anonymised, including nested object/array values and a
-top-level string. Detection sees decoded characters, so Unicode-escaped identifiers
-are masked too. Keys, numbers, booleans and null remain unchanged: identifiers stored
-as JSON numbers or object keys are **not anonymised**. Store sensitive identifiers in
-string values when using this mode.
+top-level string. Detection sees decoded characters, including Unicode escapes.
+Keys, booleans, null and safe numeric tokens remain unchanged. If a detector finds
+PII in a numeric token, processing fails without writing output—even if that field
+or an ancestor is selected to skip. Store identifiers as strings to mask them.
+Rules-only detection covers the configured checksum identifiers; use `--model` for
+model-detected entities such as names and email addresses.
 
-Replacements are applied to the original serialization, not to a re-encoded object.
-Whitespace, CRLF, key order, duplicate keys, numeric spelling and escapes outside
-replacements remain intact. Model-backed entity numbering is shared across values
-within one document and resets for the next document. `compare` uses the existing
-before/after panes and navigation; CSV-specific column selection/export is unchanged.
+`--skip-fields` accepts one restricted jq path per flag: `.klient.pesel`,
+`.osoby[].email`, `.osoby[0].email`, or `."dane osobowe"."a,b"`. Repeat the flag for
+several paths; commas inside quoted keys are never split. Selecting an object or
+array preserves its descendant values. `.` selects the root; `.[0]` and `.[]`
+select root-array elements. Unknown paths warn and processing continues. Pipes,
+filters, functions, arithmetic, slices and negative indices are rejected; this is
+not a jq interpreter. The options are JSON-only.
 
-Input must be one valid UTF-8 JSON document; an optional leading UTF-8 BOM is retained.
-Malformed JSON, invalid UTF-8 and non-JSON constants such as `NaN`/`Infinity` fail safely,
-without echoing input. Single-file failures exit 2 before model loading or output
-creation; batch failures affect only that file. JSONL, comments, field selectors and
-machine-readable detection reports are not part of this input mode.
+`compare` still requires `--model`. Its JSON selection screen shows original text
+on the left and scrollable jq-path checkboxes on the right. **Checked means skip**:
+every toggle immediately highlights only matching original values, including array
+matches, never keys. Press **Anonimizuj** to open the existing before/after panes;
+use the arrows to navigate findings. Numeric PII blocks this transition and export.
+
+Export defaults to `<stem>_anonymised.json` beside the source; the name is editable.
+The source, existing files and symlink targets are never overwritten. JSON file
+outputs preserve UTF-8 (with or without BOM) or the supported cp1250 fallback,
+CRLF/other whitespace, key order, duplicate keys, numeric spelling and escapes
+outside replacements. Skipped values keep their original serialized bytes.
+Model-backed numbering is shared across unskipped detections in one document and
+resets for the next document. PDF/password and CSV selection/export are unchanged.
+
+Malformed JSON, unsupported encodings and non-JSON constants such as `NaN` or
+`Infinity` fail safely without echoing input. JSONL/NDJSON and comments are not
+supported. `mask-batch` inherits numeric rejection and encoding preservation but
+does not accept field-selection flags.
 
 ### Password-protected PDFs
 
@@ -213,6 +232,9 @@ hub_anon.mask(text)
 # -> 'Poszkodowana [IMIĘ_1] [NAZWISKO_1], PESEL [PESEL].'
 
 piitier.mask_csv(csv_text, skip_columns=["ID"], delimiter=";")  # column-aware CSV masking
+
+piitier.mask_json(json_text, skip_fields=[".klient.pesel", ".osoby[].email"])
+anon.mask_json(json_text, skip_fields=['."dane osobowe"."a,b"'])  # with model numbering
 ```
 
 `Anonymizer` also accepts `predictor=` (any object with `predict(text) -> list[Span]`), so you can plug in

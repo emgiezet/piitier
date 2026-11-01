@@ -13,7 +13,7 @@ from types import FrameType
 
 import piitier
 from piitier.jsonmask import mask_json
-from piitier.loaders import PasswordPrompt, get_loader, load_with_password
+from piitier.loaders import PasswordPrompt, decode_json_bytes, get_loader, load_with_password
 from piitier.passwords import parse_passwords_csv
 
 
@@ -39,13 +39,13 @@ def _defer_interrupt() -> Iterator[None]:
             raise KeyboardInterrupt
 
 
-def _write_output(path: Path, text: str) -> None:
+def _write_output(path: Path, text: str, *, encoding: str = "utf-8") -> None:
     """Remove only the file this attempt created if writing or closing fails."""
     identity = None
     try:
         with ExitStack() as files:
             with _defer_interrupt():
-                output = files.enter_context(path.open("x", encoding="utf-8", newline=""))
+                output = files.enter_context(path.open("x", encoding=encoding, newline=""))
                 stat = os.fstat(output.fileno())
                 identity = (stat.st_dev, stat.st_ino)
             output.write(text)
@@ -124,11 +124,15 @@ def mask_batch(
         is_pdf = suffix == ".pdf"
         destination = output_dir / (path.with_suffix(".txt").name if is_pdf else path.name)
         try:
-            text = load_with_password(
-                path,
-                password=passwords.get(path.name) if is_pdf else None,
-                prompt=prompt,
-            )
+            encoding = "utf-8"
+            if suffix == ".json":
+                text, encoding = decode_json_bytes(path.read_bytes())
+            else:
+                text = load_with_password(
+                    path,
+                    password=passwords.get(path.name) if is_pdf else None,
+                    prompt=prompt,
+                )
             if suffix == ".json":
                 if anonymizer is not None:
                     result = mask_json(
@@ -138,7 +142,7 @@ def mask_batch(
                     result = mask_json(text, detector=piitier.detect)
             else:
                 result = anonymizer.mask(text) if anonymizer is not None else piitier.mask(text)
-            _write_output(destination, result)
+            _write_output(destination, result, encoding=encoding)
         except KeyboardInterrupt:
             return 130
         except Exception:

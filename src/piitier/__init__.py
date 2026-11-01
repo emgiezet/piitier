@@ -10,12 +10,13 @@ from piitier import rules as _rules
 from piitier.coref import Coreferencer as _Coreferencer
 from piitier.csvskip import filter_spans, parse_csv_field_ranges, plan_skips, sniff_delimiter
 from piitier.fusion import fuse as _fuse
+from piitier.jsonmask import mask_json as _mask_json
 from piitier.render import mask as _render_mask
 from piitier.spans import Span
 
 __version__ = "0.1.0"
 
-__all__ = ["Anonymizer", "Span", "__version__", "detect", "mask", "mask_csv"]
+__all__ = ["Anonymizer", "Span", "__version__", "detect", "mask", "mask_csv", "mask_json"]
 
 
 @runtime_checkable
@@ -50,6 +51,22 @@ def mask(text: str) -> str:
         Returns ``""`` for empty input.
     """
     return _render_mask(text, detect(text))
+
+
+def mask_json(
+    text: str,
+    skip_fields: list[str] | None = None,
+    *,
+    detector: Callable[[str], list[Span]] | None = None,
+    on_unknown_field: Callable[[str], None] | None = None,
+) -> str:
+    """Mask JSON string values except selected jq paths; reject detectable numeric PII."""
+    return _mask_json(
+        text,
+        detector=detector if detector is not None else detect,
+        skip_fields=skip_fields,
+        on_unknown_field=on_unknown_field,
+    )
 
 
 def mask_csv(
@@ -209,3 +226,19 @@ class Anonymizer:
         spans = self.detect(text)
         numbering = self._coref.assign(text, spans)
         return _render_mask(text, spans, numbering)
+
+    def mask_json(
+        self,
+        text: str,
+        skip_fields: list[str] | None = None,
+        *,
+        on_unknown_field: Callable[[str], None] | None = None,
+    ) -> str:
+        """Mask JSON values with model fusion and document-local entity numbering."""
+        return _mask_json(
+            text,
+            detector=self.detect,
+            numbering_fn=self.assign,
+            skip_fields=skip_fields,
+            on_unknown_field=on_unknown_field,
+        )
