@@ -1,0 +1,26 @@
+{
+  "klient": {
+    "imie": "Anna Testowa",
+    "pesel": "90051512340",
+    "notatka": "Dane fikcyjne. PESEL: 90051512340. Ten fragment powinien zostać zamaskowany."
+  },
+  "osoby": [
+    {
+      "imie": "Jan Przykładowy",
+      "email": "jan@example.test",
+      "pesel": "90051512340"
+    },
+    {
+      "imie": "Ewa Przykładowa",
+      "email": "ewa@example.test",
+      "pesel": "90051512340"
+    }
+  ],
+  "dane osobowe": {
+    "a,b": "90051512340",
+    "pole.do.testu": "PESEL: 90051512340"
+  },
+  "test_escapow": "Cytat: \"dane testowe\". Katalog: C:\\testy\\json",
+  "aktywny": true,
+  "uwagi": null
+}
