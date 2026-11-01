@@ -1,7 +1,7 @@
 ---
 ticket: PII-14-a
 title: Authenticated PDF extraction and single-file CLI credentials
-status: draft
+status: approved
 stacks: [python]
 ---
 

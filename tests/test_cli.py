@@ -635,7 +635,9 @@ def test_uc177_stdin_preserves_bare_cr(tmp_path: Path, ending: str) -> None:
     assert result.stdout == b"  PESEL: [PESEL]  \n\nEnd."
 
 
-@pytest.mark.parametrize("outcome", ["correct", "eof", "fallback", "interrupt", "exhaust"])
+@pytest.mark.parametrize(
+    "outcome", ["correct", "explicit", "eof", "fallback", "interrupt", "exhaust"]
+)
 def test_uc176_hidden_cli_entry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -653,10 +655,19 @@ def test_uc176_hidden_cli_entry(
     secret = secrets.token_hex(12)
     path = password_pdf(tmp_path, secret)
     output = tmp_path / "out.txt"
-    monkeypatch.setattr(sys, "argv", ["piitier", "mask", str(path), "-o", str(output)])
+    args = ["piitier", "mask", str(path), "-o", str(output)]
+    if outcome == "explicit":
+        args += ["--password", secrets.token_hex(12)]
+    monkeypatch.setattr(sys, "argv", args)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
-    answers = iter(["wrong", secret] if outcome == "correct" else ["wrong"] * 3)
+    answers = iter(
+        [secret]
+        if outcome == "explicit"
+        else ["wrong", secret]
+        if outcome == "correct"
+        else ["wrong"] * 3
+    )
     entered = []
 
     def hidden(prompt: str, stream: object) -> str:
@@ -671,10 +682,11 @@ def test_uc176_hidden_cli_entry(
         return next(answers)
 
     monkeypatch.setattr(getpass, "getpass", hidden)
-    assert main() == (0 if outcome == "correct" else 130 if outcome == "interrupt" else 2)
-    if outcome == "correct":
+    success = outcome in ("correct", "explicit")
+    assert main() == (0 if success else 130 if outcome == "interrupt" else 2)
+    if success:
         assert output.read_text() == "  PESEL: [PESEL]  \n\nEnd."
-        assert len(entered) == 2
+        assert len(entered) == (1 if outcome == "explicit" else 2)
     else:
         assert not output.exists()
         assert len(entered) == (3 if outcome == "exhaust" else 1)
@@ -757,3 +769,66 @@ def test_invalid_json_preserves_output_before_model_initialization(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "private" not in captured.err and "90051512340" not in captured.err
+
+
+@pytest.mark.parametrize("stdin_tty,stderr_tty", [(False, True), (True, False), (False, False)])
+def test_uc176_nonterminal_authentication_never_prompts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stdin_tty: bool,
+    stderr_tty: bool,
+) -> None:
+    import getpass
+    import secrets
+
+    from test_loaders_pdf import password_pdf
+
+    from piitier.cli import main
+
+    path = password_pdf(tmp_path, secrets.token_hex(12))
+    output = tmp_path / "out.txt"
+    output.write_bytes(b"preserve existing output")
+    monkeypatch.setattr(sys, "argv", ["piitier", "mask", str(path), "-o", str(output)])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: stdin_tty)
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: stderr_tty)
+
+    def forbidden_prompt(*args: object, **kwargs: object) -> str:
+        pytest.fail("nonterminal authentication must not attempt hidden input")
+
+    monkeypatch.setattr(getpass, "getpass", forbidden_prompt)
+    assert main() == 2
+    assert output.read_bytes() == b"preserve existing output"
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"password required: {path}\n"
+
+
+@pytest.mark.parametrize("command", ["mask", "compare"])
+def test_uc174_uc188_authenticated_scan_exits3(tmp_path: Path, command: str) -> None:
+    import secrets
+
+    from test_loaders_pdf import password_pdf
+
+    password = secrets.token_hex(12) if command == "mask" else ""
+    owner = secrets.token_hex(12)
+    path = password_pdf(tmp_path, password, owner=owner, algorithm="AES-256", image=True)
+    output = tmp_path / "out.txt"
+    output.write_bytes(b"preserve existing output")
+    flags = (
+        ["--password-stdin", "-o", str(output)]
+        if command == "mask"
+        else ["--model", str(tmp_path / "model-must-not-load")]
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", command, str(path), *flags],
+        input=(password + "\n").encode(),
+        capture_output=True,
+    )
+    assert result.returncode == 3
+    assert result.stdout == b""
+    assert owner.encode() not in result.stderr
+    if password:
+        assert password.encode() not in result.stderr
+    assert b"Traceback" not in result.stderr
+    assert output.read_bytes() == b"preserve existing output"

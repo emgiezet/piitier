@@ -148,10 +148,15 @@ are mutually exclusive and PDF-only. No passwords or decrypted intermediate PDFs
 saved. Missing/wrong credentials exit 2 without creating or truncating the output;
 authenticated PDFs without a text layer exit 3. EOF cancels entry; Ctrl-C exits 130.
 
+Output is masked extracted text, not a redacted or encrypted PDF. Scanned PDFs still
+require a text layer; this workflow does not perform OCR.
+
 `compare locked.pdf --model <checkpoint-dir>` opens a masked password dialog before
 loading the model or showing the existing comparison panes. Enter/Unlock submits the
 exact value (including empty); Escape/Cancel exits 2. It requires terminal stdin and
 stdout for credential entry, permits three attempts, and retains no password history.
+If authentication is required without both terminals, `compare` exits 2 without
+opening a dialog or loading the model.
 
 ### Directory batches
 
@@ -201,13 +206,14 @@ anon.mask(text)
 
 hub_anon = piitier.Anonymizer(
     model="emgiezet/piitier",  # Hugging Face Hub repo id; requires piitier[ner]
-    revision="main",              # branch, tag, or commit hash
+    revision="main",  # branch, tag, or commit hash
     threshold=0.78,
 )
 hub_anon.mask(text)
 # -> 'Poszkodowana [IMIĘ_1] [NAZWISKO_1], PESEL [PESEL].'
 
 piitier.mask_csv(csv_text, skip_columns=["ID"], delimiter=";")  # column-aware CSV masking
+```
 
 `Anonymizer` also accepts `predictor=` (any object with `predict(text) -> list[Span]`), so you can plug in
 your own model behind the same rules and fusion layer.

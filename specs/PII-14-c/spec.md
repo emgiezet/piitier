@@ -1,7 +1,7 @@
 ---
 ticket: PII-14-c
 title: Secure credential entry before existing Textual comparison
-status: draft
+status: approved
 stacks: [python]
 depends-on: PII-14-a
 ---
