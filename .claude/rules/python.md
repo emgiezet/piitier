@@ -8,7 +8,9 @@ paths:
 
 ## Environment
 
-- Python 3.12, managed with uv. The environment comes from `uv sync`; run tools as `uv run <tool>`.
+- Python 3.12+ (the published floor), managed with uv. Development and primary CI run CPython 3.14,
+  pinned in `.python-version`; a blocking CI job runs the unit suite on 3.12. The environment
+  comes from `uv sync`; run tools as `uv run <tool>`.
 - Add dependencies with an exact pin to the current stable release (`pip index versions <pkg>`
   shows it): `uv add <pkg>==<version>`. Never use a floating range or `@latest`.
 - Test and lint tools (pytest, hypothesis, ruff, mypy) go in `[dependency-groups] dev` via
