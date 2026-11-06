@@ -119,6 +119,18 @@ def plan_skips(parse_result: ParseResult, selectors: list[str]) -> SkipPlan:
     return SkipPlan(merged, unknown)
 
 
+def split_column_selectors(items: list[str], headers: set[str]) -> list[str]:
+    """Split comma-joined selectors unless the whole item is a known header (casefolded)."""
+    if not any("," in item for item in items):
+        return items
+    return [
+        token.strip()
+        for item in items
+        for token in ([item] if item.casefold() in headers else item.split(","))
+        if token.strip()
+    ]
+
+
 def filter_spans(spans: list[Span], protected_ranges: list[tuple[int, int]]) -> list[Span]:
     """Discard only detections entirely within a protected cell range."""
     starts = [start for start, _ in protected_ranges]

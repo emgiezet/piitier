@@ -1,11 +1,12 @@
 """File loaders with encoding detection.
 
-Supports .txt, .md, .csv, and .pdf files. Registry keyed by extension allows
+Supports .txt, .md, .csv, .pdf and .xlsx files. Registry keyed by extension allows
 adding file type support without touching cli.py.
 
 Invariant: text files (.txt, .md, .csv) are read as strings and masked as one,
 preserving byte-for-byte structure (Markdown syntax, delimiters, line endings).
 PDF files: all pages extracted verbatim and joined with '\\n'; empty pages preserved.
+XLSX files: every worksheet rendered as text (see ``piitier.xlsx``).
 """
 
 from __future__ import annotations
@@ -89,12 +90,20 @@ def load_pdf(path: Path) -> str:
     return "\n".join(pages_text)
 
 
+def load_xlsx(path: Path) -> str:
+    """Render every worksheet as text (see piitier.xlsx.render_workbook)."""
+    from piitier.xlsx import render_workbook  # deferred: keeps openpyxl out of CLI startup
+
+    return render_workbook(path).text
+
+
 # Registry: extension → loader function
 _LOADERS: dict[str, Callable[[Path], str]] = {
     ".txt": load_text_file,
     ".md": load_text_file,
     ".csv": load_text_file,
     ".pdf": load_pdf,
+    ".xlsx": load_xlsx,
 }
 
 

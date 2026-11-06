@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import openpyxl
 import pytest
 from rich.text import Text
 from textual.widgets import Checkbox, DataTable, Input, RichLog, Static
@@ -14,7 +15,8 @@ from textual.widgets import Checkbox, DataTable, Input, RichLog, Static
 import piitier
 from piitier.labels import Label
 from piitier.spans import Span
-from piitier.tui import AnonymizationDiffApp, CsvSelectionScreen, build_diff
+from piitier.tui import AnonymizationDiffApp, ColumnSelectionScreen, build_diff
+from piitier.xlsx import render_workbook
 
 
 def span(start: int, end: int, label: Label) -> Span:
@@ -145,12 +147,12 @@ def test_csv_preview_selects_columns_to_mask_before_export(tmp_path: Path) -> No
     text = "ID;ID;Notes\r\n90051512340;90051512340;90051512340\r\n"
     source = tmp_path / "in.csv"
     source.write_bytes(text.encode())
-    app = AnonymizationDiffApp(text, [], csv_path=source, detector=piitier.detect)
+    app = AnonymizationDiffApp(text, [], source_path=source, detector=piitier.detect)
 
     async def exercise() -> None:
         async with app.run_test(size=(110, 30)) as pilot:
-            assert isinstance(app.screen, CsvSelectionScreen)
-            table = app.screen.query_one("#csv-preview", DataTable)
+            assert isinstance(app.screen, ColumnSelectionScreen)
+            table = app.screen.query_one("#table-preview", DataTable)
             assert table.get_row_at(0) == ["90051512340"] * 3
             assert len(app.screen.query(Checkbox)) == 3
             assert all(checkbox.value for checkbox in app.screen.query(Checkbox))
@@ -160,7 +162,7 @@ def test_csv_preview_selects_columns_to_mask_before_export(tmp_path: Path) -> No
             await pilot.click("#mask-2")
             await pilot.click("#anonymize")
             await pilot.pause()
-            assert not isinstance(app.screen, CsvSelectionScreen)
+            assert not isinstance(app.screen, ColumnSelectionScreen)
             await pilot.click("#export")
             assert (tmp_path / "in_anonymised.csv").read_bytes() == (
                 b"ID;ID;Notes\r\n90051512340;90051512340;[PESEL]\r\n"
@@ -174,7 +176,7 @@ def test_csv_preview_keeps_arrow_navigation_for_table_and_keyboard_checkboxes(
     tmp_path: Path,
 ) -> None:
     text = "ID;Notes\n90051512340;one\n90051512340;two\n"
-    app = AnonymizationDiffApp(text, [], csv_path=tmp_path / "in.csv", detector=piitier.detect)
+    app = AnonymizationDiffApp(text, [], source_path=tmp_path / "in.csv", detector=piitier.detect)
 
     async def exercise() -> None:
         async with app.run_test(size=(100, 25)) as pilot:
@@ -194,7 +196,7 @@ def test_csv_export_default_name_preserves_bytes_and_refuses_overwrite(tmp_path:
     text = "ID;Notes\r\n90051512340;90051512340\r\n"
     source = tmp_path / "in.csv"
     source.write_bytes(text.encode())
-    app = AnonymizationDiffApp(text, [], csv_path=source, detector=piitier.detect)
+    app = AnonymizationDiffApp(text, [], source_path=source, detector=piitier.detect)
 
     async def exercise() -> None:
         async with app.run_test(size=(110, 30)) as pilot:
@@ -221,7 +223,7 @@ def test_csv_export_renamed_file_rejects_source_and_path_escape(tmp_path: Path) 
     text = "ID;Notes\n90051512340;90051512340\n"
     source = tmp_path / "in.csv"
     source.write_text(text, encoding="utf-8")
-    app = AnonymizationDiffApp(text, [], csv_path=source, detector=piitier.detect)
+    app = AnonymizationDiffApp(text, [], source_path=source, detector=piitier.detect)
 
     async def exercise() -> None:
         async with app.run_test(size=(110, 30)) as pilot:
@@ -247,7 +249,7 @@ def test_csv_export_renamed_file_rejects_source_and_path_escape(tmp_path: Path) 
 
 def test_csv_ragged_third_column_can_be_left_unmasked(tmp_path: Path) -> None:
     text = "ID;Notes\n90051512340;90051512340;90051512340\n"
-    app = AnonymizationDiffApp(text, [], csv_path=tmp_path / "in.csv", detector=piitier.detect)
+    app = AnonymizationDiffApp(text, [], source_path=tmp_path / "in.csv", detector=piitier.detect)
 
     async def exercise() -> None:
         async with app.run_test(size=(110, 28)) as pilot:
@@ -265,7 +267,7 @@ def test_csv_ragged_third_column_can_be_left_unmasked(tmp_path: Path) -> None:
 
 def test_export_filename_input_keeps_arrow_keys(tmp_path: Path) -> None:
     text = "ID;Notes\n90051512340;90051512340\n"
-    app = AnonymizationDiffApp(text, [], csv_path=tmp_path / "in.csv", detector=piitier.detect)
+    app = AnonymizationDiffApp(text, [], source_path=tmp_path / "in.csv", detector=piitier.detect)
 
     async def exercise() -> None:
         async with app.run_test(size=(110, 28)) as pilot:
@@ -302,7 +304,7 @@ def test_csv_export_retains_source_encoding(
 ) -> None:
     source = tmp_path / "in.csv"
     source.write_bytes(original)
-    app = AnonymizationDiffApp(text, [], csv_path=source, detector=piitier.detect)
+    app = AnonymizationDiffApp(text, [], source_path=source, detector=piitier.detect)
 
     async def exercise() -> None:
         async with app.run_test(size=(110, 28)) as pilot:
@@ -312,5 +314,78 @@ def test_csv_export_retains_source_encoding(
             await pilot.click("#export")
             assert (tmp_path / "in_anonymised.csv").read_bytes() == expected
             assert source.read_bytes() == original
+
+    asyncio.run(exercise())
+
+
+def _write_workbook(path: Path) -> None:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.title = "Raport"
+    sheet.append(["ID", "Notatka"])
+    sheet.append(["90051512340", 90051512340])
+    workbook.create_sheet("Druga").append(["90051512340", "x"])
+    workbook.save(path)
+
+
+def test_uc181_xlsx_columns_selected_in_tui_and_exported(tmp_path: Path) -> None:
+    source = tmp_path / "raport.xlsx"
+    _write_workbook(source)
+    original = source.read_bytes()
+    rendered = render_workbook(source)
+    app = AnonymizationDiffApp(
+        rendered.text, [], source_path=source, detector=piitier.detect, rendered=rendered
+    )
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            assert isinstance(app.screen, ColumnSelectionScreen)
+            labels = [str(checkbox.label) for checkbox in app.screen.query(Checkbox)]
+            assert labels == ["1. ID", "2. Notatka"]
+            table = app.screen.query_one("#table-preview", DataTable)
+            assert table.get_row_at(0) == ["90051512340", "90051512340"]
+
+            await pilot.click("#mask-1")
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            assert build_diff(app.text, app.spans, 0)[1].plain == (
+                "# Raport\nID | Notatka\n90051512340 | [PESEL]\n\n# Druga\n90051512340 | x\n"
+            )
+            assert app.query_one("#export-filename", Input).value == "raport_anonymised.xlsx"
+            await pilot.click("#export")
+            await pilot.pause()
+            assert "Zapisano" in str(app.query_one("#export-status", Static).render())
+
+    asyncio.run(exercise())
+    exported = openpyxl.load_workbook(tmp_path / "raport_anonymised.xlsx")
+    assert [list(ws.iter_rows(values_only=True)) for ws in exported.worksheets] == [
+        [("ID", "Notatka"), ("90051512340", "[PESEL]")],
+        [("90051512340", "x")],
+    ]
+    assert source.read_bytes() == original
+
+
+def test_uc182_xlsx_export_refuses_existing_file(tmp_path: Path) -> None:
+    source = tmp_path / "raport.xlsx"
+    _write_workbook(source)
+    rendered = render_workbook(source)
+    app = AnonymizationDiffApp(
+        rendered.text, [], source_path=source, detector=piitier.detect, rendered=rendered
+    )
+    output = tmp_path / "raport_anonymised.xlsx"
+
+    async def exercise() -> None:
+        async with app.run_test(size=(110, 30)) as pilot:
+            await pilot.click("#anonymize")
+            await pilot.pause()
+            await pilot.click("#export")
+            await pilot.pause()
+            first = output.read_bytes()
+            await pilot.pause(0.25)
+            await pilot.click("#export")
+            await pilot.pause()
+            assert str(app.query_one("#export-status", Static).render()) == "Plik już istnieje"
+            assert output.read_bytes() == first
 
     asyncio.run(exercise())
