@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `.xlsx` input masking, `-o out.xlsx` workbook output and `--skip-columns` selection.
+  Output retains masked values, supported cell styles, column widths, row heights, merges and
+  freeze panes; comments/authors, hyperlinks, defined names, headers/footers, charts, images and
+  other unsupported objects are deliberately dropped, and document properties are reset.
+  Detected formulas become plain text with a CLI warning; TUI export shows the conversion count.
 - Password-protected PDF extraction with user or owner credentials for RC4, AES-128 and AES-256, including empty-user restricted PDFs.
 - `mask --password-stdin`, `mask --password` and bounded hidden terminal entry. Authentication failures preserve existing destinations and do not create new outputs.
 - `mask-batch` with strict filename/password CSV mapping, isolated per-file failures, exclusive text outputs and a final success/failure summary.

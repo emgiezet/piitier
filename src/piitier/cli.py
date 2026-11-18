@@ -3,9 +3,11 @@
 Entry points:
 
 - ``piitier mask <path> [-o <out>] [--model <dir>] [--threshold T]``
-  ``[--skip-columns COLS] [--delimiter CHAR]`` reads .txt, .md, .csv, .json or text-layer .pdf
+  ``[--skip-columns COLS] [--delimiter CHAR]`` reads .txt, .md, .csv, .json, .pdf or .xlsx
   file and masks PII with ``piitier.mask()`` (rules only, default) or ``piitier.Anonymizer``
-  (rules + NER when --model is given). Selected CSV columns remain unmasked.
+  (rules + NER when --model is given). Selected CSV/XLSX columns remain unmasked. An .xlsx input
+  with ``-o <out>.xlsx`` writes a masked workbook in which only cell values change; any other
+  output of an .xlsx input is its sheets rendered as text.
   Exit 0 on success, 2 on usage/input error, 3 on a PDF with no text layer.
 - ``piitier compare <path> --model <dir> [--threshold T] [--device cpu|cuda]`` opens
   a local two-pane TUI to inspect replacements without printing the document.
@@ -21,12 +23,20 @@ import sys
 import warnings
 from argparse import ArgumentParser
 from pathlib import Path
+from typing import Callable
 
 import piitier
-from piitier.csvskip import parse_csv_field_ranges, sniff_delimiter
+from piitier.csvskip import (
+    filter_spans,
+    parse_csv_field_ranges,
+    sniff_delimiter,
+    split_column_selectors,
+)
 from piitier.jsonmask import mask_json
 from piitier.loaders import PdfNoTextError, get_loader, load_with_password
+from piitier.render import mask as render_mask
 from piitier.scan import Finding, read_allowlist, scan_file
+from piitier.spans import Span
 
 
 def terminal_password_prompt(path: Path, attempt: int, incorrect: bool) -> str | None:
@@ -64,7 +74,7 @@ def mask_file(
         output_path: Path to the output file (None = stdout).
         model: Local checkpoint path or Hugging Face Hub repo id (``owner/name``).
         threshold: Minimum NER score; ignored when model is None.
-        skip_columns: CSV header names or 1-based indices to leave unmasked.
+        skip_columns: CSV/XLSX header names or 1-based indices to leave unmasked.
         delimiter: Optional single-character CSV delimiter.
         revision: Hub branch/tag/commit; ignored for local paths.
 
@@ -83,13 +93,16 @@ def mask_file(
     if model is not None and not (0.0 <= threshold <= 1.0):
         print(f"invalid threshold: {threshold} (expected a number in [0, 1])", file=sys.stderr)
         return 2
-    if input_path.suffix.lower() != ".csv":
-        if skip_columns:
-            print(f"--skip-columns is only supported for .csv files: {input_path}", file=sys.stderr)
-            return 2
-        if delimiter is not None:
-            print(f"--delimiter is only supported for .csv files: {input_path}", file=sys.stderr)
-            return 2
+    suffix = input_path.suffix.lower()
+    if skip_columns and suffix not in (".csv", ".xlsx"):
+        print(
+            f"--skip-columns is only supported for .csv and .xlsx files: {input_path}",
+            file=sys.stderr,
+        )
+        return 2
+    if delimiter is not None and suffix != ".csv":
+        print(f"--delimiter is only supported for .csv files: {input_path}", file=sys.stderr)
+        return 2
     if delimiter is not None and not skip_columns:
         print("cannot use --delimiter without --skip-columns", file=sys.stderr)
         return 2
@@ -113,7 +126,13 @@ def mask_file(
         print(f"unsupported file type: {input_path.suffix}", file=sys.stderr)
         return 2
 
-    # 4. Load the file text.
+    if suffix == ".xlsx" and output_path is not None and output_path.suffix.lower() == ".xlsx":
+        return _mask_workbook_file(
+            input_path, output_path, model, threshold, skip_columns, revision
+        )
+
+    # 4. Load the file text; for .xlsx with --skip-columns also the protected cell ranges.
+    protected: list[tuple[int, int]] | None = None
     try:
         if password_stdin:
             stream = getattr(sys.stdin, "buffer", sys.stdin)
@@ -126,11 +145,21 @@ def mask_file(
             )
             if password.endswith("\n"):
                 password = password[:-1].removesuffix("\r")
-        text = load_with_password(
-            input_path,
-            password=password,
-            prompt=None if password_stdin else terminal_password_prompt,
-        )
+        if suffix != ".xlsx" or not skip_columns:
+            text = load_with_password(
+                input_path,
+                password=password,
+                prompt=None if password_stdin else terminal_password_prompt,
+            )
+        if suffix == ".xlsx" and skip_columns:
+            from piitier.xlsx import header_union, protected_ranges, render_workbook
+
+            rendered = render_workbook(input_path)
+            text = rendered.text
+            skip_columns = split_column_selectors(skip_columns, header_union(rendered))
+            protected, unknown = protected_ranges(rendered, skip_columns)
+            for selector in unknown:
+                _warn_unknown_column(selector)
     except FileNotFoundError:
         print(f"not found: {input_path}", file=sys.stderr)
         return 2
@@ -147,55 +176,44 @@ def mask_file(
         print(f"could not read: {input_path}", file=sys.stderr)
         return 2
 
-    if skip_columns and any("," in item for item in skip_columns):
+    if protected is None and skip_columns:
         rows = parse_csv_field_ranges(text, delimiter or sniff_delimiter(text)).rows
         headers = {cell.value.strip().casefold() for cell in rows[0]} if rows else set()
-        skip_columns = [
-            token.strip()
-            for item in skip_columns
-            for token in ([item] if item.casefold() in headers else item.split(","))
-            if token.strip()
-        ]
+        skip_columns = split_column_selectors(skip_columns, headers)
 
     # 5. Mask the content.
-    suffix = input_path.suffix.lower()
+    def mask_text(
+        detector: Callable[[str], list[Span]],
+        numbering_fn: Callable[[str, list[Span]], dict[tuple[int, int], int]] | None = None,
+    ) -> str:
+        if suffix == ".json":
+            return mask_json(text, detector=detector, numbering_fn=numbering_fn)
+        spans = filter_spans(detector(text), protected) if protected is not None else None
+        if spans is not None:
+            numbering = numbering_fn(text, spans) if numbering_fn is not None else None
+            return render_mask(text, spans, numbering)
+        if skip_columns:
+            return piitier.mask_csv(
+                text,
+                skip_columns=skip_columns,
+                delimiter=delimiter,
+                detector=detector,
+                on_unknown_column=_warn_unknown_column,
+            )
+        spans = detector(text)
+        numbering = numbering_fn(text, spans) if numbering_fn is not None else None
+        return render_mask(text, spans, numbering)
 
-    def warn_unknown(col: str) -> None:
-        print(f"warning: unknown column: {col}", file=sys.stderr)
-
-    if model is not None:
+    if model is None:
+        masked_text = mask_text(piitier.detect)
+    else:
         # Catch model construction and inference errors without a traceback.
         try:
             anonymizer = piitier.Anonymizer(model=model, revision=revision, threshold=threshold)
-            if suffix == ".json":
-                masked_text = mask_json(
-                    text, detector=anonymizer.detect, numbering_fn=anonymizer.assign
-                )
-            elif skip_columns:
-                masked_text = piitier.mask_csv(
-                    text,
-                    skip_columns=skip_columns,
-                    delimiter=delimiter,
-                    detector=anonymizer.detect,
-                    on_unknown_column=warn_unknown,
-                )
-            else:
-                masked_text = anonymizer.mask(text)
+            masked_text = mask_text(anonymizer.detect, anonymizer.assign)
         except (OSError, ValueError, ImportError):
             print(f"model error: could not download or use model: {model}", file=sys.stderr)
             return 2
-    elif suffix == ".json":
-        masked_text = mask_json(text, detector=piitier.detect)
-    elif skip_columns:
-        masked_text = piitier.mask_csv(
-            text,
-            skip_columns=skip_columns,
-            delimiter=delimiter,
-            detector=piitier.detect,
-            on_unknown_column=warn_unknown,
-        )
-    else:
-        masked_text = piitier.mask(text)
 
     # 6. Write output.
     try:
@@ -207,6 +225,52 @@ def mask_file(
         print(f"could not write: {output_path}", file=sys.stderr)
         return 2
 
+    return 0
+
+
+def _warn_unknown_column(col: str) -> None:
+    print(f"warning: unknown column: {col}", file=sys.stderr)
+
+
+def _mask_workbook_file(
+    input_path: Path,
+    output_path: Path,
+    model: str | None,
+    threshold: float,
+    skip_columns: list[str] | None,
+    revision: str | None = None,
+) -> int:
+    """Rebuild an .xlsx workbook with masked values and allow-listed presentation."""
+    from piitier.xlsx import header_union, mask_workbook, render_workbook
+
+    try:
+        if skip_columns and any("," in item for item in skip_columns):
+            headers = header_union(render_workbook(input_path))
+            skip_columns = split_column_selectors(skip_columns, headers)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    detector: Callable[[str], list[Span]] = piitier.detect
+    if model is not None:
+        try:
+            detector = piitier.Anonymizer(
+                model=model, revision=revision, threshold=threshold
+            ).detect
+        except (OSError, ValueError, ImportError):
+            print(f"model error: {model}", file=sys.stderr)
+            return 2
+    try:
+        mask_workbook(
+            input_path,
+            output_path,
+            detector=detector,
+            skip_columns=skip_columns,
+            on_unknown_column=_warn_unknown_column,
+            on_leak=lambda message: print(f"warning: {message} converted to text", file=sys.stderr),
+        )
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 2
     return 0
 
 
@@ -279,7 +343,7 @@ def _main() -> int:
     mask_parser.add_argument(
         "input",
         type=Path,
-        help="Input file path (.txt, .md, .csv, .pdf, .json)",
+        help="Input file path (.txt, .md, .csv, .json, .pdf, .xlsx)",
     )
     mask_parser.add_argument(
         "-o",
@@ -326,7 +390,8 @@ def _main() -> int:
         action="append",
         default=None,
         metavar="COLS",
-        help="Comma-separated column names or 1-based indices to leave unmasked (CSV only)",
+        help="Comma-separated column names or 1-based indices to leave unmasked "
+        "(CSV and XLSX only)",
     )
     mask_parser.add_argument(
         "--delimiter",
@@ -341,7 +406,7 @@ def _main() -> int:
         help="Inspect original and anonymized text side by side in a terminal",
     )
     compare_parser.add_argument(
-        "input", type=Path, help="Input file (.txt, .md, .csv, .json, .pdf)"
+        "input", type=Path, help="Input file (.txt, .md, .csv, .json, .pdf, .xlsx)"
     )
     compare_parser.add_argument(
         "--model", type=str, required=True, help="Local checkpoint path or Hub repo id (owner/name)"
