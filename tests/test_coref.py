@@ -12,11 +12,13 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import piitier
-from piitier.coref import Coreferencer
+import piitier.coref as coref_module
+from piitier.coref import Coreferencer, _get_lemma
 from piitier.labels import Label
 from piitier.render import mask as render_mask
 from piitier.spans import Span
@@ -427,3 +429,509 @@ def test_uc125_numbering_consistency_on_uc118_output() -> None:
 
     assert stats.same_entity_total == 1
     assert stats.same_entity_consistent == 1
+
+
+# PII-31: citation, genitive, dative, instrumental; all fixtures are synthetic.
+_ADJECTIVAL_SURNAMES = [
+    ("Kowalski", "Kowalska"),
+    ("Wiśniewski", "Wiśniewska"),
+    ("Zieliński", "Zielińska"),
+    ("Kamiński", "Kamińska"),
+    ("Lewandowski", "Lewandowska"),
+    ("Dąbrowski", "Dąbrowska"),
+    ("Szymański", "Szymańska"),
+    ("Kozłowski", "Kozłowska"),
+    ("Jankowski", "Jankowska"),
+    ("Wojciechowski", "Wojciechowska"),
+    ("Kwiatkowski", "Kwiatkowska"),
+    ("Górski", "Górska"),
+    ("Grabowski", "Grabowska"),
+    ("Pawłowski", "Pawłowska"),
+    ("Sawicki", "Sawicka"),
+    ("Zawadzki", "Zawadzka"),
+]
+_NOUN_SURNAMES = [
+    ("Nowak", "Nowaka", "Nowakowi", "Nowakiem"),
+    ("Woźniak", "Woźniaka", "Woźniakowi", "Woźniakiem"),
+    ("Stępień", "Stępnia", "Stępniowi", "Stępniem"),
+    ("Kozieł", "Kozieła", "Koziełowi", "Koziełem"),
+]
+_SURNAME_PARADIGMS = (
+    [(male, male + "ego", male + "emu", male + "m") for male, _female in _ADJECTIVAL_SURNAMES]
+    + [
+        (female, female[:-1] + "iej", female[:-1] + "iej", female[:-1] + "ą")
+        for _male, female in _ADJECTIVAL_SURNAMES
+    ]
+    + _NOUN_SURNAMES
+    + [(nom,) * 4 for nom, *_ in _NOUN_SURNAMES]
+)
+
+
+def _mention_spans(text: str, mentions: list[str]) -> list[Span]:
+    spans = []
+    offset = 0
+    for mention in mentions:
+        start = text.index(mention, offset)
+        offset = start + len(mention)
+        spans.append(_span(start, offset, Label.OSOBA))
+    return spans
+
+
+def _assert_masking_paths(text: str, mentions: list[str], expected: str) -> None:
+    spans = _mention_spans(text, mentions)
+    numbering = Coreferencer().assign(text, spans)
+    assert render_mask(text, spans, numbering=numbering) == expected
+    stub = _DynamicStub()
+    stub.set(spans)
+    anon = piitier.Anonymizer(predictor=stub)
+    detected = anon.detect(text)
+    rendered = anon.mask(text)
+    assert rendered == expected
+    assert "_n" not in rendered
+    assert _fidelity_outside_spans(text, rendered, detected) == 0
+
+
+@pytest.mark.parametrize(
+    ("nom", "gen", "dat"),
+    [
+        ("Zieliński", "Zielińskiego", "Zielińskiemu"),
+        ("Kamiński", "Kamińskiego", "Kamińskiemu"),
+        ("Górski", "Górskiego", "Górskiemu"),
+        ("Stępień", "Stępnia", "Stępniowi"),
+    ],
+)
+def test_uc230_uc237_inflected_person_both_masking_paths(nom: str, gen: str, dat: str) -> None:
+    mentions = [f"Marek {nom}", f"Marka {gen}", f"M. {dat}"]
+    _assert_masking_paths(" … ".join(mentions), mentions, "[OSOBA_1] … [OSOBA_1] … [OSOBA_1]")
+
+
+@pytest.mark.parametrize("forms", _SURNAME_PARADIGMS)
+def test_uc231_surname_paradigm_has_one_key_and_index(
+    forms: tuple[str, str, str, str],
+) -> None:
+    coref = Coreferencer()
+    morf = coref._get_morf()
+    assert [_get_lemma(morf, form) for form in forms] == [forms[0].casefold()] * 4
+    text = " … ".join(forms)
+    spans = _mention_spans(text, list(forms))
+    assert list(coref.assign(text, spans).values()) == [1, 1, 1, 1]
+
+
+@pytest.mark.parametrize(
+    ("male", "female", "female_gen"),
+    [
+        ("Kowalski", "Kowalska", "Kowalskiej"),
+        ("Kozłowski", "Kozłowska", "Kozłowskiej"),
+        ("Wiśniewski", "Wiśniewska", "Wiśniewskiej"),
+    ],
+)
+def test_uc232_uc237_feminine_surname_never_attaches_to_man(
+    male: str, female: str, female_gen: str
+) -> None:
+    mentions = [f"Jan {male}", f"Anna {female}", female_gen]
+    _assert_masking_paths(
+        f"{mentions[0]} i {mentions[1]}. Wypłata dla {female_gen}.",
+        mentions,
+        "[OSOBA_1] i [OSOBA_2]. Wypłata dla [OSOBA_2].",
+    )
+    _assert_masking_paths(
+        f"Anna {female}. Wypłata dla {female_gen}.",
+        [f"Anna {female}", female_gen],
+        "[OSOBA_1]. Wypłata dla [OSOBA_1].",
+    )
+    _assert_masking_paths(
+        f"Jan {male} … Jana {male}ego",
+        [f"Jan {male}", f"Jana {male}ego"],
+        "[OSOBA_1] … [OSOBA_1]",
+    )
+
+
+def test_uc232_masculine_surname_never_attaches_to_woman() -> None:
+    _assert_masking_paths(
+        "Anna Kowalska i Jan Kowalski. Wypłata dla Kowalskiego.",
+        ["Anna Kowalska", "Jan Kowalski", "Kowalskiego"],
+        "[OSOBA_1] i [OSOBA_2]. Wypłata dla [OSOBA_2].",
+    )
+
+
+def test_uc233_uc237_different_hyphenated_surnames_stay_distinct() -> None:
+    _assert_masking_paths(
+        "Jan Kowalski-Nowak oraz Jan Zieliński-Wiśniewski.",
+        ["Jan Kowalski-Nowak", "Jan Zieliński-Wiśniewski"],
+        "[OSOBA_1] oraz [OSOBA_2].",
+    )
+
+
+def test_uc233_uc237_hyphenated_surname_inflections_merge() -> None:
+    _assert_masking_paths(
+        "Anna Kowalska-Nowak … Anny Kowalskiej-Nowak",
+        ["Anna Kowalska-Nowak", "Anny Kowalskiej-Nowak"],
+        "[OSOBA_1] … [OSOBA_1]",
+    )
+
+
+@pytest.mark.parametrize(
+    ("token", "key"),
+    [
+        ("Kowalska-Nowak", "kowalska-nowak"),
+        ("Kowalskiej-Nowak", "kowalska-nowak"),
+        ("Kowalski,", "kowalski"),
+        ("Zielińskiego.", "zieliński"),
+        ("(Wiśniewskiej)", "wiśniewska"),
+        ("SMITHSON", "smithson"),
+        ("Xyzzq-Źźqq", "xyzzq-źźqq"),
+    ],
+)
+def test_uc234_lexical_token_never_becomes_punctuation(token: str, key: str) -> None:
+    assert _get_lemma(Coreferencer()._get_morf(), token) == key
+
+
+def test_uc235_ambiguous_singular_bases_do_not_choose_a_person() -> None:
+    # Mazura has two distinct singular surname bases: Mazur and Mazuro.
+    _assert_masking_paths(
+        "Jan Mazur i Adam Mazuro. Wypłata dla Mazura.",
+        ["Jan Mazur", "Adam Mazuro", "Mazura"],
+        "[OSOBA_1] i [OSOBA_2]. Wypłata dla [OSOBA_3].",
+    )
+    assert _get_lemma(Coreferencer()._get_morf(), "Mazura") == "mazura"
+
+
+def test_uc235_same_surname_multiple_people_stays_ambiguous() -> None:
+    _assert_masking_paths(
+        "Marek Zieliński i Maciej Zieliński … M. Zielińskiemu",
+        ["Marek Zieliński", "Maciej Zieliński", "M. Zielińskiemu"],
+        "[OSOBA_1] i [OSOBA_2] … [OSOBA_3]",
+    )
+
+
+def test_uc235_koziel_does_not_merge_with_koziol() -> None:
+    _assert_masking_paths(
+        "Jan Kozieł i Jan Kozioł … Jana Kozła",
+        ["Jan Kozieł", "Jan Kozioł", "Jana Kozła"],
+        "[OSOBA_1] i [OSOBA_2] … [OSOBA_2]",
+    )
+
+
+def test_uc236_offsets_and_other_labels_unchanged_across_instances() -> None:
+    text = "Zieliński; Zielińskiego; TEST  ADRES; test adres; 90051512340"
+    values = ["Zieliński", "Zielińskiego", "TEST  ADRES", "test adres", "90051512340"]
+    labels = [Label.NAZWISKO, Label.NAZWISKO, Label.ADRES, Label.ADRES, Label.PESEL]
+    spans = [
+        _span(text.index(value), text.index(value) + len(value), label)
+        for value, label in zip(values, labels, strict=True)
+    ]
+    expected = {(span.start, span.end): 1 for span in spans[:-1]}
+    for coref in (Coreferencer(), Coreferencer()):
+        assert coref.assign(text, list(reversed(spans))) == expected
+        assert render_mask(text, spans, numbering=expected) == (
+            "[NAZWISKO_1]; [NAZWISKO_1]; [ADRES_1]; [ADRES_1]; [PESEL]"
+        )
+
+
+@pytest.mark.parametrize(
+    ("first", "inflected", "expected_index"),
+    [
+        ("Piotr Wilk", "Piotra Wilka", 1),
+        ("Adam Baran", "Adama Barana", 1),
+        ("Maria Lis", "Marii Lis", 1),
+        # Only one earlier compatible person resolves Mazur/Mazuro ambiguity.
+        ("Tomasz Mazur", "Tomasza Mazura", 1),
+        ("Krzysztof Wójcik", "Krzysztofa Wójcika", 1),
+        ("Ewa Kaczmarek", "Ewy Kaczmarek", 1),
+        ("Jan Kowalczyk", "Jana Kowalczyka", 1),
+        ("Paweł Krawczyk", "Pawła Krawczyka", 1),
+        ("Andrzej Piotrowski", "Andrzeja Piotrowskiego", 1),
+        ("Katarzyna Zając", "Katarzyny Zając", 1),
+        ("Michał Król", "Michała Króla", 1),
+        ("Stanisław Wróbel", "Stanisława Wróbla", 1),
+        ("Tomasz Dudek", "Tomasza Dudka", 1),
+        ("Agnieszka Sikora", "Agnieszki Sikory", 1),
+        ("Marcin Wieczorek", "Marcina Wieczorka", 1),
+        ("Zofia Jabłońska", "Zofii Jabłońskiej", 1),
+        ("Jakub Majewski", "Jakuba Majewskiego", 1),
+        ("Barbara Olszewska", "Barbarze Olszewskiej", 1),
+        ("Grzegorz Pietrzak", "Grzegorzowi Pietrzakowi", 1),
+        ("Henryk Gołąb", "Henryka Gołębia", 1),
+        ("Jerzy Kot", "Jerzego Kota", 1),
+        ("Anna Nowak", "Annie Nowak", 1),
+        ("Ryszard Kubiak", "Ryszarda Kubiaka", 1),
+        ("Józef Szewczyk", "Józefem Szewczykiem", 1),
+    ],
+)
+def test_uc238_common_surname_full_name_pairs(
+    first: str, inflected: str, expected_index: int
+) -> None:
+    _assert_masking_paths(
+        f"{first}; {inflected}",
+        [first, inflected],
+        f"[OSOBA_1]; [OSOBA_{expected_index}]",
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("Jan Kowalski", "Jan Kowal"),
+        ("Anna Nowak", "Anna Nowakowska"),
+        ("Piotr Wilk", "Piotr Wilczek"),
+        ("Adam Mazur", "Adam Mazurek"),
+        ("Jan Lis", "Jan Lisowski"),
+        ("Ewa Król", "Ewa Królik"),
+        ("Krzysztof Wójcik", "Krzysztofa Wójcik"),
+        ("Paweł Krawczyk", "Pawła Krawczyk"),
+        ("Stanisław Wróbel", "Stanisława Wróbel"),
+        ("Henryk Gołąb", "Henryka Gołąb"),
+        ("Ryszard Kubiak", "Ryszarda Kubiak"),
+        ("Barbara Olszewska", "Barbar Olszewski"),
+        ("Tomasz Dudek", "Tomasz Dudka"),
+    ],
+)
+def test_uc239_distinct_people_survive_grammatical_disambiguation(first: str, second: str) -> None:
+    _assert_masking_paths(f"{first}; {second}", [first, second], "[OSOBA_1]; [OSOBA_2]")
+
+
+@pytest.mark.parametrize("mention", ["Wilka", "P. Wilka"])
+def test_uc240_partial_surname_does_not_take_given_name_reading(mention: str) -> None:
+    _assert_masking_paths(f"Piotr Wilk; {mention}", ["Piotr Wilk", mention], "[OSOBA_1]; [OSOBA_1]")
+
+
+@pytest.mark.parametrize(
+    ("first", "inflected"),
+    [
+        ("Paweł", "Pawła"),
+        ("Robert", "Roberta"),
+        ("Władysław", "Władysława"),
+        ("Józef", "Józefa"),
+        ("Bogdan", "Bogdana"),
+        ("Barbara", "Barbarze"),
+    ],
+)
+def test_uc236_imie_inflections_preserve_numbering(first: str, inflected: str) -> None:
+    text = f"{first}; {inflected}"
+    spans = [
+        _span(0, len(first), Label.IMIE),
+        _span(len(first) + 2, len(text), Label.IMIE),
+    ]
+    numbering = Coreferencer().assign(text, spans)
+    assert render_mask(text, spans, numbering=numbering) == "[IMIĘ_1]; [IMIĘ_1]"
+
+
+@pytest.mark.parametrize(
+    ("first", "inflected"),
+    [
+        ("Robert Nowak", "Roberta Nowaka"),
+        ("Albert Nowak", "Alberta Nowaka"),
+        ("Alfred Nowak", "Alfreda Nowaka"),
+        ("Bruno Nowak", "Brunona Nowaka"),
+        ("Otto Nowak", "Ottona Nowaka"),
+        ("Hugo Nowak", "Hugona Nowaka"),
+        ("Robert Kaczmarczyk", "Roberta Kaczmarczyka"),
+    ],
+)
+def test_uc241_unique_earlier_person_resolves_given_name_homographs(
+    first: str, inflected: str
+) -> None:
+    _assert_masking_paths(f"{first}; {inflected}", [first, inflected], "[OSOBA_1]; [OSOBA_1]")
+
+
+@pytest.mark.parametrize(
+    ("first", "vocative"),
+    [("Piotr Wilk", "Piotrze Wilk"), ("Jan Nowak", "Janie Nowak")],
+)
+def test_uc242_vocative_allows_undeclined_surname(first: str, vocative: str) -> None:
+    _assert_masking_paths(f"{first}; {vocative}", [first, vocative], "[OSOBA_1]; [OSOBA_1]")
+
+
+@pytest.mark.parametrize(
+    ("first", "inflected"),
+    [
+        ("jan kowalski", "jana kowalskiego"),
+        ("JAN KOWALSKI", "jana kowalskiego"),
+        ("anna kowalska", "anny kowalskiej"),
+    ],
+)
+def test_uc243_lowercase_names_keep_their_person(first: str, inflected: str) -> None:
+    _assert_masking_paths(f"{first}; {inflected}", [first, inflected], "[OSOBA_1]; [OSOBA_1]")
+
+
+@pytest.mark.parametrize(
+    ("first", "inflected"),
+    [
+        ("Jan Maria Kowalski", "Jana Marii Kowalskiego"),
+        ("Jan Kowalski junior", "Jana Kowalskiego juniora"),
+        ("Jan Kowalski senior", "Jana Kowalskiego seniora"),
+    ],
+)
+def test_uc244_middle_names_and_noun_modifiers_inflect(first: str, inflected: str) -> None:
+    _assert_masking_paths(f"{first}; {inflected}", [first, inflected], "[OSOBA_1]; [OSOBA_1]")
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("Jan Nowak", "Jana Nowak"),
+        ("Aleksander Nowak", "Aleksandra Nowak"),
+        ("Daniel Nowak", "Daniela Nowak"),
+        ("Stanisław Nowak", "Stanisława Nowak"),
+        ("Adam Jan", "Adam Jana"),
+        ("Jan Dudek", "Jan Dudka"),
+        ("Jan Kowalski", "Kowalskich"),
+        ("Jan Kowalski", "Kowalskiej"),
+        ("jan kowalski", "kowalskiej"),
+    ],
+)
+def test_uc245_distinct_people_and_plural_surnames_never_merge(first: str, second: str) -> None:
+    _assert_masking_paths(f"{first}; {second}", [first, second], "[OSOBA_1]; [OSOBA_2]")
+
+
+@pytest.mark.parametrize(
+    ("label", "mentions", "expected"),
+    [
+        (Label.NAZWISKO, ["Dudek", "Dudka"], "[NAZWISKO_1]; [NAZWISKO_1]"),
+        (
+            Label.NAZWISKO,
+            ["Mazur", "Mazuro", "Mazura"],
+            "[NAZWISKO_1]; [NAZWISKO_2]; [NAZWISKO_3]",
+        ),
+        (
+            Label.IMIE,
+            ["Robert", "Roberto", "Roberta"],
+            "[IMIĘ_1]; [IMIĘ_2]; [IMIĘ_3]",
+        ),
+    ],
+)
+def test_uc246_standalone_names_use_unique_earlier_candidate(
+    label: Label, mentions: list[str], expected: str
+) -> None:
+    text = "; ".join(mentions)
+    spans = [_span(span.start, span.end, label) for span in _mention_spans(text, mentions)]
+    numbering = Coreferencer().assign(text, spans)
+    assert render_mask(text, spans, numbering=numbering) == expected
+
+
+def test_uc246_full_name_with_two_earlier_candidates_stays_ambiguous() -> None:
+    _assert_masking_paths(
+        "Robert Nowak; Roberto Nowak; Roberta Nowaka",
+        ["Robert Nowak", "Roberto Nowak", "Roberta Nowaka"],
+        "[OSOBA_1]; [OSOBA_2]; [OSOBA_3]",
+    )
+
+
+def test_uc247_ambiguous_mention_cannot_bridge_distinct_people() -> None:
+    _assert_masking_paths(
+        "Roberta Nowaka; Robert Nowak; Roberto Nowak",
+        ["Roberta Nowaka", "Robert Nowak", "Roberto Nowak"],
+        "[OSOBA_1]; [OSOBA_1]; [OSOBA_2]",
+    )
+
+
+def test_uc247_partial_mention_cannot_bridge_distinct_surnames() -> None:
+    _assert_masking_paths(
+        "Mazura; Mazur; Mazuro",
+        ["Mazura", "Mazur", "Mazuro"],
+        "[OSOBA_1]; [OSOBA_1]; [OSOBA_2]",
+    )
+
+
+@pytest.mark.parametrize(
+    ("mentions", "expected"),
+    [
+        (
+            ["Jan Nowak", "Jana Nowak", "Jana Nowaka", "Janie Nowak"],
+            "[OSOBA_1]; [OSOBA_2]; [OSOBA_1]; [OSOBA_3]",
+        ),
+        (["Jana Nowak", "Janie Nowak"], "[OSOBA_1]; [OSOBA_2]"),
+        (
+            ["Jan Nowak", "Jan Kowalski", "Janie Nowak"],
+            "[OSOBA_1]; [OSOBA_2]; [OSOBA_1]",
+        ),
+        (
+            ["Jan Kowalski-Nowak", "Jan Kowalski-Wilk", "Janie Kowalski-Nowak"],
+            "[OSOBA_1]; [OSOBA_2]; [OSOBA_1]",
+        ),
+    ],
+)
+def test_uc242_vocative_requires_one_earlier_surname_candidate(
+    mentions: list[str], expected: str
+) -> None:
+    _assert_masking_paths("; ".join(mentions), mentions, expected)
+
+
+@pytest.mark.parametrize(
+    ("label", "mentions", "expected"),
+    [
+        (
+            Label.OSOBA,
+            ["Jan Kowalski", "Adam Kowalski", "Kowalskiego", "Kowalskiego"],
+            "[OSOBA_1]; [OSOBA_2]; [OSOBA_3]; [OSOBA_3]",
+        ),
+        (
+            Label.IMIE,
+            ["Robert", "Roberto", "Roberta", "Roberta"],
+            "[IMIĘ_1]; [IMIĘ_2]; [IMIĘ_3]; [IMIĘ_3]",
+        ),
+        (
+            Label.NAZWISKO,
+            ["Mazur", "Mazuro", "Mazura", "Mazura"],
+            "[NAZWISKO_1]; [NAZWISKO_2]; [NAZWISKO_3]; [NAZWISKO_3]",
+        ),
+        (
+            Label.OSOBA,
+            ["Robert Nowak", "Roberto Nowak", "Roberta Nowaka", "Roberta Nowaka"],
+            "[OSOBA_1]; [OSOBA_2]; [OSOBA_3]; [OSOBA_3]",
+        ),
+        (
+            Label.OSOBA,
+            ["Jan Nowak", "Jana Nowak", "Janie Nowak", "Janie Nowak"],
+            "[OSOBA_1]; [OSOBA_2]; [OSOBA_3]; [OSOBA_3]",
+        ),
+        (Label.OSOBA, ["Janie Nowak", "Janie Nowak"], "[OSOBA_1]; [OSOBA_1]"),
+    ],
+)
+def test_uc246_identical_unresolved_mentions_reuse_their_index(
+    label: Label, mentions: list[str], expected: str
+) -> None:
+    text = "; ".join(mentions)
+    spans = [_span(span.start, span.end, label) for span in _mention_spans(text, mentions)]
+    numbering = Coreferencer().assign(text, spans)
+    assert render_mask(text, spans, numbering=numbering) == expected
+
+
+@pytest.fixture
+def _matching_calls(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    calls = [0]
+    original = coref_module._keys_match
+
+    def counted(left: coref_module._MentionKey, right: coref_module._MentionKey) -> bool:
+        calls[0] += 1
+        return original(left, right)
+
+    monkeypatch.setattr(coref_module, "_keys_match", counted)
+    return calls
+
+
+@pytest.mark.parametrize("count", [50, 200])
+def test_uc248_distinct_surnames_require_linear_matching_work(
+    count: int, _matching_calls: list[int]
+) -> None:
+    mentions = [f"Jan Nowak{index}" for index in range(count)]
+    text = "; ".join(mentions)
+    spans = _mention_spans(text, mentions)
+    numbering = Coreferencer().assign(text, spans)
+    assert list(numbering.values()) == list(range(1, count + 1))
+    assert _matching_calls[0] <= 2 * count
+
+
+def test_uc248_exact_full_keys_do_not_rescan_surname_bucket(
+    _matching_calls: list[int],
+) -> None:
+    count = 50
+    people = [f"Person{index} Nowak" for index in range(count)]
+    mentions = people * 5
+    text = "; ".join(mentions)
+    spans = _mention_spans(text, mentions)
+    numbering = Coreferencer().assign(text, spans)
+    assert list(numbering.values()) == list(range(1, count + 1)) * 5
+    # The first pass needs comparisons within the shared surname bucket;
+    # repeated exact keys must not repeat that work.
+    assert _matching_calls[0] <= count * (count - 1) // 2 + count
