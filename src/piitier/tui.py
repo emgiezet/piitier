@@ -453,7 +453,11 @@ class AnonymizationDiffApp(App[None]):
             return
         try:
             converted = mask_workbook(
-                self.source_path, target, detector=self.detector, skip_columns=self.skipped
+                self.source_path,
+                target,
+                detector=self.detector,
+                skip_columns=self.skipped,
+                numbering=self._numbering,
             )
         except (OSError, ValueError):
             status.update("Nie udało się zapisać pliku")

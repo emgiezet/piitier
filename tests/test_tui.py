@@ -665,3 +665,45 @@ def test_uc217_xlsx_export_shows_converted_formula_count(tmp_path: Path, convert
     )
     masked.close()
     assert source.read_bytes() == original
+
+
+def test_uc265_xlsx_tui_export_matches_numbered_model_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test_jsonmask import JsonNamePredictor
+
+    from piitier import tui
+
+    source = tmp_path / "names.xlsx"
+    workbook = openpyxl.Workbook()
+    workbook.active.append(["First", "Second", "Repeat"])
+    workbook.active.append(["Zoja Testowa", "Mira Fikcyjna", "Zoja Testowa"])
+    workbook.save(source)
+    workbook.close()
+    monkeypatch.setattr(
+        tui, "Anonymizer", lambda **kwargs: piitier.Anonymizer(predictor=JsonNamePredictor())
+    )
+
+    def run_comparison(app):
+        async def exercise():
+            async with app.run_test(size=(110, 30)) as pilot:
+                await pilot.click("#anonymize")
+                await pilot.pause()
+                after = "\n".join(line.text for line in app.query_one("#after", RichLog).lines)
+                assert after == (
+                    "# Sheet\nFirst | Second | Repeat\n[OSOBA_1] | [OSOBA_2] | [OSOBA_1]\n"
+                )
+                await pilot.click("#export")
+                await pilot.pause()
+                assert "Zapisano" in str(app.query_one("#export-status", Static).render())
+
+        asyncio.run(exercise())
+
+    monkeypatch.setattr(tui.AnonymizationDiffApp, "run", run_comparison)
+    assert tui.compare_file(source, "offline-test-model", 0.0, "cpu") == 0
+    masked = openpyxl.load_workbook(tmp_path / "names_anonymised.xlsx")
+    assert list(masked.active.values) == [
+        ("First", "Second", "Repeat"),
+        ("[OSOBA_1]", "[OSOBA_2]", "[OSOBA_1]"),
+    ]
+    masked.close()

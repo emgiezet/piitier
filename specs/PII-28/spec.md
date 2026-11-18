@@ -113,3 +113,28 @@ reported because it may itself be personal data.
 | UC-215 | mask 5000 PESEL cells | all cells masked in less than five seconds | performance |
 | UC-216 | CLI mask a workbook with multiple detected formulas and a safe formula using `-o out.xlsx` | one warning per converted formula on stderr naming sheet and cell; no PII values; stdout empty and exit 0; safe formula unchanged | integration |
 | UC-217 | TUI export workbooks with zero, one or multiple detected formulas | existing export success status includes the exact converted-formula count; detected formulas saved as text and safe formulas retained | unit |
+| UC-260 | export sheets when an earlier cell duplicates a later sheet-title line, with and without excluded columns | title ranges recorded during rendering drive masking; source identifier absent from sheet names and every ZIP member except intentionally excluded cell XML | unit |
+| UC-261 | export custom formats containing quoted, escaped, text-adjacent or unknown literal text, font names and named-style names containing PII | unsafe formats become `General`; unsafe fonts become Calibri while size/bold/italic/colour remain; identifier absent from every ZIP member | unit |
+| UC-262 | export builtin and supported literal-free custom formats and common fonts | supported number formats, font presentation, fills, borders and alignment retained; source protection and named styles not copied | unit |
+| UC-263 | load or mask a workbook containing chartsheets but no worksheets, including an existing destination | content-free `unsupported or corrupt xlsx: <path>` ValueError; CLI exit 2 with empty stdout; existing target unchanged | integration |
+| UC-264 | supply workbook numbering keyed by original span offsets for a detection crossing two cells | both clipped replacements retain the same assigned index; later detections retain their own indices | unit |
+| UC-265 | TUI export after model-backed detection and coreference of repeated/distinct people | exported numbered placeholders match the displayed diff, including repeated entity indices | unit |
+| UC-266 | union overlapping numbered detections before cell clipping | the union retains the leading span's original assigned entity index despite its extended end offset | unit |
+
+### Export hardening
+
+Sheet-title ranges are captured in `RenderedWorkbook` while rendering, never recovered by a
+text search that could match cell contents. Excluded columns still protect only cell values.
+Workbooks with no worksheets are rejected during loading before output creation or truncation.
+
+Style retention is restricted to presentation data. Font names are limited to Calibri, Arial,
+Aptos, Cambria, Times New Roman, Courier New, Tahoma and Verdana; other names become Calibri.
+Size, bold, italic and colour remain. Number formats retain openpyxl builtins and a restricted
+grammar of numeric/date/time/colour tokens or standalone `@` sections; other formats become
+`General`. In particular, custom quoted literals, backslash-escaped text, literal text adjacent
+to `@` and unknown bracket literals are discarded. Fill, border and alignment fields are
+constrained enums/numbers/booleans/colour values. Source protection and named styles are not copied.
+
+`mask_workbook(..., numbering: Mapping[tuple[int, int], int] | None = None)` accepts indices keyed
+by original detector offsets in the rendered workbook. Clipping spans into cells preserves those
+indices. TUI export passes the same mapping used to render its diff.

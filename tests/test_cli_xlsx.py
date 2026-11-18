@@ -149,3 +149,25 @@ def test_uc216_converted_formulas_warn_on_stderr(tmp_path: Path) -> None:
     assert list(masked["Raport"].values) == [('="[PESEL]"', "=1+2", '="[PESEL]"')]
     assert [masked["Raport"].cell(1, col).data_type for col in (1, 2, 3)] == ["s", "f", "s"]
     masked.close()
+
+
+@pytest.mark.parametrize("output", [False, True])
+def test_uc263_chartsheet_only_exits_2_without_touching_target(
+    tmp_path: Path, output: bool
+) -> None:
+    from openpyxl.chart import BarChart
+
+    source = tmp_path / "charts.xlsx"
+    target = tmp_path / "out.xlsx"
+    workbook = openpyxl.Workbook()
+    workbook.create_chartsheet("90051512340").add_chart(BarChart())
+    workbook.remove(workbook.active)
+    workbook.save(source)
+    workbook.close()
+    target.write_bytes(b"existing target")
+    args = ["mask", str(source)] + (["-o", str(target)] if output else [])
+
+    rc, out, err = run_piitier_mask(args)
+
+    assert (rc, out, err) == (2, b"", f"unsupported or corrupt xlsx: {source}\n".encode())
+    assert target.read_bytes() == b"existing target"

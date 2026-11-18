@@ -19,16 +19,21 @@ Only cell values, selected styles and layout survive the rebuild.
 
 from __future__ import annotations
 
+import re
 import zipfile
+from collections.abc import Mapping
 from copy import copy
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable
+from typing import Callable, cast
 from xml.etree.ElementTree import ParseError
 
 import openpyxl
 from openpyxl.cell.cell import Cell, MergedCell
 from openpyxl.packaging.core import DocumentProperties
+from openpyxl.styles import Font
+from openpyxl.styles.fonts import DEFAULT_FONT
+from openpyxl.styles.numbers import BUILTIN_FORMATS
 from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
@@ -39,6 +44,16 @@ from piitier.spans import Span
 
 SEPARATOR = " | "
 _FOLD = str.maketrans("\t\r\n", "   ")
+_FONT_NAMES = frozenset(
+    {"Calibri", "Arial", "Aptos", "Cambria", "Times New Roman", "Courier New", "Tahoma", "Verdana"}
+)
+_BUILTIN_FORMATS = frozenset(BUILTIN_FORMATS.values())
+# Custom formats accept presentation tokens only, never arbitrary literal text.
+_FORMAT_TOKENS = re.compile(
+    r"(?:[0#?.,%+\-/:() ]|[ymdhs]|AM/PM|A/P|E[+-]0+"
+    r"|\[(?:h+|m+|s+|Black|Blue|Cyan|Green|Magenta|Red|White|Yellow)\])+",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -61,6 +76,7 @@ class RenderedWorkbook:
     cells: tuple[XlsxCell, ...]
     headers: tuple[tuple[str, ...], ...]  # per sheet: rendered row 1
     sheet_titles: tuple[str, ...]
+    title_ranges: tuple[tuple[int, int], ...]  # original-input offsets, excluding "# " and LF
     width: int  # max column count across sheets
 
 
@@ -76,6 +92,7 @@ def _render(wb: Workbook) -> RenderedWorkbook:
     cells: list[XlsxCell] = []
     headers: list[tuple[str, ...]] = []
     titles: list[str] = []
+    title_ranges: list[tuple[int, int]] = []
     width = 0
     offset = 0
 
@@ -87,6 +104,7 @@ def _render(wb: Workbook) -> RenderedWorkbook:
     for sheet_index, ws in enumerate(wb.worksheets):
         if sheet_index:
             emit("\n")
+        title_ranges.append((offset + 2, offset + 2 + len(ws.title)))
         emit(f"# {ws.title}\n")
         titles.append(ws.title)
         rows = [[_cell_text(value) for value in row] for row in ws.iter_rows(values_only=True)]
@@ -106,20 +124,30 @@ def _render(wb: Workbook) -> RenderedWorkbook:
                 )
                 emit(text)
             emit("\n")
-    return RenderedWorkbook("".join(parts), tuple(cells), tuple(headers), tuple(titles), width)
+    return RenderedWorkbook(
+        "".join(parts), tuple(cells), tuple(headers), tuple(titles), tuple(title_ranges), width
+    )
 
 
 def _load(path: Path, *, read_only: bool) -> tuple[Workbook, RenderedWorkbook]:
     """Open and render *path*; every malformed-file error becomes one content-free ValueError."""
+    corrupt = ValueError(f"unsupported or corrupt xlsx: {path}")
     try:
         wb = openpyxl.load_workbook(path, read_only=read_only, data_only=False)
-        try:
-            return wb, _render(wb)
-        except BaseException:
-            wb.close()
-            raise
+    except OSError:
+        raise
+    except Exception:  # openpyxl's reader fails on malformed parts with arbitrary types
+        raise corrupt from None
+    try:
+        if not wb.worksheets:
+            raise corrupt
+        return wb, _render(wb)
     except (zipfile.BadZipFile, InvalidFileException, KeyError, ValueError, ParseError):
-        raise ValueError(f"unsupported or corrupt xlsx: {path}") from None
+        wb.close()
+        raise corrupt from None
+    except BaseException:
+        wb.close()
+        raise
 
 
 def render_workbook(path: Path) -> RenderedWorkbook:
@@ -181,11 +209,38 @@ def protected_ranges(
 def copy_styles(src_cell: Cell | MergedCell, dst_cell: Cell) -> None:
     """Copy only the supported presentation attributes, never values or relationships."""
     # openpyxl returns StyleProxy objects; copying unwraps them to serialisable styles.
-    dst_cell.font = copy(src_cell.font)  # type: ignore[assignment]
+    font = cast(Font, copy(src_cell.font))
+    if font.name not in _FONT_NAMES:
+        font.name = DEFAULT_FONT.name
+    dst_cell.font = font
     dst_cell.fill = copy(src_cell.fill)  # type: ignore[assignment]
     dst_cell.border = copy(src_cell.border)  # type: ignore[assignment]
     dst_cell.alignment = copy(src_cell.alignment)  # type: ignore[assignment]
-    dst_cell.number_format = src_cell.number_format
+    number_format = src_cell.number_format
+    safe_format = number_format in _BUILTIN_FORMATS or all(
+        section.strip() == "@" or not section or _FORMAT_TOKENS.fullmatch(section) is not None
+        for section in number_format.split(";")
+    )
+    dst_cell.number_format = number_format if safe_format else "General"
+    # Fill/border/alignment fields are constrained enums, numbers, booleans or RGB colours.
+    # Protection and named styles are not copied, so their names cannot enter the output.
+
+
+def _mask_fragment(text: str, start: int, hits: list[Span], indices: Mapping[int, int]) -> str:
+    """Clip original spans and carry their entity indices into a title or cell."""
+    relative: list[Span] = []
+    numbering: dict[tuple[int, int], int] = {}
+    for span in hits:
+        clipped = replace(
+            span,
+            start=max(span.start, start) - start,
+            end=min(span.end, start + len(text)) - start,
+        )
+        relative.append(clipped)
+        index = indices.get(span.start)
+        if index is not None:
+            numbering[(clipped.start, clipped.end)] = index
+    return render_mask(text, relative, numbering)
 
 
 def mask_workbook(
@@ -196,11 +251,13 @@ def mask_workbook(
     skip_columns: list[str] | None = None,
     on_unknown_column: Callable[[str], None] | None = None,
     on_leak: Callable[[str], None] | None = None,
+    numbering: Mapping[tuple[int, int], int] | None = None,
 ) -> int:
     """Rebuild *target* from masked cells and allow-listed styles and layout.
 
     Return the number of detected formulas converted to plain text. Unsupported workbook
     objects and metadata are deliberately not copied. Column exclusions apply only to cells.
+    Numbering keys refer to detector span offsets in the original rendered workbook.
     """
     if target.resolve() == source.resolve():
         raise ValueError(f"refusing to overwrite input: {target}")
@@ -214,11 +271,16 @@ def mask_workbook(
         spans = sorted(filter_spans(spans, ranges), key=lambda span: (span.start, -span.end))
         # Detectors normally fuse overlaps; union them here too so clipping cannot expose PII.
         merged: list[Span] = []
+        indices: dict[int, int] = {}
         for span in spans:
             if merged and span.start < merged[-1].end:
                 merged[-1] = replace(merged[-1], end=max(merged[-1].end, span.end))
             else:
                 merged.append(span)
+                if numbering is not None:
+                    entity_index = numbering.get((span.start, span.end))
+                    if entity_index is not None:
+                        indices[span.start] = entity_index
         output = openpyxl.Workbook()
         active = output.active
         if active is not None:
@@ -226,20 +288,12 @@ def mask_workbook(
         output.properties = DocumentProperties(creator="", lastModifiedBy="")
         converted = 0
         try:
-            cursor = 0
             for index, sheet in enumerate(wb.worksheets):
-                title_start = rendered.text.index(f"# {sheet.title}\n", cursor) + 2
-                title_end = title_start + len(sheet.title)
+                title_start, title_end = rendered.title_ranges[index]
                 title_hits = [
-                    replace(
-                        s,
-                        start=max(s.start, title_start) - title_start,
-                        end=min(s.end, title_end) - title_start,
-                    )
-                    for s in merged
-                    if s.start < title_end and s.end > title_start
+                    span for span in merged if span.start < title_end and span.end > title_start
                 ]
-                title = render_mask(sheet.title, title_hits)
+                title = _mask_fragment(sheet.title, title_start, title_hits, indices)
                 if len(title) > 31 or any(char in title for char in "[]"):
                     title = f"Sheet{index + 1}"
                 suffix = 0
@@ -247,7 +301,6 @@ def mask_workbook(
                     suffix += 1
                     title = f"Sheet{index + 1}_{suffix}"
                 destination = output.create_sheet(title)
-                cursor = title_end
                 for column_key, column_dimension in sheet.column_dimensions.items():
                     destination.column_dimensions[column_key].width = column_dimension.width
                 for row_key, row_dimension in sheet.row_dimensions.items():
@@ -279,17 +332,9 @@ def mask_workbook(
                     continue
                 original = wb.worksheets[cell.sheet_index].cell(cell.row, cell.col)
                 destination = output.worksheets[cell.sheet_index].cell(cell.row, cell.col)
-                relative = [
-                    replace(
-                        span,
-                        start=max(span.start, cell.start) - cell.start,
-                        end=min(span.end, cell.end) - cell.start,
-                    )
-                    for span in hits
-                ]
                 value = original.value
                 raw = (value.text or "") if isinstance(value, ArrayFormula) else str(value)
-                destination.value = render_mask(raw, relative)
+                destination.value = _mask_fragment(raw, cell.start, hits, indices)
                 destination.data_type = "s"
                 if original.data_type == "f":
                     converted += 1

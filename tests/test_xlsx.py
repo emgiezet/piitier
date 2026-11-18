@@ -335,3 +335,192 @@ def test_uc215_masks_five_thousand_cells_under_five_seconds(tmp_path: Path) -> N
     assert mask_workbook(source, target, detector=piitier.detect) == 0
     assert time.monotonic() - start < 5
     assert all(row == ("[PESEL]",) for row in _values(target)[0])
+
+
+@pytest.mark.parametrize("skip", [False, True])
+def test_uc260_sheet_title_offsets_cannot_match_cell_text(tmp_path: Path, skip: bool) -> None:
+    source = tmp_path / "titles.xlsx"
+    target = tmp_path / "out.xlsx"
+    workbook = openpyxl.Workbook()
+    workbook.active.title = "Raport"
+    workbook.active.append(["Kol"])
+    workbook.active.append(["# 90051512340"])
+    workbook.create_sheet("90051512340")
+    workbook.save(source)
+    workbook.close()
+
+    mask_workbook(source, target, detector=piitier.detect, skip_columns=["Kol"] if skip else [])
+
+    masked = openpyxl.load_workbook(target)
+    assert masked.sheetnames == ["Raport", "Sheet2"]
+    assert masked["Raport"]["A2"].value == ("# 90051512340" if skip else "# [PESEL]")
+    masked.close()
+    with zipfile.ZipFile(target) as archive:
+        for name in archive.namelist():
+            if skip and name == "xl/worksheets/sheet1.xml":
+                continue  # Explicitly excluded cell values are deliberately retained.
+            assert b"90051512340" not in archive.read(name), name
+
+
+@pytest.mark.parametrize(
+    "number_format",
+    [
+        '"PESEL 90051512340: "0',
+        r"\9\0\0\5\1\5\1\2\3\4\0 0",
+        '"90051512340"@',
+        "@90051512340",
+        "90051512340@",
+        "PESEL @",
+        "[90051512340]0",
+        "General",  # Isolates the unsafe font name from number-format sanitisation.
+    ],
+)
+def test_uc261_free_text_styles_are_removed(tmp_path: Path, number_format: str) -> None:
+    from openpyxl.styles import Font, NamedStyle
+
+    source = tmp_path / "styles.xlsx"
+    target = tmp_path / "out.xlsx"
+    workbook = openpyxl.Workbook()
+    style = NamedStyle(
+        name="90051512340",
+        font=Font(name="90051512340", size=14, bold=True, italic=True, color="FF123456"),
+        number_format=number_format,
+    )
+    workbook.active["A1"] = "90051512340"
+    workbook.active["A1"].style = style
+    workbook.save(source)
+    workbook.close()
+
+    mask_workbook(source, target, detector=piitier.detect)
+
+    masked = openpyxl.load_workbook(target)
+    cell = masked.active["A1"]
+    assert cell.value == "[PESEL]"
+    assert cell.number_format == "General"
+    assert cell.font.name == "Calibri"
+    assert (cell.font.sz, cell.font.bold, cell.font.italic, cell.font.color.rgb) == (
+        14,
+        True,
+        True,
+        "FF123456",
+    )
+    assert masked.named_styles == ["Normal"]
+    masked.close()
+    with zipfile.ZipFile(target) as archive:
+        for name in archive.namelist():
+            assert b"90051512340" not in archive.read(name), name
+
+
+@pytest.mark.parametrize(
+    "number_format",
+    ['"$"#,##0_);("$"#,##0)', "0.000", "yyyy-mm-dd", "[h]:mm:ss", "0.00;[Red]-0.00", "@"],
+)
+def test_uc262_safe_styles_remain_supported(tmp_path: Path, number_format: str) -> None:
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
+
+    source = tmp_path / "safe-styles.xlsx"
+    target = tmp_path / "out.xlsx"
+    workbook = openpyxl.Workbook()
+    cell = workbook.active["A1"]
+    cell.value = 5
+    cell.number_format = number_format
+    cell.font = Font(name="Arial", size=16, bold=True, italic=True, color="FF123456")
+    cell.fill = PatternFill("solid", fgColor="FFABCDEF")
+    cell.border = Border(left=Side(style="thin", color="FF123456"))
+    cell.alignment = Alignment(horizontal="center", wrap_text=True)
+    cell.protection = Protection(locked=False, hidden=True)
+    workbook.save(source)
+    workbook.close()
+
+    mask_workbook(source, target, detector=piitier.detect)
+
+    masked = openpyxl.load_workbook(target)
+    cell = masked.active["A1"]
+    assert cell.number_format == number_format
+    assert (cell.font.name, cell.font.sz, cell.font.bold, cell.font.italic) == (
+        "Arial",
+        16,
+        True,
+        True,
+    )
+    assert cell.fill.fgColor.rgb == "FFABCDEF"
+    assert cell.border.left.style == "thin"
+    assert cell.alignment.horizontal == "center"
+    assert cell.alignment.wrap_text
+    assert cell.protection == Protection()
+    masked.close()
+
+
+def test_uc263_chartsheet_only_is_a_content_free_error(tmp_path: Path) -> None:
+    from openpyxl.chart import BarChart
+
+    source = tmp_path / "charts.xlsx"
+    target = tmp_path / "out.xlsx"
+    workbook = openpyxl.Workbook()
+    workbook.create_chartsheet("90051512340").add_chart(BarChart())
+    workbook.remove(workbook.active)
+    workbook.save(source)
+    workbook.close()
+    target.write_bytes(b"existing target")
+
+    with pytest.raises(ValueError, match=f"^unsupported or corrupt xlsx: {source}$"):
+        mask_workbook(source, target, detector=piitier.detect)
+    assert target.read_bytes() == b"existing target"
+    with pytest.raises(ValueError, match=f"^unsupported or corrupt xlsx: {source}$"):
+        render_workbook(source)
+
+
+def test_uc263_workbook_the_reader_cannot_parse_is_a_content_free_error(tmp_path: Path) -> None:
+    # A chartsheet without a chart makes openpyxl's reader raise AttributeError, not a zip error.
+    source = tmp_path / "empty-chartsheet.xlsx"
+    target = tmp_path / "out.xlsx"
+    workbook = openpyxl.Workbook()
+    workbook.create_chartsheet("90051512340")
+    workbook.remove(workbook.active)
+    workbook.save(source)
+    workbook.close()
+
+    with pytest.raises(ValueError, match=f"^unsupported or corrupt xlsx: {source}$"):
+        mask_workbook(source, target, detector=piitier.detect)
+    assert not target.exists()
+    with pytest.raises(FileNotFoundError):
+        render_workbook(tmp_path / "missing.xlsx")
+
+
+def test_uc264_numbering_uses_original_span_offsets_across_cells(tmp_path: Path) -> None:
+    source = tmp_path / "names.xlsx"
+    target = tmp_path / "out.xlsx"
+    workbook = openpyxl.Workbook()
+    workbook.active.append(["Zoja", "Testowa", "Mira Fikcyjna"])
+    workbook.save(source)
+    workbook.close()
+    rendered = render_workbook(source)
+    first = rendered.text.index("Zoja")
+    second = rendered.text.index("Mira")
+    spans = [
+        Span(first, first + len("Zoja | Testowa"), Label.OSOBA, "model", 1.0, "valid"),
+        Span(second, second + len("Mira Fikcyjna"), Label.OSOBA, "model", 1.0, "valid"),
+    ]
+    numbering = {(spans[0].start, spans[0].end): 1, (spans[1].start, spans[1].end): 2}
+
+    mask_workbook(source, target, detector=lambda _: spans, numbering=numbering)
+
+    assert _values(target) == [[("[OSOBA_1]", "[OSOBA_1]", "[OSOBA_2]")]]
+
+
+def test_uc266_numbering_survives_overlapping_span_union(tmp_path: Path) -> None:
+    source = tmp_path / "overlap-names.xlsx"
+    target = tmp_path / "out.xlsx"
+    workbook = openpyxl.Workbook()
+    workbook.active.append(["Zoja Testowa"])
+    workbook.save(source)
+    workbook.close()
+    start = render_workbook(source).text.index("Zoja")
+    spans = [
+        Span(start, start + 6, Label.OSOBA, "model", 1.0, "valid"),
+        Span(start + 4, start + 12, Label.OSOBA, "model", 1.0, "valid"),
+    ]
+
+    mask_workbook(source, target, detector=lambda _: spans, numbering={(start, start + 6): 1})
+
+    assert _values(target) == [[("[OSOBA_1]",)]]

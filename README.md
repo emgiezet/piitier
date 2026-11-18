@@ -151,6 +151,14 @@ uv run piitier compare report.xlsx --model <checkpoint-dir>  # select columns, m
 
 `piitier mask report.xlsx -o masked.xlsx` rebuilds a workbook from masked cell values,
 supported cell styles, column widths, row heights, merged cells and freeze panes.
+Free-text styles are sanitised: fonts retain their size, bold, italic and colour, but only
+Calibri, Arial, Aptos, Cambria, Times New Roman, Courier New, Tahoma and Verdana names are kept;
+other names become Calibri. Number formats retain openpyxl's builtins and a restricted set of
+numeric/date/time/colour tokens (or a standalone `@` text section). Other custom formats,
+including quoted literals, backslash-escaped text and literals next to `@`, become `General`.
+Fill, border and alignment attributes are constrained presentation values; source protection
+and named styles are not copied.
+
 Formulas without detections stay formulas; formulas containing detected PII become masked
 **plain text**, not executable formulas, with one warning per conversion on CLI stderr.
 TUI export shows the conversion count in its success status.
@@ -162,6 +170,9 @@ Document properties are reset. Sheet names are masked; names that become invalid
 are replaced with neutral names. Formula expressions are not rewritten to follow renamed sheets,
 so review formula references after export. `--skip-columns` intentionally retains those cell
 values, including any PII. Review the output before relying on it.
+
+Workbooks without any worksheets (for example, chartsheets only) are rejected as unsupported
+or corrupt before writing an output. Numbered placeholders in TUI exports match the diff.
 
 `--skip-columns` matches row-1 headers from any sheet, or a 1-based index in every sheet.
 Unknown columns produce a warning without stopping masking. A detection spanning two cells
@@ -300,6 +311,8 @@ converted = mask_workbook(
 It accepts `skip_columns` and `on_unknown_column` like `mask_csv`; use `detector=anon.detect`
 for rules + NER. The return value counts formulas converted to text; `on_leak` reports each
 conversion's sheet and cell.
+For numbered workbook placeholders, pass `numbering=` with the entity-index mapping keyed by
+original rendered-workbook span offsets; clipping a detection to a cell retains its index.
 
 `Anonymizer` also accepts `predictor=` (any object with `predict(text) -> list[Span]`), so you can plug in
 your own model behind the same rules and fusion layer.
