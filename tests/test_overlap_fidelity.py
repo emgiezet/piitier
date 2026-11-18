@@ -184,3 +184,18 @@ def test_uc258_numbered_fragments_use_exact_range_or_template(
         Span(13, 16, Label.OSOBA, "model:ner", 1.0, "valid"),
     ]
     assert render_mask("⟨abcdefghij⟩ XYZ.", spans, numbering) == expected
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [(Label.REGON, Label.NR_KARTY), (Label.NR_KARTY, Label.REGON)],
+)
+def test_uc259_exact_priority_tie_goes_to_the_first_input_span(first: Label, second: Label) -> None:
+    # Same range, both suspect, same risk weight: nothing in the priority key separates them.
+    text = "a 12345678901234 b"
+    for _ in range(50):  # fresh objects each round: the result must not depend on id()
+        spans = [
+            Span(2, 16, first, "rule", 1.0, "suspect"),
+            Span(2, 16, second, "rule", 1.0, "suspect"),
+        ]
+        assert render_mask(text, spans) == f"a {first.placeholder} b"

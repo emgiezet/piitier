@@ -65,6 +65,7 @@ Change budget: 350 added lines, 3 files, 3 modules
 | UC-256 | batch caller | Run rules-only batch masking on collision-containing text and CSV files | Exit 0 and exact output files preserving suffixes and delimiters | integration |
 | UC-257 | TUI caller | Select CSV columns and export with the rules-only detector callback | Exported bytes contain one winning placeholder per collision and preserve trailing cells, CRLFs and source bytes | integration |
 | UC-258 | renderer caller | Render overlapping numbered spans with an original-range index | Fragments with an exact `numbering` key use that index; fragments absent from the mapping use their template placeholder; disjoint mapped spans retain their assigned index | unit |
+| UC-259 | renderer caller | Render two same-range spans whose fusion priority is exactly equal (both suspect, same risk weight), in either input order, repeatedly | The first input span wins every time; the result never depends on object identity. For the rule detectors this means registry order (REGON before NR_KARTY) | unit |
 
 ## Non-functional
 
