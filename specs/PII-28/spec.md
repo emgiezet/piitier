@@ -93,7 +93,8 @@ Column exclusions protect cell contents, not metadata. Explicitly excluded PII m
 
 `mask_workbook(..., on_leak: Callable[[str], None] | None = None) -> int` returns the number
 of formula cells converted to strings. For each conversion, the optional callback receives
-`formula: sheet <sheet_name>, cell <column_letter><row>`.
+`formula: sheet <output_sheet_name>, cell <column_letter><row>`; the source sheet name is never
+reported because it may itself be personal data.
 
 | id | action | expected observable result | test |
 |----|--------|----------------------------|------|

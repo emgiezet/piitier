@@ -294,8 +294,9 @@ def mask_workbook(
                 if original.data_type == "f":
                     converted += 1
                     if on_leak is not None:
+                        # The output title: the source title may itself be personal data.
                         on_leak(
-                            f"formula: sheet {original.parent.title}, cell {original.coordinate}"
+                            f"formula: sheet {destination.parent.title}, cell {original.coordinate}"
                         )
             output.save(target)
             return converted

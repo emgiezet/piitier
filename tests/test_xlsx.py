@@ -216,7 +216,8 @@ def test_uc203_formula_detection_reports_plain_text(leaky_workbook: Path) -> Non
     count = mask_workbook(leaky_workbook, target, detector=piitier.detect, on_leak=warnings.append)
     workbook = openpyxl.load_workbook(target)
     assert count == 1
-    assert warnings == ["formula: sheet 90051512340, cell A1"]
+    assert warnings == ["formula: sheet Sheet1, cell A1"]
+    assert workbook.sheetnames == ["Sheet1"]
     assert workbook.active["A1"].value == '="[PESEL]"&B1'
     assert workbook.active["A1"].data_type == "s"
 
