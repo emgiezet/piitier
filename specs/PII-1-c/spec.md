@@ -27,7 +27,7 @@ In:
   candidate (CLAUDE.md invariant 6).
 - A 10-digit run preceded by the keyword `KRS` within 40 characters is not a NIP candidate.
 - Both registered so `piitier.detect()` and `piitier.mask()` pick them up with no API change.
-- Candidate rules are carried over from `trasti/complaint-classifier/scripts/scan_pii.py`: rules `NIP`
+- Candidate rules are carried over from an earlier private script `scan_pii.py`: rules `NIP`
   and `REGON` at lines 99–100 and 113–114, and the KRS exclusion at lines 332–341.
 
 Out:

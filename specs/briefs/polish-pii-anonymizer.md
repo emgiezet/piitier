@@ -58,7 +58,7 @@ kolejności: biblioteka najpierw, benchmark później [ASSUMPTION].
 - Architektura hybrydowa, bez generatywnego maskowania — owner: autor [EVIDENCE: docs/Plan MVP … medtech.md].
 - Pierwszy spec: `docs/TAXONOMY.md` + szkielet projektu uv + walidatory PESEL/NIP/REGON/IBAN/dowód/Luhn +
   renderer `mask` z testem wierności + loadery TXT/MD/CSV/PDF-tekst + CLI — owner: autor, do zatwierdzenia w specu [ASSUMPTION].
-- Punkt wyjścia: `trasti/complaint-classifier/scripts/scan_pii.py`. Kandydaci są wykrywani po kształcie
+- Punkt wyjścia: wcześniejszy prywatny skrypt `scan_pii.py`. Kandydaci są wykrywani po kształcie
   numeru, a suma kontrolna nie odrzuca kandydata. Kodowanie: UTF-8, potem cp1250. Obsługiwane wejścia:
   MSG, EML, ZIP, OCR obrazów i skanów — owner: autor [EVIDENCE: session reply + scan_pii.py l. 73, 1058–1065].
 - PII-1-a…g zatwierdzone na polecenie autora — owner: autor [EVIDENCE: session reply „zaakceptuj”].
@@ -78,4 +78,4 @@ do PII-2, nie zamiennikiem celu modelowego. — owner: autor (emgiezet)
 
 - Jaka kolejność b) i c)? Odpowiedź „a następnie a” jest niejednoznaczna. Nie blokuje pierwszego specu, bo oba kryteria wymagają tego samego rdzenia.
 - Czy faktury i polisy z poprzednich skryptów to PDF z warstwą tekstową, czy skany? Nie blokuje: OCR jest poza pierwszym wycinkiem. Prior art zawiera już OCR (olmOCR przez lokalną Ollamę).
-- Czy kod z `trasti/complaint-classifier` należy do autora? Jeśli nie, specy pozwalają go tylko czytać, nie kopiować. Nie blokuje.
+- Czy kod z wcześniejszego prywatnego skryptu `scan_pii.py` należy do autora? Jeśli nie, specy pozwalają go tylko czytać, nie kopiować. Nie blokuje.

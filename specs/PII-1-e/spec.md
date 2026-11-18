@@ -25,7 +25,7 @@ In:
   candidate only when they pass Luhn. The span covers the separators.
 - The checksum decides only `status`: `"valid"` or `"suspect"`. A failed checksum never removes a
   candidate (CLAUDE.md invariant 6).
-- Shape rules are carried over from `trasti/complaint-classifier/scripts/scan_pii.py`: rules `DOWOD`
+- Shape rules are carried over from an earlier private script `scan_pii.py`: rules `DOWOD`
   (line 101) and `KARTA` (line 104).
 - Registered with no API change.
 
