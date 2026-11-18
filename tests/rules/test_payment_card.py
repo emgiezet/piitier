@@ -348,8 +348,8 @@ def test_fp4b_hex_token_left_adjacent_not_detected() -> None:
 
 
 def test_fp4c_hex_token_right_adjacent_not_detected() -> None:
-    """FP-4c: Digit run followed by a letter (only) is not detected."""
-    spans = [s for s in find("4111111111111111xyz") if s.label is Label.NR_KARTY]
+    """FP-4c: Digit run followed only by hex letters is not detected."""
+    spans = [s for s in find("4111111111111111ff") if s.label is Label.NR_KARTY]
     assert len(spans) == 0
 
 
@@ -391,3 +391,164 @@ def test_suspect_in_normal_context_not_dropped_after_boundary_fix() -> None:
     nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
     assert len(nr_karty) == 1
     assert nr_karty[0].status == "suspect"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Jan,4111111111111111,100", "Jan,[NR_KARTY],100"),
+        ("100,4111111111111111", "100,[NR_KARTY]"),
+        ("4111111111111111,100", "[NR_KARTY],100"),
+        ("Jan;4111111111111111;100", "Jan;[NR_KARTY];100"),
+        ("karta 4111111111111111", "karta [NR_KARTY]"),
+    ],
+)
+def test_uc218_mask_preserves_delimiter_fields(text: str, expected: str) -> None:
+    assert piitier.mask(text) == expected
+
+
+def test_uc219_invalid_comma_card_is_suspect_and_masked() -> None:
+    text = "100,4111111111111112,200"
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].label, spans[0].status) == (
+        4,
+        20,
+        Label.NR_KARTY,
+        "suspect",
+    )
+    assert piitier.mask(text) == "100,[NR_KARTY],200"
+
+
+@pytest.mark.parametrize(
+    ("prefix", "suffix"),
+    [("karta", " wydana"), ("", "xyz"), ("płatność", "zakończona"), ("id_", "_ref")],
+)
+@pytest.mark.parametrize("card", [VISA_VALID, VISA_WRONG_CHECK])
+def test_uc220_nonhex_word_glued_card_is_suspect(prefix: str, suffix: str, card: str) -> None:
+    text = prefix + card + suffix
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (
+        len(prefix),
+        len(prefix) + len(card),
+        "suspect",
+    )
+    assert piitier.mask(text) == prefix + "[NR_KARTY]" + suffix
+
+
+@pytest.mark.parametrize("card", ["4111 1111 1111 1111", "4111-1111-1111-1112"])
+def test_uc220_grouped_card_is_not_a_hex_fragment(card: str) -> None:
+    text = f"abc{card}ff"
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (3, 3 + len(card), "suspect")
+    assert piitier.mask(text) == "abc[NR_KARTY]ff"
+
+
+@pytest.mark.parametrize("card", [VISA_VALID, VISA_WRONG_CHECK])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_uc221_mask_csv_preserves_neighboring_cells(card: str, newline: str) -> None:
+    text = f"imie,karta,kwota{newline}Jan,{card},100{newline}"
+    assert piitier.mask_csv(text) == f"imie,karta,kwota{newline}Jan,[NR_KARTY],100{newline}"
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_uc221_14_digit_csv_preserves_surrounding_text(newline: str) -> None:
+    text = f"id,kwota{newline}30569309025904,100{newline}"
+    assert piitier.mask_csv(text) == f"id,kwota{newline}[REGON],100{newline}"
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        "4111 1111 1111 1111",
+        "4111-1111-1111-1111",
+        "4111 1111 1111 1112",
+        "4111-1111-1111-1112",
+    ],
+)
+def test_uc222_grouped_comma_card_keeps_exact_span(card: str) -> None:
+    text = f"100,{card},200"
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (
+        4,
+        4 + len(card),
+        "suspect",
+    )
+    assert text[spans[0].start : spans[0].end] == card
+    assert piitier.mask(text) == "100,[NR_KARTY],200"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "0.9937050359712231",
+        "0.8888888888888888",
+        '"f1": 0.28571428571428575,',
+        "4111111111111111.25",
+        "-0.4111111111111112",
+    ],
+)
+def test_uc223_dot_decimal_fragments_stay_undetected(text: str) -> None:
+    assert find(text) == []
+    assert piitier.mask(text) == text
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("4111111111111111.", "[NR_KARTY]."),
+        ("100.4111 1111 1111 1111.25", "100.[NR_KARTY].25"),
+        ("100.4111-1111-1111-1111.25", "100.[NR_KARTY].25"),
+    ],
+)
+def test_uc223_nondecimal_card_punctuation_is_not_suppressed(text: str, expected: str) -> None:
+    assert len(find(text)) == 1
+    assert piitier.mask(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "cc4111111111111111ff",
+        "abc4111111111111111",
+        "4111111111111111ff",
+        "AB4111111111111111EF",
+        "0xabc4111111111111111ff",
+    ],
+)
+def test_uc224_hex_tokens_stay_undetected(text: str) -> None:
+    assert find(text) == []
+    assert not any(span.label is Label.NR_KARTY for span in piitier.detect(text))
+
+
+@pytest.mark.parametrize("card", [AMEX_VALID, DINERS_VALID])
+@pytest.mark.parametrize(("prefix", "suffix"), [("100,", ",200"), ("karta", " wydana")])
+def test_uc225_other_supported_lengths_keep_context_recall(
+    card: str, prefix: str, suffix: str
+) -> None:
+    text = prefix + card + suffix
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (
+        len(prefix),
+        len(prefix) + len(card),
+        "suspect",
+    )
+
+
+@pytest.mark.parametrize(
+    ("card", "prefix", "suffix", "expected"),
+    [
+        (AMEX_VALID, "100,", ",200", "100,[NR_KARTY],200"),
+        (AMEX_VALID, "karta", " wydana", "karta[NR_KARTY] wydana"),
+        (DINERS_VALID, "100,", ",200", "100,[REGON],200"),
+        (DINERS_VALID, "karta", " wydana", "karta[REGON] wydana"),
+    ],
+)
+def test_uc225_other_supported_lengths_mask_with_fusion(
+    card: str, prefix: str, suffix: str, expected: str
+) -> None:
+    assert piitier.mask(prefix + card + suffix) == expected
