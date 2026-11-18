@@ -134,7 +134,7 @@ def _load(path: Path, *, read_only: bool) -> tuple[Workbook, RenderedWorkbook]:
     corrupt = ValueError(f"unsupported or corrupt xlsx: {path}")
     try:
         wb = openpyxl.load_workbook(path, read_only=read_only, data_only=False)
-    except OSError:
+    except (OSError, MemoryError):
         raise
     except Exception:  # openpyxl's reader fails on malformed parts with arbitrary types
         raise corrupt from None
