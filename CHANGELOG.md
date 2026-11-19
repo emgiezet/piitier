@@ -14,6 +14,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Masked credential entry before the existing comparison UI, with cancellation and Ctrl-C handling before model loading.
 - `.json` input for `mask`, `mask-batch` and `compare`: string values are masked in place, keys, numbers and structure are left untouched (`src/piitier/jsonmask.py`). ([#24](https://github.com/emgiezet/piitier/pull/24))
 
+### Changed
+
+- The sdist contains only `src/piitier`, `pyproject.toml`, `README.md`, `CHANGELOG.md`, `LICENSE` and `NOTICE`. It previously carried the whole repository.
+
 ## [0.1.0] - 2026-10-27
 
 ### Added
