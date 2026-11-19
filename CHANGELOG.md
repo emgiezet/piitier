@@ -38,6 +38,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The label chosen for two detections with the same range, status and risk weight depended on object identity, so the same input could be masked as `[REGON]` or `[NR_KARTY]`. The first detection in input order now wins.
 - Card numbers next to a comma or glued to a word were not detected, so comma-delimited CSV files came back unmasked; a Luhn-invalid number in those positions was dropped instead of marked `suspect`.
 
+### Changed
+
+- Development and primary CI run CPython 3.14 (`.python-version`); a blocking job runs the unit suite on 3.12, the supported floor, and a non-blocking job smoke-tests the rules-only runtime on 3.15.
+
 ## [0.1.0] - 2026-10-27
 
 ### Added
