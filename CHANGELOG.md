@@ -14,6 +14,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Masked credential entry before the existing comparison UI, with cancellation and Ctrl-C handling before model loading.
 - `.json` input for `mask`, `mask-batch` and `compare`: string values are masked in place, keys, numbers and structure are left untouched (`src/piitier/jsonmask.py`). ([#24](https://github.com/emgiezet/piitier/pull/24))
 
+### Fixed
+
+- Numbered placeholders: inflected forms of one surname got different indices (`Zieliński` / `Zielińskiego`), a feminine form took the index of a man with the masculine surname (`Kowalskiej` after `Jan Kowalski` and `Anna Kowalska`), and different double-barrelled surnames shared one index. A mention compatible with several earlier people now gets a new index instead of the first match.
+
 ## [0.1.0] - 2026-10-27
 
 ### Added
