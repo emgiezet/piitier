@@ -1,0 +1,2 @@
+exit code: 2
+stderr: --delimiter is only supported for .csv files: <tmp>/qa_pii28.xlsx

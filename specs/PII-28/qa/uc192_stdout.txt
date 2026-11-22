@@ -1,0 +1,3 @@
+$ piitier mask <tmp>/uc192_real_pii28.xlsx -o out.xlsx --skip-columns "Nr polisy"
+output row: ('ID', 'Nr polisy', 'PESEL', 'Kwota')
+output row: ('[PESEL]', 'POL-1', '[PESEL]', 1500)

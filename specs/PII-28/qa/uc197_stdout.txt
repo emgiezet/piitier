@@ -1,0 +1,2 @@
+$ piitier mask <tmp>/qa_pii28.xlsx -o <tmp>/qa_pii28_out.txt
+file <tmp>/qa_pii28_out.txt contains rendered text starting with "# Raport"

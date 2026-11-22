@@ -1,0 +1,2 @@
+$ piitier mask <tmp>/qa_pii28.xlsx -o out.xlsx --skip-columns "Brak"
+stderr: warning: unknown column: Brak

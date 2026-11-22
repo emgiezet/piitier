@@ -1,0 +1,5 @@
+$ piitier mask <tmp>/uc216_real_pii28.xlsx -o out.xlsx
+stderr:
+warning: formula: sheet Raport, cell A2 converted to text
+warning: formula: sheet Raport, cell C2 converted to text
+output A2 ='="[PESEL]"' s, B2 ='=1+2' f, C2 ='="[PESEL]"' s
