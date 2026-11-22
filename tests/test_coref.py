@@ -935,3 +935,38 @@ def test_uc248_exact_full_keys_do_not_rescan_surname_bucket(
     # The first pass needs comparisons within the shared surname bucket;
     # repeated exact keys must not repeat that work.
     assert _matching_calls[0] <= count * (count - 1) // 2 + count
+
+
+# QA note: feminine indeclinable noun surnames merge correctly (UC-232).
+def test_uc232_indeclinable_noun_surname_feminine_forms_merge() -> None:
+    """UC-232: indeclinable feminine forms of unisex noun surnames merge.
+
+    A woman with a consonant-ending surname keeps the same surname across cases
+    (genitive ``Anny Turek``, dative ``Annie Turek``).  These forms share the
+    base with the nominative and must merge with the earlier entity.
+    """
+    _assert_masking_paths(
+        "Anna Turek i Anny Turek. List dla Annie Turek.",
+        ["Anna Turek", "Anny Turek", "Annie Turek"],
+        "[OSOBA_1] i [OSOBA_1]. List dla [OSOBA_1].",
+    )
+    _assert_masking_paths(
+        "Dorota Kaczmarek i Doroty Kaczmarek.",
+        ["Dorota Kaczmarek", "Doroty Kaczmarek"],
+        "[OSOBA_1] i [OSOBA_1].",
+    )
+
+
+def test_uc232_unknown_inflected_form_gets_new_index() -> None:
+    """UC-232: a form not recognised as a singular surname reading is conservative.
+
+    ``Turki`` is not a valid feminine oblique singular of the indeclinable
+    surname ``Turek`` (it is the plural / ``Turka`` paradigm).  With zero
+    compatible singular surname candidates, the conservative behaviour required
+    by the spec is to assign a fresh index.
+    """
+    _assert_masking_paths(
+        "Anna Turek. Spotkałem Anny Turki.",
+        ["Anna Turek", "Anny Turki"],
+        "[OSOBA_1]. Spotkałem [OSOBA_2].",
+    )
