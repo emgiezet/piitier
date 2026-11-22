@@ -552,3 +552,46 @@ def test_uc225_other_supported_lengths_mask_with_fusion(
     card: str, prefix: str, suffix: str, expected: str
 ) -> None:
     assert piitier.mask(prefix + card + suffix) == expected
+
+
+# ---------------------------------------------------------------------------
+# QA gap coverage for PII-30
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("100,4111111111111111", "100,[NR_KARTY]"),
+        ("4111111111111111,100", "[NR_KARTY],100"),
+    ],
+)
+def test_uc218_comma_on_one_side_makes_valid_card_suspect(text: str, expected: str) -> None:
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (
+        text.index(VISA_VALID),
+        text.index(VISA_VALID) + 16,
+        "suspect",
+    )
+    assert piitier.mask(text) == expected
+
+
+def test_uc220_word_glued_both_sides_nonhex_is_suspect_and_masked() -> None:
+    text = "karta4111111111111111wydana"
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (5, 21, "suspect")
+    assert piitier.mask(text) == "karta[NR_KARTY]wydana"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "4111111111111111.2",
+        "0.4111111111111112",
+    ],
+)
+def test_uc223_dot_decimal_fragments_with_single_digit_tail(text: str) -> None:
+    assert find(text) == []
+    assert piitier.mask(text) == text
