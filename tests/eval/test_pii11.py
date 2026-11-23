@@ -81,19 +81,19 @@ _GUIDELINES = _root / "docs" / "labelling" / "GUIDELINES.md"
 # ---------------------------------------------------------------------------
 
 _REQUIRED_GROUPS = {
-    "Identyfikacja osoby",
-    "Identyfikatory państwowe",
-    "Kontakt i lokalizacja",
-    "Finanse",
-    "Ubezpieczenia",
-    "Zdrowie",
+    "Person identification",
+    "Government identifiers",
+    "Contact and location",
+    "Finance",
+    "Insurance",
+    "Health",
 }
 
 _REQUIRED_SECTIONS = [
-    "Granice spanów",
-    "Czego nie anotujemy",
-    "Spory",
-    "Budżet czasu",
+    "Span boundaries",
+    "What we do not annotate",
+    "Disputes",
+    "Time budget",
 ]
 
 
@@ -166,8 +166,8 @@ def test_uc146_guidelines_structure() -> None:
         heading = block.splitlines()[0].strip()
         if not any(g in heading for g in _REQUIRED_GROUPS):
             continue
-        pos = _count_list_items(block, "Pozytywne")
-        neg = _count_list_items(block, "Negatywne")
+        pos = _count_list_items(block, "Positive")
+        neg = _count_list_items(block, "Negative")
         assert pos >= 2, f"Group '{heading}': {pos} positive examples (need ≥ 2)"
         assert neg >= 2, f"Group '{heading}': {neg} negative examples (need ≥ 2)"
 
@@ -179,7 +179,7 @@ def test_uc146_guidelines_structure() -> None:
     # dr / lek. med. inside LEKARZ span
     assert "dr" in text and "LEKARZ" in text
     # Check that the boundary table or text explicitly states dr is inside LEKARZ
-    assert "dr" in text and "wchodzi do spanu" in text.lower() or "tytuł" in text
+    assert "dr" in text and "included in the span" in text.lower() or "title" in text.lower()
 
     # currency inside KWOTA/DOCHOD
     assert "waluta" in text.lower() or "PLN" in text
@@ -192,12 +192,12 @@ def test_uc146_guidelines_structure() -> None:
     assert "ur." in text
     # Must explicitly say ur. is NOT part of the span (nie wchodzi or poza spanem)
     guidelines_lower = text.lower()
-    assert "nie wchodzi" in guidelines_lower or "poza spanem" in guidelines_lower, (
+    assert "not included" in guidelines_lower or "outside the span" in guidelines_lower, (
         "GUIDELINES must explicitly state that 'ur.' is outside the DATA_URODZENIA span"
     )
 
     # DATA_URODZENIA and WIEK must appear in the boundary table (§2)
-    boundary_section = text[text.find("## 2. Granice") :]
+    boundary_section = text[text.find("## 2. Span boundaries") :]
     assert "DATA_URODZENIA" in boundary_section, "DATA_URODZENIA missing from boundary table"
     assert "WIEK" in boundary_section, "WIEK missing from boundary table"
 

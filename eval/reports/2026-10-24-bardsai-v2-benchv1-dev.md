@@ -1,29 +1,29 @@
-# Raport: bardsai-v2 na bench/v1/dev
+# Report: bardsai-v2 on bench/v1/dev
 
 ## System
 - Name: bardsai-v2
-- Wersja: 0.1.0
-- Data: 2026-10-24T23:56:43.115491
-- Próg: brak — system bez progu
+- Version: 0.1.0
+- Date: 2026-10-24T23:56:43.115491
+- Threshold: none — threshold-free system
 
 ## Benchmark
-- Wersja: v1
+- Version: v1
 - Split: dev
-- Liczba dokumentów: 6
-- Liczba spanów gold: 40
+- Number of documents: 6
+- Number of gold spans: 40
 
-## Sprzęt
-- Platforma: Linux-7.0.0-38-generic-x86_64-with-glibc2.43
-- Procesor: N/A
+## Hardware
+- Platform: Linux-7.0.0-38-generic-x86_64-with-glibc2.43
+- CPU: N/A
 - GPU: NVIDIA GeForce RTX 3090 Ti
 - Peak RAM: 2571923456 bytes
 
-## Encje (strict)
+## Entities (strict)
 - Micro Precision: 0.2821
 - Micro Recall: 0.2750
 - Micro F1: 0.2785
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.0000 | 0.0000 | 0.0000 |
 | DANE_ZDROWOTNE | 0.0000 | 0.0000 | 0.0000 |
@@ -48,12 +48,12 @@
 | ROZPOZNANIE | 0.0000 | 0.0000 | 0.0000 |
 | TELEFON | 0.6667 | 0.6667 | 0.6667 |
 
-## Encje (partial)
+## Entities (partial)
 - Micro Precision: 0.7692
 - Micro Recall: 0.7500
 - Micro F1: 0.7595
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 1.0000 | 1.0000 | 1.0000 |
 | DANE_ZDROWOTNE | 0.0000 | 0.0000 | 0.0000 |
@@ -78,8 +78,8 @@
 | ROZPOZNANIE | 0.0000 | 0.0000 | 0.0000 |
 | TELEFON | 1.0000 | 1.0000 | 1.0000 |
 
-## Porównywalna podtaksonomia (bardsai_v2)
-- Etykiety: ADRES, CVV, DANE_ZDROWOTNE, DATA_URODZENIA, EMAIL, GEO, IBAN, IP, KWOTA, MIEJSCOWOSC, NIP, NR_DOKUMENTACJI, NR_DOWODU, NR_KARTY, NR_RACHUNKU, OSOBA, PESEL, PLACOWKA, TELEFON, VIN
+## Comparable subtaxonomy (bardsai_v2)
+- Labels: ADRES, CVV, DANE_ZDROWOTNE, DATA_URODZENIA, EMAIL, GEO, IBAN, IP, KWOTA, MIEJSCOWOSC, NIP, NR_DOKUMENTACJI, NR_DOWODU, NR_KARTY, NR_RACHUNKU, OSOBA, PESEL, PLACOWKA, TELEFON, VIN
 - Strict Micro Precision: 0.2821
 - Strict Micro Recall: 0.3333
 - Strict Micro F1: 0.3056
@@ -87,7 +87,7 @@
 - Partial Micro Recall: 0.9091
 - Partial Micro F1: 0.8333
 
-## Recall ważony ryzykiem
+## Risk-weighted recall
 - Risk-weighted recall: 0.2805
 
 ## Leak rate
@@ -95,10 +95,10 @@
 - Values leaked: 2 / 40
 - Leaked doc IDs: doc_szpital_06
 
-## Wierność
+## Fidelity
 - Changed chars outside spans: 179
 
-## Numeracja
+## Numbering
 - Same entity consistent: 1 / 1
 - Different entity distinct: 0 / 0
 
@@ -106,14 +106,14 @@
 - Throughput: 0.59 docs/s
 - P95 latency: 6.2566 s
 
-## Podział wg doc_type
+## Breakdown by doc_type
 
 ### mail_klienta
 - Strict Micro Precision: 0.4286
 - Strict Micro Recall: 0.5000
 - Strict Micro F1: 0.4615
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.0000 | 0.0000 | 0.0000 |
 | EMAIL | 1.0000 | 1.0000 | 1.0000 |
@@ -128,7 +128,7 @@
 - Strict Micro Recall: 0.2222
 - Strict Micro F1: 0.2222
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.0000 | 0.0000 | 0.0000 |
 | DATA_URODZENIA | 1.0000 | 1.0000 | 1.0000 |
@@ -145,7 +145,7 @@
 - Strict Micro Recall: 0.1667
 - Strict Micro F1: 0.1667
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.0000 | 0.0000 | 0.0000 |
 | DOCHOD | 0.0000 | 0.0000 | 0.0000 |
@@ -161,7 +161,7 @@
 - Strict Micro Recall: 0.2000
 - Strict Micro F1: 0.2000
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.0000 | 0.0000 | 0.0000 |
 | IBAN | 0.0000 | 0.0000 | 0.0000 |
@@ -174,7 +174,7 @@
 - Strict Micro Recall: 0.2857
 - Strict Micro F1: 0.3077
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | DANE_ZDROWOTNE | 0.0000 | 0.0000 | 0.0000 |
 | DATA_URODZENIA | 1.0000 | 1.0000 | 1.0000 |
@@ -190,7 +190,7 @@
 - Strict Micro Recall: 0.2857
 - Strict Micro F1: 0.3077
 
-| Etykieta | Precision | Recall | F1 |
+| Label | Precision | Recall | F1 |
 |---|---|---|---|
 | ADRES | 0.0000 | 0.0000 | 0.0000 |
 | DANE_ZDROWOTNE | 0.0000 | 0.0000 | 0.0000 |

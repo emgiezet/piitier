@@ -5,8 +5,7 @@ and dataset on the Hugging Face Hub. The design is a hybrid:
 deterministic checksum validators (PESEL, NIP, REGON, IBAN, …) plus a ~300M encoder NER model
 plus a deterministic placeholder renderer with consistent numbering. It ships with PL-PII-Bench,
 a Polish benchmark. Python 3.12, managed with uv. Training uses HF Transformers; export is ONNX
-INT8. Design and roadmap: `docs/Plan MVP polskiego modelu do anonimizacji danych wrażliwych dla
-fintech, insurtech i medtech.md`.
+INT8. Design and roadmap: `docs/PLAN.md`.
 
 ## Task Router
 

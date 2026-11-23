@@ -1,0 +1,30 @@
+name: Feature request
+description: New entity type, file format, CLI option, or pipeline behaviour
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The document type, sector and workflow. One synthetic example helps more than a general description.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Command, API or output you would expect. For a new entity type, say which of the six risk groups in `docs/TAXONOMY.md` it belongs to and whether it can be validated by a rule (checksum, fixed pattern) or needs the model.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you tried
+      description: Custom `predictor=`, `--skip-columns`, pre/post-processing, another tool.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: I checked the roadmap section in `README.md` and the known limitations; this is not already listed.
+        - label: I can provide synthetic test documents for this case.

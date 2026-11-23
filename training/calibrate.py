@@ -397,27 +397,27 @@ def _get_output_dir(config_path: Path) -> Path:
 
 
 def _success_section(result: ThresholdResult, target_recall: float, match_mode: str) -> str:
-    """Build the full ## Kalibracja progu section text for a successful calibration."""
+    """Build the full ## Threshold calibration section text for a successful calibration."""
     today = date.today().isoformat()
     lines: list[str] = [
-        "## Kalibracja progu\n",
-        f"\n- **Data kalibracji:** {today}",
-        f"\n- **Próg (Threshold):** {result.threshold}",
+        "## Threshold calibration\n",
+        f"\n- **Calibration date:** {today}",
+        f"\n- **Threshold:** {result.threshold}",
         f"\n- **Recall:** {result.recall:.4f}",
         f"\n- **Precision:** {result.precision:.4f}",
         f"\n- **Target Recall:** {target_recall}",
         f"\n- **Match Mode:** {match_mode}",
-        f"\n- **Liczba spanów gold:** {result.gold_span_count}",
-        f"\n- **Liczba dokumentów:** {result.doc_count}",
+        f"\n- **Gold spans:** {result.gold_span_count}",
+        f"\n- **Documents:** {result.doc_count}",
         (
-            f"\n- **Przedział ufności Wilsona 95%:** "
+            f"\n- **Wilson 95% confidence interval:** "
             f"[{result.wilson_lower:.4f}, {result.wilson_upper:.4f}]"
         ),
     ]
     if result.safety_leaks:
-        lines.append("\n- **Leak na zbiorze bezpieczeństwa:** 0 wartości")
+        lines.append("\n- **Leaks on the safety bench: 0 values**")
     if result.group_recalls:
-        lines.append("\n\n### Recall per grupa ryzyka\n")
+        lines.append("\n\n### Recall per risk group\n")
         for gr in result.group_recalls:
             if gr.span_count > 0:
                 lines.append(f"\n- **{gr.group}:** recall={gr.recall:.4f}, spans={gr.span_count}")
@@ -425,18 +425,18 @@ def _success_section(result: ThresholdResult, target_recall: float, match_mode: 
 
 
 def _failure_subsection(result: ThresholdResult, match_mode: str) -> str:
-    """Build a ### Nieudana próba subsection for a failed calibration."""
+    """Build a ### Failed calibration attempt subsection for a failed calibration."""
     today = date.today().isoformat()
     reason = result.reason or "unknown"
     lines: list[str] = [
-        f"\n### Nieudana próba kalibracji ({today})\n",
-        f"\n- **Próg:** nie zapisano ({reason})",
+        f"\n### Failed calibration attempt ({today})\n",
+        f"\n- **Threshold:** not written ({reason})",
         f"\n- **Recall:** {result.recall:.4f}",
         f"\n- **Match Mode:** {match_mode}",
-        f"\n- **Liczba spanów gold:** {result.gold_span_count}",
-        f"\n- **Liczba dokumentów:** {result.doc_count}",
+        f"\n- **Gold spans:** {result.gold_span_count}",
+        f"\n- **Documents:** {result.doc_count}",
         (
-            f"\n- **Przedział ufności Wilsona 95%:** "
+            f"\n- **Wilson 95% confidence interval:** "
             f"[{result.wilson_lower:.4f}, {result.wilson_upper:.4f}]"
         ),
     ]
@@ -453,7 +453,7 @@ def _write_model_card(
     target_recall: float,
     match_mode: str,
 ) -> None:
-    """Write (or update) the '## Kalibracja progu' section in MODEL_CARD.md.
+    """Write (or update) the '## Threshold calibration' section in MODEL_CARD.md.
 
     On success (reason is None): overwrites the section with the new threshold and date.
     On failure: keeps the existing section intact (preserving the last successful threshold)
@@ -468,8 +468,8 @@ def _write_model_card(
         section = _success_section(result, target_recall, match_mode)
         if model_card_path.exists():
             content = model_card_path.read_text(encoding="utf-8")
-            if "## Kalibracja progu" in content:
-                parts = content.split("## Kalibracja progu")
+            if "## Threshold calibration" in content:
+                parts = content.split("## Threshold calibration")
                 base = parts[0].rstrip()
                 rest = parts[1]
                 next_sections = rest.split("\n## ")
@@ -483,14 +483,14 @@ def _write_model_card(
             new_content = f"# Model Card\n\n{section.strip()}\n"
         model_card_path.write_text(new_content, encoding="utf-8")
     else:
-        # FAILURE: preserve the existing ## Kalibracja progu section; append failure subsection.
+        # FAILURE: keep the existing ## Threshold calibration section; append failure subsection.
         # If no section exists yet, create a minimal one that only shows the failure.
         failure = _failure_subsection(result, match_mode)
         if model_card_path.exists():
             content = model_card_path.read_text(encoding="utf-8")
-            if "## Kalibracja progu" in content:
+            if "## Threshold calibration" in content:
                 # Insert failure sub-section before the next top-level ## heading
-                parts = content.split("## Kalibracja progu")
+                parts = content.split("## Threshold calibration")
                 base = parts[0]
                 rest = parts[1]
                 next_sections = rest.split("\n## ")
@@ -498,7 +498,7 @@ def _write_model_card(
                 remainder = "\n## ".join(next_sections[1:]) if len(next_sections) > 1 else ""
                 new_content = (
                     base
-                    + "## Kalibracja progu"
+                    + "## Threshold calibration"
                     + section_body
                     + "\n\n"
                     + failure.strip()
@@ -507,10 +507,10 @@ def _write_model_card(
             else:
                 # No success section yet: create failure-only section
                 new_content = (
-                    content.rstrip() + "\n\n## Kalibracja progu\n\n" + failure.strip() + "\n"
+                    content.rstrip() + "\n\n## Threshold calibration\n\n" + failure.strip() + "\n"
                 )
         else:
-            new_content = f"# Model Card\n\n## Kalibracja progu\n\n{failure.strip()}\n"
+            new_content = f"# Model Card\n\n## Threshold calibration\n\n{failure.strip()}\n"
         model_card_path.write_text(new_content, encoding="utf-8")
 
 

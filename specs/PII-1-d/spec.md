@@ -22,7 +22,7 @@ In:
   whole value, prefix and spaces included.
 - A 26-digit value that fails mod 97 is detected as `status="suspect"`: 26 digits is distinctive
   enough that no keyword is needed (CLAUDE.md invariant 6).
-- Foreign IBANs, matching what `trasti/complaint-classifier/scripts/scan_pii.py` already handles (rule
+- Foreign IBANs, matching what an earlier private script `scan_pii.py` already handles (rule
   `RACHUNEK`, line 91): 2 letters + 2 digits + 11–30 alphanumerics, contiguous or in groups of 4 separated
   by single spaces (the last group 1–4). They are validated with the same generic mod 97 and masked as `[IBAN]`.
 - Registered with no API change.

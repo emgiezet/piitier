@@ -19,7 +19,7 @@ def _parse_taxonomy_placeholders(path: Path) -> set[str]:
     """Return the set of placeholder strings in the Placeholder column of *path*.
 
     Skips the header row and any separator / non-data rows.  The table format is:
-    ``| Grupa | Encja | Placeholder | Metoda |`` — placeholder is column index 3
+    ``| Group | Entity | Placeholder | Method |`` — placeholder is column index 3
     (0-indexed after splitting on ``|``).
     """
     placeholders: set[str] = set()
@@ -27,7 +27,7 @@ def _parse_taxonomy_placeholders(path: Path) -> set[str]:
         if not line.startswith("|"):
             continue
         parts = [p.strip() for p in line.split("|")]
-        # parts: ['', Grupa, Encja, Placeholder, Metoda, '']
+        # parts: ['', Group, Entity, Placeholder, Method, '']
         if len(parts) < 5:
             continue
         cell = parts[3]

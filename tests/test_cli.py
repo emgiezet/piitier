@@ -518,3 +518,317 @@ def test_uc171_tab_delimiter_escape(tmp_path: Path) -> None:
     assert rc == 0
     assert out == b"ID\tNotes\n90051512340\t[PESEL]\n"
     assert err == b""
+
+
+# ---------------------------------------------------------------------------
+# PII-5-v4: --version flag
+# ---------------------------------------------------------------------------
+
+
+def test_version_flag_exits_0_and_prints_version() -> None:
+    """piitier --version prints 'piitier <version>' and exits 0."""
+    import piitier
+
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert f"piitier {piitier.__version__}" in result.stdout + result.stderr
+
+
+# ---------------------------------------------------------------------------
+# PII-5-v4: --revision flag passes through to resolve_checkpoint
+# ---------------------------------------------------------------------------
+
+
+def test_revision_passed_through_to_seam(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """mask_file(..., revision='abc') passes revision to the hub seam (in-process)."""
+    import piitier.ner.hub as hub
+    from piitier.cli import mask_file
+
+    in_file = tmp_path / "in.txt"
+    in_file.write_text("PESEL: 90051512340\n", encoding="utf-8")
+    ckpt_dir = tmp_path / "ckpt"
+    ckpt_dir.mkdir()
+
+    calls: list[dict[str, object]] = []
+
+    def fake_download(*, repo_id: str, revision: str | None = None) -> str:
+        calls.append({"repo_id": repo_id, "revision": revision})
+        return str(ckpt_dir)
+
+    monkeypatch.setattr(hub, "_snapshot_download", fake_download)
+
+    # The seam returns an empty directory; NerPredictor will fail with ValueError/OSError.
+    # We only care that the seam was called with the right args.
+    mask_file(in_file, None, model="emgiezet/piitier", revision="abc")
+    assert calls == [{"repo_id": "emgiezet/piitier", "revision": "abc"}]
+
+
+# ---------------------------------------------------------------------------
+# PII-5-v4: repo-id with HF_HUB_OFFLINE → exit 2 'could not download'
+# ---------------------------------------------------------------------------
+
+
+def test_hub_repo_id_offline_exits_2_could_not_download(tmp_path: Path) -> None:
+    """mask --model no/such-repo exits 2 with 'model error: could not download' when offline."""
+    import os
+
+    in_file = tmp_path / "in.txt"
+    in_file.write_text("PESEL: 90051512340\n", encoding="utf-8")
+
+    env = {**os.environ, "HF_HUB_OFFLINE": "1"}
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask", str(in_file), "--model", "no/such-repo"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 2
+    assert "could not download" in result.stderr
+    assert "no/such-repo" in result.stderr
+
+
+@pytest.mark.parametrize("case", ["conflict", "nonpdf", "eof"])
+def test_uc177_password_input_errors(tmp_path: Path, case: str) -> None:
+    import secrets
+
+    from test_loaders_pdf import password_pdf
+
+    secret = secrets.token_hex(12)
+    path = password_pdf(tmp_path, secret)
+    flags = ["--password-stdin"]
+    if case == "conflict":
+        flags += ["--password", secret]
+    elif case == "nonpdf":
+        path = tmp_path / "source.txt"
+        path.write_text("PESEL: 90051512340")
+    output = tmp_path / "out.txt"
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask", str(path), "-o", str(output), *flags],
+        input=b"",
+        capture_output=True,
+    )
+    assert result.returncode == 2
+    assert result.stdout == b""
+    assert not output.exists()
+    assert secret.encode() not in result.stderr
+
+
+@pytest.mark.parametrize("ending", ["\n", "\r\n", ""])
+def test_uc177_stdin_preserves_bare_cr(tmp_path: Path, ending: str) -> None:
+    import secrets
+
+    from test_loaders_pdf import password_pdf
+
+    secret = " " + secrets.token_hex(8) + "\r"
+    path = password_pdf(tmp_path, secret)
+    data = secret + ("\r\n" if ending == "\n" else ending)
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask", str(path), "--password-stdin"],
+        input=data.encode(),
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == b"  PESEL: [PESEL]  \n\nEnd."
+
+
+@pytest.mark.parametrize(
+    "outcome", ["correct", "explicit", "eof", "fallback", "interrupt", "exhaust"]
+)
+def test_uc176_hidden_cli_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    outcome: str,
+) -> None:
+    import getpass
+    import secrets
+    import warnings
+
+    from test_loaders_pdf import password_pdf
+
+    from piitier.cli import main
+
+    secret = secrets.token_hex(12)
+    path = password_pdf(tmp_path, secret)
+    output = tmp_path / "out.txt"
+    args = ["piitier", "mask", str(path), "-o", str(output)]
+    if outcome == "explicit":
+        args += ["--password", secrets.token_hex(12)]
+    monkeypatch.setattr(sys, "argv", args)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
+    answers = iter(
+        [secret]
+        if outcome == "explicit"
+        else ["wrong", secret]
+        if outcome == "correct"
+        else ["wrong"] * 3
+    )
+    entered = []
+
+    def hidden(prompt: str, stream: object) -> str:
+        entered.append(prompt)
+        if outcome == "eof":
+            raise EOFError
+        if outcome == "interrupt":
+            raise KeyboardInterrupt
+        if outcome == "fallback":
+            warnings.warn("echo fallback", getpass.GetPassWarning)
+            pytest.fail("echoed read must not be reached")
+        return next(answers)
+
+    monkeypatch.setattr(getpass, "getpass", hidden)
+    success = outcome in ("correct", "explicit")
+    assert main() == (0 if success else 130 if outcome == "interrupt" else 2)
+    if success:
+        assert output.read_text() == "  PESEL: [PESEL]  \n\nEnd."
+        assert len(entered) == (1 if outcome == "explicit" else 2)
+    else:
+        assert not output.exists()
+        assert len(entered) == (3 if outcome == "exhaust" else 1)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert secret not in captured.err and "90051512340" not in captured.err
+
+
+def test_uc181_uc182_batch_command(tmp_path: Path) -> None:
+    source = tmp_path / "input"
+    source.mkdir()
+    (source / "a.txt").write_text("PESEL: 90051512340")
+    (source / "b.pdf").write_bytes(b"not a PDF")
+    output = tmp_path / "output"
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", "mask-batch", str(source), "-o", str(output)],
+        capture_output=True,
+    )
+    assert result.returncode == 4 and result.stdout == b""
+    assert result.stderr.endswith(b"batch: 1 masked, 1 failed\n")
+    assert (output / "a.txt").read_text() == "PESEL: [PESEL]"
+    assert not (output / "b.txt").exists()
+
+
+def test_json_model_masking_uses_decoded_aliases_and_keeps_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test_jsonmask import JsonNamePredictor
+
+    import piitier
+    from piitier.cli import mask_file
+
+    real_anonymizer = piitier.Anonymizer
+    monkeypatch.setattr(
+        piitier, "Anonymizer", lambda **kwargs: real_anonymizer(predictor=JsonNamePredictor())
+    )
+    source = tmp_path / "names.JSON"
+    output = tmp_path / "masked.json"
+    source.write_bytes(
+        b'{\r\n "Zoja Testowa": ["\\u005aoja Testowa", "Mira Fikcyjna", '
+        b'{"alias": "Zoja Testowa"}], "n": 90051512340\r\n}\r\n'
+    )
+    assert mask_file(source, output, model="offline-test-model") == 0
+    assert output.read_bytes() == (
+        b'{\r\n "Zoja Testowa": ["[OSOBA_1]", "[OSOBA_2]", '
+        b'{"alias": "[OSOBA_1]"}], "n": 90051512340\r\n}\r\n'
+    )
+
+
+@pytest.mark.parametrize("existing_output", [False, True])
+@pytest.mark.parametrize(
+    "payload",
+    [b'{"private":"90051512340",}', b'{"private":"90051512340\xff"}'],
+)
+def test_invalid_json_preserves_output_before_model_initialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    existing_output: bool,
+    payload: bytes,
+) -> None:
+    import piitier
+    from piitier.cli import mask_file
+
+    def forbidden_model(**kwargs):
+        raise AssertionError("invalid input must fail before model loading")
+
+    monkeypatch.setattr(piitier, "Anonymizer", forbidden_model)
+    source = tmp_path / "bad.json"
+    output = tmp_path / "output.json"
+    source.write_bytes(payload)
+    if existing_output:
+        output.write_bytes(b"existing content\r\n")
+    assert mask_file(source, output, model="must-not-load") == 2
+    assert source.read_bytes() == payload
+    if existing_output:
+        assert output.read_bytes() == b"existing content\r\n"
+    else:
+        assert not output.exists()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "private" not in captured.err and "90051512340" not in captured.err
+
+
+@pytest.mark.parametrize("stdin_tty,stderr_tty", [(False, True), (True, False), (False, False)])
+def test_uc176_nonterminal_authentication_never_prompts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stdin_tty: bool,
+    stderr_tty: bool,
+) -> None:
+    import getpass
+    import secrets
+
+    from test_loaders_pdf import password_pdf
+
+    from piitier.cli import main
+
+    path = password_pdf(tmp_path, secrets.token_hex(12))
+    output = tmp_path / "out.txt"
+    output.write_bytes(b"preserve existing output")
+    monkeypatch.setattr(sys, "argv", ["piitier", "mask", str(path), "-o", str(output)])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: stdin_tty)
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: stderr_tty)
+
+    def forbidden_prompt(*args: object, **kwargs: object) -> str:
+        pytest.fail("nonterminal authentication must not attempt hidden input")
+
+    monkeypatch.setattr(getpass, "getpass", forbidden_prompt)
+    assert main() == 2
+    assert output.read_bytes() == b"preserve existing output"
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"password required: {path}\n"
+
+
+@pytest.mark.parametrize("command", ["mask", "compare"])
+def test_uc174_uc188_authenticated_scan_exits3(tmp_path: Path, command: str) -> None:
+    import secrets
+
+    from test_loaders_pdf import password_pdf
+
+    password = secrets.token_hex(12) if command == "mask" else ""
+    owner = secrets.token_hex(12)
+    path = password_pdf(tmp_path, password, owner=owner, algorithm="AES-256", image=True)
+    output = tmp_path / "out.txt"
+    output.write_bytes(b"preserve existing output")
+    flags = (
+        ["--password-stdin", "-o", str(output)]
+        if command == "mask"
+        else ["--model", str(tmp_path / "model-must-not-load")]
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "piitier.cli", command, str(path), *flags],
+        input=(password + "\n").encode(),
+        capture_output=True,
+    )
+    assert result.returncode == 3
+    assert result.stdout == b""
+    assert owner.encode() not in result.stderr
+    if password:
+        assert password.encode() not in result.stderr
+    assert b"Traceback" not in result.stderr
+    assert output.read_bytes() == b"preserve existing output"

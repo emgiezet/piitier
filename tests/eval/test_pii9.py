@@ -511,7 +511,7 @@ def test_uc138_report_provenance_metadata(tmp_path: Path) -> None:
 
     Asserts:
     - Markdown: exact 'Commit: <40hex-or-unknown>' line
-    - Markdown: exact 'Dokumenty: N' line (not just any line containing N)
+    - Markdown: exact 'Documents: N' line (not just any line containing N)
     - JSON: git_commit, bench_sha256, docs, split, threshold fields
     """
     bench_dir = _root / "bench" / "v1" / "dev"
@@ -552,11 +552,11 @@ def test_uc138_report_provenance_metadata(tmp_path: Path) -> None:
     commit_line = f"Commit: {commit_val}"
     assert commit_line in md, f"Markdown must contain the exact line {commit_line!r}"
 
-    # Markdown: exact 'Dokumenty: N' line (doc count)
+    # Markdown: exact 'Documents: N' line (doc count)
     doc_count = data["docs"]
     assert doc_count > 0
-    dokumenty_line = f"Dokumenty: {doc_count}"
-    assert dokumenty_line in md, f"Markdown must contain exact line {dokumenty_line!r}"
+    documents_line = f"Documents: {doc_count}"
+    assert documents_line in md, f"Markdown must contain exact line {documents_line!r}"
 
     # JSON: bench_sha256 dict with valid SHA-256 digests
     assert "bench_sha256" in data

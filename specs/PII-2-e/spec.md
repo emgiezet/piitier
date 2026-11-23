@@ -58,7 +58,7 @@ Change budget: 380 added lines, 7 files, 3 modules
 
 - `src/piitier/datagen/template.py` (parser), `values.py` (generator registry) and `__main__.py`
   (subcommands), from PII-2-a and PII-2-d. The packaged templates from PII-2-d serve as prompt examples.
-- Prior art for loopback-only Ollama: `trasti/complaint-classifier/scripts/scan_pii.py`
+- Prior art for loopback-only Ollama: an earlier private script `scan_pii.py`
   `private_ollama_listener` (lines 38–43). Its server-bind check is deliberately **not** carried over (see Out).
   Read it for behaviour. Do not copy code from that repository.
 - New: `src/piitier/datagen/llm.py`, `src/piitier/datagen/prompts/*.txt` (8 files),

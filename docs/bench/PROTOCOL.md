@@ -3,18 +3,18 @@
 Version: 1.0 · Status: active
 
 This document defines the metrics, split roles, quality gates, and reporting rules
-for all benchmark runs on PL-PII-Bench.  Every published number **must** follow
+for all benchmark runs on PL-PII-Bench. Every published number **must** follow
 these rules; non-conforming runs may not appear in model cards or release notes.
 
 ---
 
-## Metric Definitions
+## Metric definitions
 
 All metrics are computed span-by-span on character offsets `[start, end)`.
 Gold spans come from the benchmark annotations; predicted spans come from
 the system under test.
 
-### Entity Precision, Recall, F1
+### Entity precision, recall, F1
 
 Two match modes are defined:
 
@@ -37,20 +37,20 @@ F1           = 2·TP / (2·TP + FP + FN)  [undefined when 2·TP + FP + FN = 0]
 
 Both strict and partial variants are reported for every run.
 
-### Risk-Weighted Recall
+### Risk-weighted recall
 
 Entities are assigned to risk groups with the following weights (from `docs/TAXONOMY.md`):
 
-| Grupa | Waga |
+| Group | Weight |
 |---|---|
-| Identyfikatory państwowe | 1.0 |
-| Finanse | 1.0 |
-| Ubezpieczenia | 0.9 |
-| Kontakt i lokalizacja | 0.8 |
-| Zdrowie — art. 9 RODO | 0.8 |
-| Identyfikacja osoby | 0.6 |
+| State identifiers | 1.0 |
+| Finance | 1.0 |
+| Insurance | 0.9 |
+| Contact and location | 0.8 |
+| Health — Art. 9 GDPR | 0.8 |
+| Personal identification | 0.6 |
 
-For each document, let `w(g)` be the weight of gold span `g`.  A gold span
+For each document, let `w(g)` be the weight of gold span `g`. A gold span
 is *matched* when there is a strict-match predicted span for it.
 
 ```
@@ -59,7 +59,7 @@ RWR = Σ w(g) [matched g] / Σ w(g) [all g]
 [undefined when the corpus contains no gold spans]
 ```
 
-### Leak Rate
+### Leak rate
 
 Two leak-rate metrics are reported:
 
@@ -98,12 +98,12 @@ The invariant is `Fidelity = 0` for any correctly-implemented system (output
 differs from input only inside detected `[start, end)` spans).
 
 **Compatibility note:** Reports produced before PII-9 (commits before `8989aa5`)
-computed fidelity against *gold spans* rather than predicted spans.  A legacy
+computed fidelity against *gold spans* rather than predicted spans. A legacy
 report with non-zero fidelity may reflect characters changed outside *gold* spans
 rather than outside *predicted* spans, and is not directly comparable with
 post-PII-9 reports under the `fidelity-zero` gate.
 
-### Numbering Consistency
+### Numbering consistency
 
 For every label marked `numbered` in `docs/TAXONOMY.md`:
 
@@ -114,7 +114,7 @@ For every label marked `numbered` in `docs/TAXONOMY.md`:
 
 ---
 
-## Split Roles
+## Split roles
 
 | Split | Rola | Dozwolone operacje |
 |---|---|---|
@@ -129,10 +129,10 @@ threshold calibration, or prompt examples.
 
 ---
 
-## Quality Gates
+## Quality gates
 
 The following gates define minimum standards for a system to be considered
-production-ready.  Each gate is evaluated on the designated split.
+production-ready. Each gate is evaluated on the designated split.
 
 | Gate name | Metric | Threshold | Split | Condition |
 |---|---|---|---|---|
@@ -143,19 +143,19 @@ production-ready.  Each gate is evaluated on the designated split.
 
 ---
 
-## Reporting Rules
+## Reporting rules
 
-1. **Zero denominator = undefined, never PASS.**  When a metric's denominator
+1. **Zero denominator = undefined, never PASS.** When a metric's denominator
    is zero (no predictions, no gold spans, or no documents with direct identifiers),
-   the metric is reported as `undefined (0/0)` in Markdown and `null` in JSON.
+   report the metric as `undefined (0/0)` in Markdown and `null` in JSON.
    Gate evaluators **MUST** treat an undefined metric as neither PASS nor FAIL;
-   the gate status is `SKIP` (not enough data).  An undefined metric **never**
+   the gate status is `SKIP` (not enough data). An undefined metric **never**
    satisfies a gate condition.
 
    *Implementation gap (PII-9):* The INT8 gate (`training/export_onnx.py`,
    `exceeds_tolerance`) computes `fp32_recall − int8_recall` using floats that
    are `0.0` on a zero-gold corpus, so the delta is `0` and the gate passes
-   silently.  Future gate implementations must check the denominator first and
+   silently. Future gate implementations must check the denominator first and
    refuse to evaluate when either side is undefined.
 
 2. **Every report must include provenance metadata:**
@@ -163,16 +163,16 @@ production-ready.  Each gate is evaluated on the designated split.
    - SHA-256 digest of every benchmark file read, keyed by filename.
    - Document count, split name, and detection threshold.
 
-3. **Counts alongside rates.**  Every precision/recall/F1 section in a report
+3. **Counts alongside rates.** Every precision/recall/F1 section in a report
    must include the underlying TP, FP, FN counts at least once per section
    (e.g. alongside the Precision line) so that readers can verify the arithmetic
    and aggregate across reports.
 
-4. **`bench test` is final.**  Numbers from `bench test` are the authoritative
-   numbers for a model version.  They must not be cherry-picked or re-run after
+4. **`bench test` is final.** Numbers from `bench test` are the authoritative
+   numbers for a model version. They must not be cherry-picked or re-run after
    seeing them.
 
-5. **Control systems bound the range.**  Every published evaluation should include
+5. **Control systems bound the range.** Every published evaluation should include
    or reference runs of the `none` (zero spans) and `mask-all` (every non-whitespace
    word masked as OSOBA) control baselines so that readers can interpret the scale
    of the reported metrics.

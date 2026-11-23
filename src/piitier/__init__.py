@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Callable, Protocol, runtime_checkable
 
 from piitier import rules as _rules
+from piitier.coref import Coreferencer as _Coreferencer
 from piitier.csvskip import filter_spans, parse_csv_field_ranges, plan_skips, sniff_delimiter
 from piitier.fusion import fuse as _fuse
 from piitier.render import mask as _render_mask
 from piitier.spans import Span
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = ["Anonymizer", "Span", "__version__", "detect", "mask", "mask_csv"]
 
@@ -83,10 +84,17 @@ class Anonymizer:
     Parameters
     ----------
     model:
-        Path to a local HuggingFace checkpoint directory.  Mutually exclusive
-        with *predictor*; providing both or neither raises ``ValueError``
-        **before** any heavy import (transformers / torch are never touched if
-        the constructor raises).
+        Local checkpoint directory path **or** a Hugging Face Hub repo id of
+        the form ``"owner/name"``.  Resolved via
+        :func:`piitier.ner.hub.resolve_checkpoint`; a local directory always
+        wins over an id with the same string value.  Mutually exclusive with
+        *predictor*; providing both or neither raises ``ValueError`` **before**
+        any heavy import (transformers / torch are never touched if the
+        constructor raises).
+    revision:
+        Branch, tag, or commit hash passed to
+        ``huggingface_hub.snapshot_download`` when *model* is a Hub repo id.
+        Ignored for local paths.
     predictor:
         An object satisfying the ``predict(text: str) -> list[Span]`` protocol.
         Use this in tests or when you already hold a loaded predictor.
@@ -104,6 +112,7 @@ class Anonymizer:
         self,
         model: str | Path | None = None,
         *,
+        revision: str | None = None,
         predictor: _PredictorProtocol | None = None,
         threshold: float = 0.0,
         device: str = "cpu",
@@ -125,20 +134,23 @@ class Anonymizer:
         if predictor is not None:
             self._predictor: _PredictorProtocol = predictor
         else:
-            # Check model path before importing heavy deps so that a missing
-            # checkpoint raises ValueError rather than triggering an HF Hub
-            # lookup (finding 5 / UC-110).
+            # Resolve to a local directory (local path or Hub download).
+            # resolve_checkpoint raises ValueError for missing/invalid models
+            # so that torch/transformers are never imported on error (UC-110).
             assert model is not None  # guaranteed by the checks above
-            model_path = Path(model)
-            if not model_path.exists():
-                raise ValueError(f"model checkpoint not found: {model_path}")
+            from piitier.ner.hub import resolve_checkpoint
+
+            model_path = resolve_checkpoint(model, revision)
 
             # Deferred heavy import: transformers and torch are loaded here.
             from piitier.ner import NerPredictor
 
             # Pass threshold=0.0 so NerPredictor returns all spans;
             # fusion applies the threshold inside fuse().
-            self._predictor = NerPredictor(checkpoint=model, threshold=0.0, device=device)
+            self._predictor = NerPredictor(checkpoint=model_path, threshold=0.0, device=device)
+
+        # One Coreferencer (one Morfeusz instance) per Anonymizer (PII-6-b).
+        self._coref = _Coreferencer()
 
     def detect(self, text: str) -> list[Span]:
         """Return fused PII spans for *text* (rules + NER).
@@ -154,8 +166,38 @@ class Anonymizer:
         ner_spans: list[Span] = self._predictor.predict(text)
         return _fuse(rule_spans, ner_spans, threshold=self.threshold)
 
+    def assign(self, text: str, spans: list[Span]) -> dict[tuple[int, int], int]:
+        """Return the entity-index mapping for *spans* produced by coreference.
+
+        Only numbered-label spans appear in the result.
+
+        Args:
+            text: The original input string (needed to read span tokens).
+            spans: Non-overlapping spans (e.g. from :meth:`detect`).
+
+        Returns:
+            Mapping from ``(start, end)`` to entity index (1-based, per label).
+        """
+        return self._coref.assign(text, spans)
+
+    def render(self, text: str, spans: list[Span]) -> str:
+        """Return *text* with numbered placeholders, applying coreference numbering.
+
+        Args:
+            text: The original input string.
+            spans: Non-overlapping spans (e.g. from :meth:`detect`).
+
+        Returns:
+            The anonymised string with numbered placeholders (``[OSOBA_1]`` etc.).
+        """
+        numbering = self._coref.assign(text, spans)
+        return _render_mask(text, spans, numbering)
+
     def mask(self, text: str) -> str:
         """Return *text* with every fused PII span replaced by its placeholder.
+
+        Numbered labels receive a coreference-assigned index suffix
+        (``[OSOBA_1]``, ``[ADRES_2]``, …).
 
         Args:
             text: Input text to anonymise.
@@ -164,4 +206,6 @@ class Anonymizer:
             The anonymised string.  Characters outside detected spans are
             unchanged.
         """
-        return _render_mask(text, self.detect(text))
+        spans = self.detect(text)
+        numbering = self._coref.assign(text, spans)
+        return _render_mask(text, spans, numbering)

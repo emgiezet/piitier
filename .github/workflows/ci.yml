@@ -6,7 +6,8 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
+    tags: ['v*']
 
 permissions:
   contents: read
@@ -33,3 +34,34 @@ jobs:
         env:
           HF_HUB_OFFLINE: "1"
         run: uv run pytest -q -m "not integration"
+
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Build wheel
+        run: uv build
+      - name: Smoke-install wheel
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+      - name: Version smoke
+        run: /tmp/smoke/bin/piitier --version
+      - name: Rules-only smoke (PESEL detection)
+        run: |
+          echo "PESEL 44051401359" > /tmp/smoke_input.txt
+          /tmp/smoke/bin/piitier mask /tmp/smoke_input.txt | grep -q '\[PESEL\]'
+      - name: Upload dist
+        # Account artifact storage quota can be exhausted; the wheel is a convenience, not a gate.
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7

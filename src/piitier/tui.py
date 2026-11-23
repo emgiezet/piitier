@@ -6,13 +6,23 @@ import sys
 from pathlib import Path
 from typing import Callable, ClassVar, cast
 
+from pypdf.errors import PdfReadError
 from rich.cells import cell_len
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Input, RichLog, Static
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    RichLog,
+    Static,
+)
 
 from piitier import Anonymizer
 from piitier.csvskip import (
@@ -22,9 +32,114 @@ from piitier.csvskip import (
     plan_skips,
     sniff_delimiter,
 )
-from piitier.loaders import PdfNoTextError, get_loader
+from piitier.jsonmask import detect_json
+from piitier.loaders import (
+    IncorrectPasswordError,
+    PasswordRequiredError,
+    PdfNoTextError,
+    get_loader,
+    load_with_password,
+)
 from piitier.render import mask as render_mask
 from piitier.spans import Span
+
+
+class PasswordPromptApp(App[str | None]):
+    """Short-lived interactive password prompt application for encrypted PDFs."""
+
+    BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
+        Binding("ctrl+c", "interrupt", "Interrupt", show=False, priority=True),
+    ]
+
+    CSS = """
+    Screen {
+        align: center middle;
+    }
+    #dialog {
+        width: 50;
+        height: auto;
+        border: solid $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+    #filename {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #status {
+        margin-bottom: 1;
+    }
+    #buttons {
+        layout: horizontal;
+        align: center middle;
+        margin-top: 1;
+    }
+    Button {
+        margin: 0 1;
+    }
+    """
+
+    def __init__(self, path: Path, attempt: int, incorrect: bool) -> None:
+        super().__init__()
+        self.pdf_path = path
+        self.attempt = attempt
+        self.incorrect = incorrect
+        self.interrupted = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Static(f"Plik: {self.pdf_path.name}", id="filename", markup=False)
+            status_text = (
+                f"Błędne hasło (próba {self.attempt}/3)"
+                if self.incorrect
+                else f"Podaj hasło do pliku (próba {self.attempt}/3)"
+            )
+            yield Static(status_text, id="status")
+            yield Input(password=True, placeholder="Hasło", id="password-input")
+            with Horizontal(id="buttons"):
+                yield Button("Unlock", id="unlock", variant="primary")
+                yield Button("Cancel", id="cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#password-input", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "unlock":
+            self._submit()
+        elif event.button.id == "cancel":
+            self._cancel()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._submit()
+
+    def key_escape(self) -> None:
+        self._cancel()
+
+    def action_interrupt(self) -> None:
+        self.interrupted = True
+        self._cancel()
+
+    def _submit(self) -> None:
+        inp = self.query_one("#password-input", Input)
+        val = inp.value
+        inp.value = ""
+        self.exit(val)
+
+    def _cancel(self) -> None:
+        inp = self.query_one("#password-input", Input)
+        inp.value = ""
+        self.exit(None)
+
+
+def tui_password_prompt(path: Path, attempt: int, incorrect: bool) -> str | None:
+    """Prompt interactively via Textual when stdin and stdout are terminals."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return None
+    app = PasswordPromptApp(path, attempt, incorrect)
+    value = app.run()
+    if app.interrupted:
+        raise KeyboardInterrupt
+    return value
 
 
 def _column_after(fragment: str, column: int) -> int:
@@ -36,9 +151,14 @@ def _column_after(fragment: str, column: int) -> int:
 
 
 def build_diff(
-    text: str, spans: list[Span], active: int
+    text: str,
+    spans: list[Span],
+    active: int,
+    numbering: dict[tuple[int, int], int] | None = None,
 ) -> tuple[Text, Text, list[tuple[int, int, int, int]]]:
     """Render both sides and record corresponding line/column targets."""
+    from piitier.render import _resolve_placeholder
+
     before = Text()
     after = Text()
     lines: list[tuple[int, int, int, int]] = []
@@ -54,7 +174,15 @@ def build_diff(
         lines.append((before_line, after_line, before_col, after_col))
 
         original = text[span.start : span.end]
-        replacement = span.label.placeholder
+        if numbering is not None and span.label.numbered:
+            idx = numbering.get((span.start, span.end))
+            replacement = (
+                _resolve_placeholder(span.label.placeholder, idx)
+                if idx is not None
+                else span.label.placeholder
+            )
+        else:
+            replacement = span.label.placeholder
         before.append(original, style="bold white on red" if index == active else "bold red")
         after.append(replacement, style="bold black on green" if index == active else "bold green")
         before_line += original.count("\n")
@@ -127,6 +255,8 @@ class CsvSelectionScreen(Screen[None]):
             app.spans = sorted(
                 filter_spans(app.detector(app.text), ranges), key=lambda span: span.start
             )
+            if app._numbering_fn is not None:
+                app._numbering = app._numbering_fn(app.text, app.spans)
         except (OSError, ValueError, ImportError):
             self.query_one("#csv-error", Static).update("Nie udało się uruchomić anonimizacji")
             return
@@ -161,7 +291,12 @@ class AnonymizationDiffApp(App[None]):
         Binding("down", "next_change", "Następna", priority=True),
         Binding("right", "next_change", "Następna", priority=True),
         Binding("q", "quit", "Wyjście"),
+        Binding("ctrl+c", "interrupt", "Interrupt", show=False, priority=True),
     ]
+
+    def action_interrupt(self) -> None:
+        self.interrupted = True
+        self.exit()
 
     def __init__(
         self,
@@ -170,13 +305,18 @@ class AnonymizationDiffApp(App[None]):
         *,
         csv_path: Path | None = None,
         detector: Callable[[str], list[Span]] | None = None,
+        numbering: dict[tuple[int, int], int] | None = None,
+        numbering_fn: Callable[[str, list[Span]], dict[tuple[int, int], int]] | None = None,
     ) -> None:
         super().__init__()
+        self.interrupted = False
         self.text = text
         self.spans = sorted(spans, key=lambda span: span.start)
         self.active = 0
         self.csv_path = csv_path
         self.detector = detector
+        self._numbering = numbering
+        self._numbering_fn = numbering_fn
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -240,7 +380,7 @@ class AnonymizationDiffApp(App[None]):
                 raw.decode(encoding)
             except UnicodeDecodeError:
                 encoding = "cp1250"
-            data = render_mask(self.text, self.spans).encode(encoding)
+            data = render_mask(self.text, self.spans, self._numbering).encode(encoding)
             with target.open("xb") as output:
                 output.write(data)
         except FileExistsError:
@@ -251,7 +391,7 @@ class AnonymizationDiffApp(App[None]):
             status.update("Zapisano plik CSV")
 
     def _show_selection(self) -> None:
-        before, after, lines = build_diff(self.text, self.spans, self.active)
+        before, after, lines = build_diff(self.text, self.spans, self.active, self._numbering)
         before_pane = self.query_one("#before", RichLog)
         after_pane = self.query_one("#after", RichLog)
         before_pane.clear().write(before)
@@ -282,11 +422,14 @@ class AnonymizationDiffApp(App[None]):
         )
 
 
-def compare_file(input_path: Path, model: Path, threshold: float, device: str) -> int:
+def compare_file(
+    input_path: Path,
+    model: str | Path,
+    threshold: float,
+    device: str,
+    revision: str | None = None,
+) -> int:
     """Detect once, display locally, and keep document text out of errors/output."""
-    if not model.is_dir():
-        print(f"model not found: {model}", file=sys.stderr)
-        return 2
     if not (0.0 <= threshold <= 1.0):
         print("invalid threshold (expected a number in [0, 1])", file=sys.stderr)
         return 2
@@ -298,21 +441,57 @@ def compare_file(input_path: Path, model: Path, threshold: float, device: str) -
         print(f"unsupported file type: {input_path.suffix}", file=sys.stderr)
         return 2
     try:
-        text = loader(input_path)
+        text = load_with_password(input_path, prompt=tui_password_prompt)
     except PdfNoTextError:
         print("PDF has no text layer", file=sys.stderr)
         return 3
-    except (OSError, ValueError, UnicodeError):
+    except PdfReadError:
+        print(f"could not read PDF: {input_path}", file=sys.stderr)
+        return 2
+    except (PasswordRequiredError, IncorrectPasswordError) as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    except UnicodeDecodeError:
+        print(f"cannot decode: {input_path}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        return 130
+    except (OSError, ValueError):
         print(f"could not read: {input_path}", file=sys.stderr)
         return 2
+
     try:
-        anonymizer = Anonymizer(model=model, threshold=threshold, device=device)
-        if input_path.suffix.lower() == ".csv":
-            app = AnonymizationDiffApp(text, [], csv_path=input_path, detector=anonymizer.detect)
+        anonymizer = Anonymizer(model=model, revision=revision, threshold=threshold, device=device)
+        suffix = input_path.suffix.lower()
+        if suffix == ".csv":
+            app = AnonymizationDiffApp(
+                text,
+                [],
+                csv_path=input_path,
+                detector=anonymizer.detect,
+                numbering_fn=anonymizer.assign,
+            )
+        elif suffix == ".json":
+            spans, numbering = detect_json(
+                text,
+                detector=anonymizer.detect,
+                numbering_fn=anonymizer.assign,
+            )
+            app = AnonymizationDiffApp(text, spans, numbering=numbering)
         else:
-            app = AnonymizationDiffApp(text, anonymizer.detect(text))
+            spans = anonymizer.detect(text)
+            numbering = anonymizer.assign(text, spans)
+            app = AnonymizationDiffApp(text, spans, numbering=numbering)
     except (OSError, ValueError, ImportError):
-        print(f"model error: {model}", file=sys.stderr)
+        print(f"model error: could not load or run: {model}", file=sys.stderr)
         return 2
-    app.run()
+    except KeyboardInterrupt:
+        return 130
+
+    try:
+        app.run()
+        if app.interrupted:
+            return 130
+    except KeyboardInterrupt:
+        return 130
     return 0

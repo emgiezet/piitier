@@ -297,3 +297,301 @@ def test_uc27_luhn_invalid_15_digit_no_match() -> None:
     spans = find("111111111111111")
     # Should not find any payment card (fails Luhn)
     assert not any(s.label is Label.NR_KARTY for s in spans)
+
+
+# ---------------------------------------------------------------------------
+# Context-boundary: false-positive suppression (FP-1, FP-2, FP-3, FP-4)
+# ---------------------------------------------------------------------------
+
+
+def test_fp1_decimal_16digit_not_detected() -> None:
+    """FP-1: Luhn-valid 16-digit run inside a float literal is not detected.
+
+    '0.8888888888888888' contains 16 consecutive 8s that are Luhn-valid; the run
+    is directly preceded by digit + '.' so the context-boundary guard rejects it.
+    """
+    # 8888888888888888 passes Luhn, but is inside a float
+    spans = [s for s in find("0.8888888888888888") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp2_decimal_17digit_not_detected() -> None:
+    """FP-2: Luhn-valid 17-digit run inside a float literal is not detected.
+
+    '0.28571428571428575' (a benchmark F1 score) contains a 17-digit run preceded
+    by digit + '.'; context boundary rejects it.
+    """
+    spans = [s for s in find("0.28571428571428575") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp3_float_in_json_context_not_detected() -> None:
+    """FP-3: Float metric embedded in JSON is not detected."""
+    spans = [s for s in find('  "f1": 0.28571428571428575,') if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp4_hex_token_adjacent_not_detected() -> None:
+    """FP-4: Luhn-valid digit run surrounded by hex letters is not detected.
+
+    'cc4111111111111111ff' embeds the known Visa test card between hex letters; the
+    letter-adjacency guard on both sides rejects it.
+    """
+    spans = [s for s in find("cc4111111111111111ff") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp4b_hex_token_left_adjacent_not_detected() -> None:
+    """FP-4b: Digit run preceded by a letter (only) is not detected."""
+    spans = [s for s in find("abc4111111111111111") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_fp4c_hex_token_right_adjacent_not_detected() -> None:
+    """FP-4c: Digit run followed only by hex letters is not detected."""
+    spans = [s for s in find("4111111111111111ff") if s.label is Label.NR_KARTY]
+    assert len(spans) == 0
+
+
+def test_card_followed_by_sentence_period_detected() -> None:
+    """Context-boundary: card at end of sentence ('4111111111111111.') is still detected.
+
+    A trailing '.' not followed by a digit is a sentence period, not a decimal; the
+    right-side guard '(?![.,]\\d)' does not fire.
+    """
+    spans = find("Karta: 4111111111111111.")
+    nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
+    assert len(nr_karty) == 1
+    assert nr_karty[0].status == "valid"
+
+
+def test_spaced_card_still_detected_after_boundary_fix() -> None:
+    """Context-boundary: space-separated format '4111 1111 1111 1111' is still detected."""
+    spans = find("4111 1111 1111 1111")
+    nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
+    assert len(nr_karty) == 1
+    assert nr_karty[0].status == "valid"
+
+
+def test_dashed_card_still_detected_after_boundary_fix() -> None:
+    """Context-boundary: dash-separated format '4111-1111-1111-1111' is still detected."""
+    spans = find("4111-1111-1111-1111")
+    nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
+    assert len(nr_karty) == 1
+    assert nr_karty[0].status == "valid"
+
+
+def test_suspect_in_normal_context_not_dropped_after_boundary_fix() -> None:
+    """Context-boundary: Luhn-invalid 16-digit run in plain text is still reported as suspect.
+
+    The context-boundary guards do not suppress suspect spans; the invariant that a
+    checksum-invalid candidate in a 'card-shaped' context is never silently dropped holds.
+    """
+    spans = find(f"numer: {VISA_WRONG_CHECK} koniec")
+    nr_karty = [s for s in spans if s.label is Label.NR_KARTY]
+    assert len(nr_karty) == 1
+    assert nr_karty[0].status == "suspect"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Jan,4111111111111111,100", "Jan,[NR_KARTY],100"),
+        ("100,4111111111111111", "100,[NR_KARTY]"),
+        ("4111111111111111,100", "[NR_KARTY],100"),
+        ("Jan;4111111111111111;100", "Jan;[NR_KARTY];100"),
+        ("karta 4111111111111111", "karta [NR_KARTY]"),
+    ],
+)
+def test_uc218_mask_preserves_delimiter_fields(text: str, expected: str) -> None:
+    assert piitier.mask(text) == expected
+
+
+def test_uc219_invalid_comma_card_is_suspect_and_masked() -> None:
+    text = "100,4111111111111112,200"
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].label, spans[0].status) == (
+        4,
+        20,
+        Label.NR_KARTY,
+        "suspect",
+    )
+    assert piitier.mask(text) == "100,[NR_KARTY],200"
+
+
+@pytest.mark.parametrize(
+    ("prefix", "suffix"),
+    [("karta", " wydana"), ("", "xyz"), ("płatność", "zakończona"), ("id_", "_ref")],
+)
+@pytest.mark.parametrize("card", [VISA_VALID, VISA_WRONG_CHECK])
+def test_uc220_nonhex_word_glued_card_is_suspect(prefix: str, suffix: str, card: str) -> None:
+    text = prefix + card + suffix
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (
+        len(prefix),
+        len(prefix) + len(card),
+        "suspect",
+    )
+    assert piitier.mask(text) == prefix + "[NR_KARTY]" + suffix
+
+
+@pytest.mark.parametrize("card", ["4111 1111 1111 1111", "4111-1111-1111-1112"])
+def test_uc220_grouped_card_is_not_a_hex_fragment(card: str) -> None:
+    text = f"abc{card}ff"
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (3, 3 + len(card), "suspect")
+    assert piitier.mask(text) == "abc[NR_KARTY]ff"
+
+
+@pytest.mark.parametrize("card", [VISA_VALID, VISA_WRONG_CHECK])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_uc221_mask_csv_preserves_neighboring_cells(card: str, newline: str) -> None:
+    text = f"imie,karta,kwota{newline}Jan,{card},100{newline}"
+    assert piitier.mask_csv(text) == f"imie,karta,kwota{newline}Jan,[NR_KARTY],100{newline}"
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_uc221_14_digit_csv_preserves_surrounding_text(newline: str) -> None:
+    text = f"id,kwota{newline}30569309025904,100{newline}"
+    assert piitier.mask_csv(text) == f"id,kwota{newline}[REGON],100{newline}"
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        "4111 1111 1111 1111",
+        "4111-1111-1111-1111",
+        "4111 1111 1111 1112",
+        "4111-1111-1111-1112",
+    ],
+)
+def test_uc222_grouped_comma_card_keeps_exact_span(card: str) -> None:
+    text = f"100,{card},200"
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (
+        4,
+        4 + len(card),
+        "suspect",
+    )
+    assert text[spans[0].start : spans[0].end] == card
+    assert piitier.mask(text) == "100,[NR_KARTY],200"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "0.9937050359712231",
+        "0.8888888888888888",
+        '"f1": 0.28571428571428575,',
+        "4111111111111111.25",
+        "-0.4111111111111112",
+    ],
+)
+def test_uc223_dot_decimal_fragments_stay_undetected(text: str) -> None:
+    assert find(text) == []
+    assert piitier.mask(text) == text
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("4111111111111111.", "[NR_KARTY]."),
+        ("100.4111 1111 1111 1111.25", "100.[NR_KARTY].25"),
+        ("100.4111-1111-1111-1111.25", "100.[NR_KARTY].25"),
+    ],
+)
+def test_uc223_nondecimal_card_punctuation_is_not_suppressed(text: str, expected: str) -> None:
+    assert len(find(text)) == 1
+    assert piitier.mask(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "cc4111111111111111ff",
+        "abc4111111111111111",
+        "4111111111111111ff",
+        "AB4111111111111111EF",
+        "0xabc4111111111111111ff",
+    ],
+)
+def test_uc224_hex_tokens_stay_undetected(text: str) -> None:
+    assert find(text) == []
+    assert not any(span.label is Label.NR_KARTY for span in piitier.detect(text))
+
+
+@pytest.mark.parametrize("card", [AMEX_VALID, DINERS_VALID])
+@pytest.mark.parametrize(("prefix", "suffix"), [("100,", ",200"), ("karta", " wydana")])
+def test_uc225_other_supported_lengths_keep_context_recall(
+    card: str, prefix: str, suffix: str
+) -> None:
+    text = prefix + card + suffix
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (
+        len(prefix),
+        len(prefix) + len(card),
+        "suspect",
+    )
+
+
+@pytest.mark.parametrize(
+    ("card", "prefix", "suffix", "expected"),
+    [
+        (AMEX_VALID, "100,", ",200", "100,[NR_KARTY],200"),
+        (AMEX_VALID, "karta", " wydana", "karta[NR_KARTY] wydana"),
+        (DINERS_VALID, "100,", ",200", "100,[REGON],200"),
+        (DINERS_VALID, "karta", " wydana", "karta[REGON] wydana"),
+    ],
+)
+def test_uc225_other_supported_lengths_mask_with_fusion(
+    card: str, prefix: str, suffix: str, expected: str
+) -> None:
+    assert piitier.mask(prefix + card + suffix) == expected
+
+
+# ---------------------------------------------------------------------------
+# QA gap coverage for PII-30
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("100,4111111111111111", "100,[NR_KARTY]"),
+        ("4111111111111111,100", "[NR_KARTY],100"),
+    ],
+)
+def test_uc218_comma_on_one_side_makes_valid_card_suspect(text: str, expected: str) -> None:
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (
+        text.index(VISA_VALID),
+        text.index(VISA_VALID) + 16,
+        "suspect",
+    )
+    assert piitier.mask(text) == expected
+
+
+def test_uc220_word_glued_both_sides_nonhex_is_suspect_and_masked() -> None:
+    text = "karta4111111111111111wydana"
+    spans = find(text)
+    assert len(spans) == 1
+    assert (spans[0].start, spans[0].end, spans[0].status) == (5, 21, "suspect")
+    assert piitier.mask(text) == "karta[NR_KARTY]wydana"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "4111111111111111.2",
+        "0.4111111111111112",
+    ],
+)
+def test_uc223_dot_decimal_fragments_with_single_digit_tail(text: str) -> None:
+    assert find(text) == []
+    assert piitier.mask(text) == text

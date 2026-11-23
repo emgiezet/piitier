@@ -103,6 +103,7 @@ def decode_spans(
     probs: list[list[float]],
     id2label: dict[int, str],
     threshold: float = 0.0,
+    word_ids: list[int | None] | None = None,
 ) -> list[Span]:
     """Decode token probability distributions into entity Spans.
 
@@ -114,6 +115,17 @@ def decode_spans(
     (B- tag or orphan I- treated as B-), so that the returned Span.start always points
     at the first non-whitespace character of the entity.  An I- tag that follows O (or a
     different label) is treated as a new B- rather than being silently dropped.
+
+    Word-level label consistency is enforced so that a single Polish word (e.g.
+    ``Wiśniewska``) is never split across two entity types by the subword tokeniser.
+    When *word_ids* is provided it is used as the primary word-boundary signal.  When
+    *word_ids* is ``None`` (default), the fallback rule is applied: a subtoken is treated
+    as a continuation of the previous word when its offset starts exactly where the
+    previous content token ended **and** both the last character of the previous token and
+    the first character of the current token are alphabetic.  This correctly captures
+    alphabetic subword splits (``Wiśniew``→``ska``) while leaving punctuation and numeric
+    tokens as independent words.  In both cases only the first subtoken's score is used
+    for threshold filtering; continuation subtokens merely extend the span boundary.
     """
     spans: list[Span] = []
 
@@ -151,8 +163,13 @@ def decode_spans(
         current_end = None
         current_scores = []
 
-    for (tok_start, tok_end), token_probs in zip(offset_mapping, probs):
+    # Tracks state for word-level continuity detection.
+    prev_word_id: int | None = None  # used when word_ids is provided
+    prev_content_end: int | None = None  # end char of last non-skipped content token
+
+    for i, ((tok_start, tok_end), token_probs) in enumerate(zip(offset_mapping, probs)):
         if tok_start == 0 and tok_end == 0:
+            prev_word_id = None
             continue
         if tok_start >= tok_end:
             continue
@@ -163,6 +180,44 @@ def decode_spans(
         if not token_probs:
             flush_entity()
             continue
+
+        # --- Word-level label consistency ---
+        # Determine whether this is a continuation subtoken of the current word.
+        # Tracking state (prev_word_id, prev_content_end) is updated regardless of
+        # entity state so the first subtoken is always registered.
+        # The continuation action (skip re-evaluation, extend span boundary) is taken
+        # only when an entity is already active.  Without this guard an adjacent alpha
+        # subtoken that follows an O-predicted first subtoken would be silently
+        # swallowed instead of being treated as an orphan I- start (UC-97 behaviour).
+        is_continuation = False
+        if word_ids is not None and i < len(word_ids):
+            # Primary path: tokenizer-supplied word ids.
+            cur_word_id = word_ids[i]
+            if cur_word_id is None:
+                prev_word_id = None
+            elif cur_word_id == prev_word_id:
+                is_continuation = True
+            else:
+                prev_word_id = cur_word_id
+        elif (
+            prev_content_end is not None
+            and tok_start == prev_content_end
+            and tok_start > 0
+            and text[tok_start - 1].isalpha()
+            and text[tok_start].isalpha()
+        ):
+            # Fallback: offset adjacency with alphabetic context.  Catches subword
+            # splits of Polish names (Wiśniew+ska) without extending numeric or
+            # punctuation tokens (44051401359+. or Kowalski+,).
+            is_continuation = True
+
+        prev_content_end = tok_end  # update unconditionally for next iteration
+
+        if is_continuation and current_label is not None:
+            # Extend the active span to cover this subtoken; skip label re-evaluation.
+            current_end = tok_end
+            continue
+        # --- end word-level consistency ---
 
         best_id = max(range(len(token_probs)), key=lambda idx: token_probs[idx])
         score = token_probs[best_id]

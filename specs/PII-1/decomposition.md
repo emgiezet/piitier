@@ -1,7 +1,7 @@
 # Decomposition — PII-1
 
 Source: `specs/briefs/polish-pii-anonymizer.md` (Decisions, third bullet), refined against the author's
-prior script `/home/mgz/workspace/trasti/complaint-classifier/scripts/scan_pii.py`. No `PII-1/spec.md`
+prior script `scan_pii.py` (private). No `PII-1/spec.md`
 was ever written; this plan replaces it.
 
 Estimate: ~2200 added lines (≈ 400 of them `uv.lock`) · ~32 files · ~12 modules (budget 400/15/3)

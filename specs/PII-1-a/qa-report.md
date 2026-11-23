@@ -21,7 +21,7 @@ Covered: 6/6 UCs automated (UC-1 integration, UC-2–6 unit) · 0 manual · 0 fa
 ```
 ============================= test session starts ==============================
 platform linux -- Python 3.13.13, pytest-9.1.1, pluggy-1.7.0
-rootdir: /home/mgz/workspace/.aisdlc-worktrees/piitier-pii-1-a-20261020-114700-8462
+rootdir: <worktree>
 configfile: pyproject.toml
 testpaths: tests
 plugins: hypothesis-6.170.5
@@ -38,7 +38,7 @@ tests/test_spans.py .....................                                [100%]
 ```
 ============================= test session starts ==============================
 platform linux -- Python 3.13.13, pytest-9.1.1, pluggy-1.7.0
-rootdir: /home/mgz/workspace/.aisdlc-worktrees/piitier-pii-1-a-20261020-114700-8462
+rootdir: <worktree>
 configfile: pyproject.toml
 testpaths: tests
 plugins: hypothesis-6.170.5

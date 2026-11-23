@@ -205,3 +205,42 @@ def test_uc13_fidelity_zero_pesels_returns_input() -> None:
     """UC-13: text with no PESELs is returned byte-for-byte identical."""
     text = "Wniosek o odszkodowanie nr AV-2024-001. Kwota: 1500 PLN."
     assert piitier.mask(text) == text
+
+
+# ---------------------------------------------------------------------------
+# Numbering parameter tests (PII-6-b)
+# ---------------------------------------------------------------------------
+
+
+def test_render_mask_numbering_replaces_n_suffix() -> None:
+    """mask() with numbering replaces _n suffix in numbered-label placeholder."""
+    text = "Jan Kowalski szkodę"
+    span = Span(0, 12, Label.OSOBA, "model:ner", 1.0, "valid")
+    result = render_mask(text, [span], numbering={(0, 12): 1})
+    assert result == "[OSOBA_1] szkodę"
+
+
+def test_render_mask_numbering_distinct_indices() -> None:
+    """mask() with numbering assigns different indices to different entities."""
+    text = "Jan Kowalski Anna Nowak"
+    s1 = Span(0, 12, Label.OSOBA, "model:ner", 1.0, "valid")
+    s2 = Span(13, 23, Label.OSOBA, "model:ner", 1.0, "valid")
+    result = render_mask(text, [s1, s2], numbering={(0, 12): 1, (13, 23): 2})
+    assert result == "[OSOBA_1] [OSOBA_2]"
+
+
+def test_render_mask_numbering_none_unchanged() -> None:
+    """mask() without numbering still emits template placeholder (no _n replacement)."""
+    text = "Jan Kowalski"
+    span = Span(0, 12, Label.OSOBA, "model:ner", 1.0, "valid")
+    result = render_mask(text, [span])
+    assert result == "[OSOBA_n]"
+
+
+def test_render_mask_numbering_unnumbered_label_unaffected() -> None:
+    """mask() with numbering leaves non-numbered labels (PESEL) without an index."""
+    text = "PESEL 90051512340"
+    span = Span(6, 17, Label.PESEL, "rule", 1.0, "valid")
+    # numbering contains an entry but PESEL is not numbered → template placeholder
+    result = render_mask(text, [span], numbering={(6, 17): 1})
+    assert result == "PESEL [PESEL]"

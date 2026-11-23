@@ -4,11 +4,24 @@ build-backend = "hatchling.build"
 
 [project]
 name = "piitier"
-version = "0.1.0"
+readme = "README.md"
+authors = [{ name = "Max Małecki", email = "maxmalecki@gmail.com" }]
+keywords = ["pii", "anonymisation", "gdpr", "polish", "ner"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Text Processing :: Linguistic",
+    "Natural Language :: Polish",
+]
+dynamic = ["version"]
 description = "Polish PII anonymiser for regulated sectors (fintech, insurtech, medtech)"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography==50.0.2",
     "faker==40.43.0",
     "morfeusz2==1.99.15",
     "openpyxl==3.1.5",
@@ -18,8 +31,24 @@ dependencies = [
 
 [project.scripts]
 piitier = "piitier.cli:main"
+
+[project.optional-dependencies]
+ner = ["torch==2.14.1", "transformers==5.20.2"]
+onnx = ["onnxruntime==1.31.0"]
+
+[project.urls]
+Homepage = "https://github.com/emgiezet/piitier"
+Repository = "https://github.com/emgiezet/piitier"
+Issues = "https://github.com/emgiezet/piitier/issues"
+
+[tool.hatch.version]
+path = "src/piitier/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/piitier"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/piitier", "/pyproject.toml", "/README.md", "/CHANGELOG.md", "/LICENSE", "/NOTICE"]
 
 [dependency-groups]
 dev = [

@@ -669,6 +669,27 @@ def test_no_text_pdf_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert result["rejected"].get("unreadable", 0) == 1
 
 
+def test_uc178_encrypted_donor_is_unreadable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import secrets
+
+    from pypdf import PdfWriter
+
+    pdf_dir = tmp_path / "pdf"
+    pdf_dir.mkdir()
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    writer.encrypt(secrets.token_hex(16), algorithm="AES-256")
+    writer.write(pdf_dir / "locked.pdf")
+    monkeypatch.setattr(tz, "_probe_model", lambda *a, **kw: "digest")
+    result = tz.templatize(pdf_dir, tmp_path / "out")
+    assert result == {"pdfs_read": 1, "accepted": 0, "rejected": {"unreadable": 1}}
+    manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
+    assert manifest[-1]["rejected"] == {"unreadable": 1}
+
+
 def test_limit_below_one_rejected(tmp_path: Path) -> None:
     """limit=0 and limit=-1 raise ValueError (#17)."""
     (tmp_path / "a.pdf").write_bytes(b"%PDF-stub")

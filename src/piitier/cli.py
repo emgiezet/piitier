@@ -3,7 +3,7 @@
 Entry points:
 
 - ``piitier mask <path> [-o <out>] [--model <dir>] [--threshold T]``
-  ``[--skip-columns COLS] [--delimiter CHAR]`` reads a .txt, .md, .csv or text-layer .pdf
+  ``[--skip-columns COLS] [--delimiter CHAR]`` reads .txt, .md, .csv, .json or text-layer .pdf
   file and masks PII with ``piitier.mask()`` (rules only, default) or ``piitier.Anonymizer``
   (rules + NER when --model is given). Selected CSV columns remain unmasked.
   Exit 0 on success, 2 on usage/input error, 3 on a PDF with no text layer.
@@ -16,42 +16,69 @@ Entry points:
 
 from __future__ import annotations
 
+import getpass
 import sys
+import warnings
 from argparse import ArgumentParser
 from pathlib import Path
 
 import piitier
 from piitier.csvskip import parse_csv_field_ranges, sniff_delimiter
-from piitier.loaders import PdfNoTextError, get_loader
+from piitier.jsonmask import mask_json
+from piitier.loaders import PdfNoTextError, get_loader, load_with_password
 from piitier.scan import Finding, read_allowlist, scan_file
+
+
+def terminal_password_prompt(path: Path, attempt: int, incorrect: bool) -> str | None:
+    """Read a hidden credential, refusing getpass's echoed-input fallback."""
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return None
+    prefix = "wrong password; " if incorrect else ""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            return getpass.getpass(
+                f"{prefix}password for {path} ({attempt}/3): ",
+                stream=sys.stderr,
+            )
+    except (EOFError, getpass.GetPassWarning):
+        return None
 
 
 def mask_file(
     input_path: Path,
     output_path: Path | None,
-    model: Path | None = None,
+    model: str | None = None,
     threshold: float = 0.0,
     skip_columns: list[str] | None = None,
     delimiter: str | None = None,
+    revision: str | None = None,
+    *,
+    password: str | None = None,
+    password_stdin: bool = False,
 ) -> int:
     """Mask PII in a file and write output.
 
     Args:
         input_path: Path to the input file.
         output_path: Path to the output file (None = stdout).
-        model: Optional path to a local NER checkpoint directory.
+        model: Local checkpoint path or Hugging Face Hub repo id (``owner/name``).
         threshold: Minimum NER score; ignored when model is None.
         skip_columns: CSV header names or 1-based indices to leave unmasked.
         delimiter: Optional single-character CSV delimiter.
+        revision: Hub branch/tag/commit; ignored for local paths.
 
     Returns:
         Exit code: 0 on success, 2 on error.
     """
-    # 1. Validate model path (must be an existing directory) BEFORE reading
-    #    the input so that nothing is ever written to -o on error (UC-109).
-    if model is not None and not model.is_dir():
-        print(f"model not found: {model}", file=sys.stderr)
+    if password is not None and password_stdin:
+        print("password options are mutually exclusive", file=sys.stderr)
         return 2
+    if (password is not None or password_stdin) and input_path.suffix.lower() != ".pdf":
+        print("password options require PDF input", file=sys.stderr)
+        return 2
+    # 1. Validate threshold before any model resolution or file I/O so that a
+    #    bad --threshold never causes a partial write (UC-109).
     # `not (0 <= t <= 1)` is also True for NaN, which fails every comparison.
     if model is not None and not (0.0 <= threshold <= 1.0):
         print(f"invalid threshold: {threshold} (expected a number in [0, 1])", file=sys.stderr)
@@ -88,7 +115,22 @@ def mask_file(
 
     # 4. Load the file text.
     try:
-        text = loader(input_path)
+        if password_stdin:
+            stream = getattr(sys.stdin, "buffer", sys.stdin)
+            line = stream.readline()
+            if not line:
+                print("password input ended", file=sys.stderr)
+                return 2
+            password = (
+                line.decode(sys.stdin.encoding or "utf-8") if isinstance(line, bytes) else line
+            )
+            if password.endswith("\n"):
+                password = password[:-1].removesuffix("\r")
+        text = load_with_password(
+            input_path,
+            password=password,
+            prompt=None if password_stdin else terminal_password_prompt,
+        )
     except FileNotFoundError:
         print(f"not found: {input_path}", file=sys.stderr)
         return 2
@@ -98,9 +140,11 @@ def mask_file(
     except PdfNoTextError as e:
         print(str(e), file=sys.stderr)
         return 3
-    except ValueError as e:
-        # Binary file, encrypted PDF, or other file-related error
+    except (OSError, ValueError) as e:
         print(str(e), file=sys.stderr)
+        return 2
+    except Exception:
+        print(f"could not read: {input_path}", file=sys.stderr)
         return 2
 
     if skip_columns and any("," in item for item in skip_columns):
@@ -114,14 +158,20 @@ def mask_file(
         ]
 
     # 5. Mask the content.
+    suffix = input_path.suffix.lower()
+
     def warn_unknown(col: str) -> None:
         print(f"warning: unknown column: {col}", file=sys.stderr)
 
     if model is not None:
         # Catch model construction and inference errors without a traceback.
         try:
-            anonymizer = piitier.Anonymizer(model=model, threshold=threshold)
-            if skip_columns:
+            anonymizer = piitier.Anonymizer(model=model, revision=revision, threshold=threshold)
+            if suffix == ".json":
+                masked_text = mask_json(
+                    text, detector=anonymizer.detect, numbering_fn=anonymizer.assign
+                )
+            elif skip_columns:
                 masked_text = piitier.mask_csv(
                     text,
                     skip_columns=skip_columns,
@@ -132,8 +182,10 @@ def mask_file(
             else:
                 masked_text = anonymizer.mask(text)
         except (OSError, ValueError, ImportError):
-            print(f"model error: {model}", file=sys.stderr)
+            print(f"model error: could not download or use model: {model}", file=sys.stderr)
             return 2
+    elif suffix == ".json":
+        masked_text = mask_json(text, detector=piitier.detect)
     elif skip_columns:
         masked_text = piitier.mask_csv(
             text,
@@ -146,10 +198,14 @@ def mask_file(
         masked_text = piitier.mask(text)
 
     # 6. Write output.
-    if output_path is None:
-        sys.stdout.write(masked_text)
-    else:
-        output_path.write_text(masked_text, encoding="utf-8")
+    try:
+        if output_path is None:
+            sys.stdout.write(masked_text)
+        else:
+            output_path.write_text(masked_text, encoding="utf-8")
+    except OSError:
+        print(f"could not write: {output_path}", file=sys.stderr)
+        return 2
 
     return 0
 
@@ -192,10 +248,26 @@ def scan_files(paths: list[Path], allowlist: Path | None, write_allowlist: Path 
 
 
 def main() -> int:
+    """Keep interruption and filesystem failures safe at the command boundary."""
+    try:
+        return _main()
+    except KeyboardInterrupt:
+        return 130
+    except OSError:
+        print("filesystem error", file=sys.stderr)
+        return 2
+
+
+def _main() -> int:
     """Main entry point for the piitier CLI."""
     parser = ArgumentParser(
         prog="piitier",
         description="Polish PII anonymiser",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"piitier {piitier.__version__}",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -207,7 +279,7 @@ def main() -> int:
     mask_parser.add_argument(
         "input",
         type=Path,
-        help="Input file path (.txt, .md, .csv, .pdf)",
+        help="Input file path (.txt, .md, .csv, .pdf, .json)",
     )
     mask_parser.add_argument(
         "-o",
@@ -217,12 +289,22 @@ def main() -> int:
         default=None,
         help="Output file path (default: stdout)",
     )
+    passwords = mask_parser.add_mutually_exclusive_group()
+    passwords.add_argument(
+        "--password",
+        help="PDF password (visible in process listings and shell history)",
+    )
+    passwords.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="Read one PDF password line from stdin",
+    )
     mask_parser.add_argument(
         "--model",
-        type=Path,
+        type=str,
         dest="model",
         default=None,
-        help="Path to a local NER checkpoint directory (enables rule+NER fusion)",
+        help="Local checkpoint path or Hugging Face Hub repo id (owner/name)",
     )
     mask_parser.add_argument(
         "--threshold",
@@ -230,6 +312,14 @@ def main() -> int:
         dest="threshold",
         default=0.0,
         help="Minimum NER span score to keep (default: 0.0); ignored without --model",
+    )
+    mask_parser.add_argument(
+        "--revision",
+        type=str,
+        dest="revision",
+        default=None,
+        metavar="REV",
+        help="Hub branch, tag, or commit hash (only used with a Hub repo id)",
     )
     mask_parser.add_argument(
         "--skip-columns",
@@ -250,10 +340,21 @@ def main() -> int:
         "compare",
         help="Inspect original and anonymized text side by side in a terminal",
     )
-    compare_parser.add_argument("input", type=Path, help="Input file (.txt, .md, .csv, .pdf)")
-    compare_parser.add_argument("--model", type=Path, required=True, help="Local NER checkpoint")
+    compare_parser.add_argument(
+        "input", type=Path, help="Input file (.txt, .md, .csv, .json, .pdf)"
+    )
+    compare_parser.add_argument(
+        "--model", type=str, required=True, help="Local checkpoint path or Hub repo id (owner/name)"
+    )
     compare_parser.add_argument("--threshold", type=float, default=0.0, help="Minimum NER score")
     compare_parser.add_argument("--device", default="cpu", help="Torch device (cpu or cuda)")
+    compare_parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        metavar="REV",
+        help="Hub branch, tag, or commit hash",
+    )
 
     scan_parser = subparsers.add_parser(
         "scan",
@@ -273,6 +374,48 @@ def main() -> int:
         default=None,
         help="Write the fingerprints of every finding (plus --allowlist entries) and exit 0",
     )
+    batch_parser = subparsers.add_parser(
+        "mask-batch",
+        help="Batch anonymise a directory of files",
+    )
+    batch_parser.add_argument(
+        "input_dir",
+        type=Path,
+        help="Input directory path",
+    )
+    batch_parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=True,
+        dest="output_dir",
+        help="Output directory path",
+    )
+    batch_parser.add_argument(
+        "--passwords",
+        type=Path,
+        default=None,
+        help="Path to password CSV mapping file",
+    )
+    batch_parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Local checkpoint path or Hub repo id (owner/name)",
+    )
+    batch_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.0,
+        help="Minimum NER span score to keep (default: 0.0); ignored without --model",
+    )
+    batch_parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        metavar="REV",
+        help="Hub branch, tag, or commit hash",
+    )
 
     args = parser.parse_args()
 
@@ -284,14 +427,34 @@ def main() -> int:
         )
         delimiter = "\t" if args.delimiter == "\\t" else args.delimiter
         return mask_file(
-            args.input, args.output, args.model, args.threshold, skip_columns, delimiter
+            args.input,
+            args.output,
+            args.model,
+            args.threshold,
+            skip_columns,
+            delimiter,
+            args.revision,
+            password=args.password,
+            password_stdin=args.password_stdin,
         )
     if args.command == "scan":
         return scan_files(args.paths, args.allowlist, args.write_allowlist)
+    if args.command == "mask-batch":
+        from piitier.batch import mask_batch
+
+        return mask_batch(
+            args.input_dir,
+            args.output_dir,
+            args.passwords,
+            args.model,
+            args.threshold,
+            args.revision,
+            prompt=terminal_password_prompt,
+        )
     if args.command == "compare":
         from piitier.tui import compare_file
 
-        return compare_file(args.input, args.model, args.threshold, args.device)
+        return compare_file(args.input, args.model, args.threshold, args.device, args.revision)
 
     return 1
 

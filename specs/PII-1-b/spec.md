@@ -26,7 +26,7 @@ In:
   (CLAUDE.md invariant 6).
 - PESEL digits may be separated by single spaces, tabs or dashes; the span covers the separators.
   A run starting with `+` or `00` is a phone number and never a PESEL. Both rules are carried over
-  from `trasti/complaint-classifier/scripts/scan_pii.py` (rule `PESEL`, line 86; phone exclusion, lines 318–324).
+  from an earlier private script `scan_pii.py` (rule `PESEL`, line 86; phone exclusion, lines 318–324).
 
 Out:
 - NIP/REGON (PII-1-c), IBAN (PII-1-d), ID card and payment card (PII-1-e), the CLI and file loaders (PII-1-f).
@@ -48,7 +48,7 @@ Change budget: 360 added lines, 7 files, 4 modules
   date must exist.
 - New: `src/piitier/rules/__init__.py`, `src/piitier/rules/pesel.py`, `src/piitier/render.py`,
   `tests/rules/test_pesel.py`, `tests/test_render.py`, `tests/test_api.py`; edit `src/piitier/__init__.py`.
-- Prior art: `/home/mgz/workspace/trasti/complaint-classifier/scripts/scan_pii.py` (rule `PESEL`, line 86)
+- Prior art: an earlier private script `scan_pii.py` (rule `PESEL`, line 86)
   and `tests/test_scan_pii.py::test_phone_not_also_pesel_and_bad_check_digit_not_ignored` (line 50).
   Read them for behaviour. Do not copy code from that repository.
 

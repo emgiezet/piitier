@@ -171,4 +171,4 @@ output_dir: ../custom_out
 
     model_card = out_dir / "MODEL_CARD.md"
     assert model_card.exists()
-    assert "Kalibracja progu" in model_card.read_text(encoding="utf-8")
+    assert "Threshold calibration" in model_card.read_text(encoding="utf-8")
