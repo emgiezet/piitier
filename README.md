@@ -62,6 +62,9 @@ pip install 'piitier[onnx]'      # + ONNX Runtime instead of PyTorch
 ```
 
 Python 3.12+. From source: `git clone https://github.com/emgiezet/piitier && cd piitier && uv sync`.
+Development and primary CI use CPython 3.14 (`.python-version`), with a blocking unit suite on 3.12.
+Python.org lists 3.15.2, but the locked `onnxruntime==1.31.0` has no cp315 wheel or sdist, so CI only
+smoke-tests the rules-only runtime on 3.15.
 
 ## 60-second tour
 

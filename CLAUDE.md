@@ -4,8 +4,9 @@ Polish PII anonymiser for regulated sectors (fintech, insurtech, medtech), publi
 and dataset on the Hugging Face Hub. The design is a hybrid:
 deterministic checksum validators (PESEL, NIP, REGON, IBAN, …) plus a ~300M encoder NER model
 plus a deterministic placeholder renderer with consistent numbering. It ships with PL-PII-Bench,
-a Polish benchmark. Python 3.12, managed with uv. Training uses HF Transformers; export is ONNX
-INT8. Design and roadmap: `docs/PLAN.md`.
+a Polish benchmark. Python 3.12+, managed with uv; development and primary CI run CPython 3.14
+(`.python-version`), with a blocking unit-test job on 3.12. Training uses HF Transformers; export
+is ONNX INT8. Design and roadmap: `docs/PLAN.md`.
 
 ## Task Router
 

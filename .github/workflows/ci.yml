@@ -28,12 +28,64 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --frozen
+      - name: Interpreter
+        run: uv run python -VV
       - name: Hooks (secrets, private keys, ruff, mypy, piitier scan)
         run: uv run pre-commit run --all-files --show-diff-on-failure
       - name: Unit tests
         env:
           HF_HUB_OFFLINE: "1"
         run: uv run pytest -q -m "not integration"
+
+  floor-py312:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.12
+      - name: Interpreter
+        run: uv run --no-sync --python 3.12 python -VV
+      - name: Unit tests
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: uv run --no-sync --python 3.12 pytest -q -m "not integration"
+
+  smoke-py315:
+    # Forward-compatibility signal only; never blocks a PR. Python.org lists 3.15.2.
+    # The locked dev stack cannot run on 3.15: onnxruntime 1.31.0 has no cp315 wheel
+    # or sdist (nor does latest 1.32.0, checked 2026-11-18). Install runtime dependencies
+    # from the lock and test without the heavy stack.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install CPython 3.15
+        run: uv python install 3.15
+      - name: Install runtime dependencies only
+        run: uv sync --frozen --no-dev --python 3.15
+      - name: Rules-only API smoke
+        run: >
+          uv run --no-sync --python 3.15 python -c
+          "import piitier; print(piitier.mask('Poszkodowana Anna Wiśniewska, PESEL 44051401359.'))"
+      # The hypothesis 6.165.0 pin was established on CPython 3.15.0a8, where the dev group's
+      # 6.170.5 failed with `SystemError: unknown slot ID 85`. Whether 6.170.5 works on a final
+      # 3.15.x has not been re-checked; drop the pin once it does.
+      # The deselected test needs the dev-only presidio-analyzer.
+      - name: Unit tests without the heavy stack
+        run: >
+          uv run --no-sync --python 3.15 --with pytest==9.1.1 --with hypothesis==6.165.0
+          pytest -q -m "not integration" --ignore=tests/training
+          --deselect tests/eval/test_baselines.py::test_uc85_rules_system_and_registry
 
   build:
     needs: checks
