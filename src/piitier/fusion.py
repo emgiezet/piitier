@@ -118,6 +118,8 @@ def _priority_key(span: Span) -> tuple[int, float, int, int]:
     2. Higher group weight from TAXONOMY.
     3. Longer span.
     4. Earlier start (negated so that smaller ``start`` → larger key value).
+
+    ``fuse`` breaks a remaining exact tie by input order: the span listed first wins.
     """
     return (
         int(_is_valid_rule(span)),
@@ -179,23 +181,26 @@ def fuse(
     # Step 4: sweep left-to-right, maintaining a lazy-deletion max-heap.
     #
     # Heap entries are 6-tuples:
-    #   (neg_valid, neg_weight, neg_length, start, span_id, span)
-    # where span_id = id(span) guarantees uniqueness so Python never attempts
-    # to compare the Span object.  min-heap on negated priority → max-priority.
+    #   (neg_valid, neg_weight, neg_length, start, position, span)
+    # where position is the span's index in the input (rule spans first, then NER). It is
+    # unique, so Python never compares the Span object, and it makes the winner of an exact
+    # priority tie the span that came first instead of whichever object has the lower id().
+    # min-heap on negated priority → max-priority.
+    position = {id(s): n for n, s in enumerate(all_spans)}
     heap: list[Any] = []
-    active_ids: set[int] = set()  # id(span) for live spans
+    active_ids: set[int] = set()  # input positions of live spans
 
     winner_seq: list[tuple[int, int, Span]] = []
 
     for i, bp in enumerate(breakpoints):
         # Remove spans whose interval has closed at this position.
         for s in span_ends[bp]:
-            active_ids.discard(id(s))
+            active_ids.discard(position[id(s)])
 
         # Add spans whose interval opens at this position.
         for s in span_starts[bp]:
             k = _priority_key(s)
-            sid = id(s)
+            sid = position[id(s)]
             # Negate all key components for max-heap via Python's min-heap.
             # k = (is_valid, weight, length, -start)
             # neg = (-is_valid, -weight, -length, start) since -(-start)=start
