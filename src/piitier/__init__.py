@@ -13,7 +13,7 @@ from piitier.fusion import fuse as _fuse
 from piitier.render import mask as _render_mask
 from piitier.spans import Span
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = ["Anonymizer", "Span", "__version__", "detect", "mask", "mask_csv"]
 

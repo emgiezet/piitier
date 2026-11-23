@@ -9,7 +9,7 @@ more.
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
-![Status: 0.1.0 release candidate](https://img.shields.io/badge/status-0.1.0%20RC-orange)
+![Version 0.1.1](https://img.shields.io/badge/version-0.1.1-blue)
 
 ```text
 $ piitier mask zgloszenie.txt --model training/out/pii-5-v4 --threshold 0.78
@@ -19,7 +19,7 @@ tel. [TELEFON], e-mail [EMAIL]. Rozpoznanie: [ROZPOZNANIE].
 Kwota roszczenia: [KWOTA]. Lekarz prowadzący: [LEKARZ_1].
 ```
 
-> **Status: 0.1.0.** Library, CLI, TUI, training and evaluation pipeline are complete and the
+> **Status: 0.1.1.** Library, CLI, TUI, training and evaluation pipeline are complete and the
 > `pii-5-v4` checkpoint is published at [huggingface.co/emgiezet/piitier](https://huggingface.co/emgiezet/piitier).
 > piitier is a tool, not a certificate of anonymisation; review its output before you rely on it.
 

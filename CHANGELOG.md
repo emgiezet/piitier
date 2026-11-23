@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-23
+
 ### Added
 
 - Password-protected PDF extraction with user or owner credentials for RC4, AES-128 and AES-256, including empty-user restricted PDFs.
@@ -79,4 +81,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ---
 
 [0.1.0]: https://github.com/emgiezet/piitier/compare/605dacbc3e1ca4560c4a9094d773ca45827a472e...v0.1.0
-[Unreleased]: https://github.com/emgiezet/piitier/compare/v0.1.0...release/0.1.0
+[0.1.1]: https://github.com/emgiezet/piitier/compare/v0.1.0...v0.1.1
+[Unreleased]: https://github.com/emgiezet/piitier/compare/v0.1.1...release/0.1.0
