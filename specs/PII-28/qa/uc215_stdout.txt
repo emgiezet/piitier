@@ -1,0 +1,2 @@
+$ time uv run piitier mask <tmp>/uc215_perf_pii28.xlsx -o <tmp>/uc215_perf_pii28_out.xlsx
+real 1.027s; masked cells count 5000

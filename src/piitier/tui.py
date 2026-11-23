@@ -26,7 +26,6 @@ from textual.widgets import (
 
 from piitier import Anonymizer
 from piitier.csvskip import (
-    ParseResult,
     filter_spans,
     parse_csv_field_ranges,
     plan_skips,
@@ -42,6 +41,7 @@ from piitier.loaders import (
 )
 from piitier.render import mask as render_mask
 from piitier.spans import Span
+from piitier.xlsx import RenderedWorkbook, mask_workbook, protected_ranges, render_workbook
 
 
 class PasswordPromptApp(App[str | None]):
@@ -196,46 +196,48 @@ def build_diff(
     return before, after, lines
 
 
-class CsvSelectionScreen(Screen[None]):
-    """Preview CSV records and select columns by position, not header name."""
+class ColumnSelectionScreen(Screen[None]):
+    """Preview table records and select columns by position, not header name."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(
+        self,
+        title: str,
+        headers: list[str],
+        preview_rows: list[list[str]],
+        apply_skips: Callable[[list[str]], list[Span]],
+    ) -> None:
         super().__init__()
-        self.parsed: ParseResult = parse_csv_field_ranges(text, sniff_delimiter(text))
-        first_row = self.parsed.rows[0] if self.parsed.rows else []
-        self.headers = [
-            first_row[index].value if index < len(first_row) else f"Kolumna {index + 1}"
-            for index in range(max((len(row) for row in self.parsed.rows), default=0))
-        ]
+        self.title_text = title
+        self.headers = headers
+        self.preview_rows = preview_rows
+        self.apply_skips = apply_skips
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Horizontal(id="csv-columns"):
-            with Vertical(id="csv-table-wrap"):
-                yield Static("PODGLĄD CSV · pierwsze 50 wierszy", classes="pane-title")
-                yield DataTable(id="csv-preview", zebra_stripes=True)
-            with Vertical(id="csv-selectors"):
+        with Horizontal(id="table-columns"):
+            with Vertical(id="table-wrap"):
+                yield Static(self.title_text, classes="pane-title")
+                yield DataTable(id="table-preview", zebra_stripes=True)
+            with Vertical(id="table-selectors"):
                 yield Static("MASKUJ KOLUMNY", classes="pane-title")
                 yield Static("Odznaczone: bez zmian")
-                with VerticalScroll(id="csv-checkboxes"):
+                with VerticalScroll(id="table-checkboxes"):
                     for index, header in enumerate(self.headers):
                         yield Checkbox(f"{index + 1}. {header}", value=True, id=f"mask-{index + 1}")
-        yield Static("", id="csv-error")
+        yield Static("", id="table-error")
         yield Button("Anonimizuj", id="anonymize", variant="primary")
         yield Footer()
 
     def on_mount(self) -> None:
-        table = self.query_one("#csv-preview", DataTable)
+        table = self.query_one("#table-preview", DataTable)
         if self.headers:
             table.add_columns(
                 *(f"{index + 1}. {header}" for index, header in enumerate(self.headers))
             )
-            for row in self.parsed.rows[1:51]:
+            for row in self.preview_rows:
                 table.add_row(
                     *(
-                        row[index].value.replace("\r", "↵").replace("\n", "↵")
-                        if index < len(row)
-                        else ""
+                        row[index].replace("\r", "↵").replace("\n", "↵") if index < len(row) else ""
                         for index in range(len(self.headers))
                     )
                 )
@@ -250,18 +252,60 @@ class CsvSelectionScreen(Screen[None]):
             if not self.query_one(f"#mask-{index + 1}", Checkbox).value
         ]
         try:
-            assert app.detector is not None
-            ranges = plan_skips(self.parsed, selectors).protected_ranges
-            app.spans = sorted(
-                filter_spans(app.detector(app.text), ranges), key=lambda span: span.start
-            )
+            app.spans = sorted(self.apply_skips(selectors), key=lambda span: span.start)
             if app._numbering_fn is not None:
                 app._numbering = app._numbering_fn(app.text, app.spans)
         except (OSError, ValueError, ImportError):
-            self.query_one("#csv-error", Static).update("Nie udało się uruchomić anonimizacji")
+            self.query_one("#table-error", Static).update("Nie udało się uruchomić anonimizacji")
             return
+        app.skipped = selectors
         app.pop_screen()
         app.call_after_refresh(app._show_selection)
+
+
+def _padded_headers(first_row: list[str], width: int) -> list[str]:
+    return [first_row[i] if i < len(first_row) else f"Kolumna {i + 1}" for i in range(width)]
+
+
+def csv_selection_screen(text: str, detector: Callable[[str], list[Span]]) -> ColumnSelectionScreen:
+    """Column selection for CSV text: preview of the first 50 records after the header."""
+    parsed = parse_csv_field_ranges(text, sniff_delimiter(text))
+    first_row = [cell.value for cell in parsed.rows[0]] if parsed.rows else []
+    width = max((len(row) for row in parsed.rows), default=0)
+
+    def apply_skips(selectors: list[str]) -> list[Span]:
+        return filter_spans(detector(text), plan_skips(parsed, selectors).protected_ranges)
+
+    return ColumnSelectionScreen(
+        "PODGLĄD CSV · pierwsze 50 wierszy",
+        _padded_headers(first_row, width),
+        [[cell.value for cell in row] for row in parsed.rows[1:51]],
+        apply_skips,
+    )
+
+
+def xlsx_selection_screen(
+    rendered: RenderedWorkbook, detector: Callable[[str], list[Span]]
+) -> ColumnSelectionScreen:
+    """Column selection for a workbook: preview of sheet 1, masking applies to every sheet."""
+    rows: list[list[str]] = []
+    for cell in rendered.cells:
+        if cell.sheet_index != 0 or not 2 <= cell.row <= 51:
+            continue
+        while len(rows) < cell.row - 1:
+            rows.append([])
+        rows[cell.row - 2].append(cell.text)
+
+    def apply_skips(selectors: list[str]) -> list[Span]:
+        return filter_spans(detector(rendered.text), protected_ranges(rendered, selectors)[0])
+
+    return ColumnSelectionScreen(
+        f"PODGLĄD XLSX · arkusz {rendered.sheet_titles[0]} z {len(rendered.sheet_titles)}"
+        " · pierwsze 50 wierszy",
+        _padded_headers(list(rendered.headers[0]), rendered.width),
+        rows,
+        apply_skips,
+    )
 
 
 class AnonymizationDiffApp(App[None]):
@@ -274,12 +318,12 @@ class AnonymizationDiffApp(App[None]):
     .pane-title { height: 1; text-style: bold; text-align: center; }
     RichLog { height: 1fr; border: round $primary; }
     #status { height: 1; text-align: center; }
-    #csv-columns { height: 1fr; }
-    #csv-table-wrap { width: 1fr; }
-    #csv-preview { height: 1fr; border: round $primary; }
-    #csv-selectors { width: 34; border: round $primary; padding: 0 1; }
-    #csv-checkboxes { height: 1fr; }
-    #csv-error { height: 1; }
+    #table-columns { height: 1fr; }
+    #table-wrap { width: 1fr; }
+    #table-preview { height: 1fr; border: round $primary; }
+    #table-selectors { width: 34; border: round $primary; padding: 0 1; }
+    #table-checkboxes { height: 1fr; }
+    #table-error { height: 1; }
     #anonymize { width: 100%; }
     #export-controls { height: 3; }
     #export-filename { width: 1fr; }
@@ -303,20 +347,24 @@ class AnonymizationDiffApp(App[None]):
         text: str,
         spans: list[Span],
         *,
-        csv_path: Path | None = None,
+        source_path: Path | None = None,
         detector: Callable[[str], list[Span]] | None = None,
         numbering: dict[tuple[int, int], int] | None = None,
         numbering_fn: Callable[[str, list[Span]], dict[tuple[int, int], int]] | None = None,
+        rendered: RenderedWorkbook | None = None,
     ) -> None:
         super().__init__()
         self.interrupted = False
         self.text = text
         self.spans = sorted(spans, key=lambda span: span.start)
         self.active = 0
-        self.csv_path = csv_path
+        self.source_path = source_path
         self.detector = detector
         self._numbering = numbering
         self._numbering_fn = numbering_fn
+        self.rendered = rendered
+        self.skipped: list[str] = []
+        self.export_suffix = ".xlsx" if rendered is not None else ".csv"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -327,11 +375,11 @@ class AnonymizationDiffApp(App[None]):
             with Vertical(classes="pane"):
                 yield Static("PO · zamaskowane etykiety", classes="pane-title")
                 yield RichLog(id="after", min_width=1, auto_scroll=False, wrap=False)
-        if self.csv_path is not None:
+        if self.source_path is not None:
             with Horizontal(id="export-controls"):
                 yield Input(
-                    value=f"{self.csv_path.stem}_anonymised.csv",
-                    placeholder="Nazwa pliku CSV",
+                    value=f"{self.source_path.stem}_anonymised{self.export_suffix}",
+                    placeholder=f"Nazwa pliku {self.export_suffix[1:].upper()}",
                     id="export-filename",
                 )
                 yield Button("Eksportuj", id="export", variant="primary")
@@ -341,12 +389,16 @@ class AnonymizationDiffApp(App[None]):
 
     def on_mount(self) -> None:
         self._show_selection()
-        if self.csv_path is not None:
-            self.push_screen(CsvSelectionScreen(self.text))
+        if self.source_path is not None:
+            assert self.detector is not None, "column selection needs a detector"
+            if self.rendered is not None:
+                self.push_screen(xlsx_selection_screen(self.rendered, self.detector))
+            else:
+                self.push_screen(csv_selection_screen(self.text, self.detector))
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action in {"next_change", "previous_change"} and (
-            isinstance(self.screen, CsvSelectionScreen) or isinstance(self.focused, Input)
+            isinstance(self.screen, ColumnSelectionScreen) or isinstance(self.focused, Input)
         ):
             return False
         return True
@@ -362,19 +414,23 @@ class AnonymizationDiffApp(App[None]):
             self._show_selection()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id != "export" or self.csv_path is None:
+        if event.button.id != "export" or self.source_path is None:
             return
         name = self.query_one("#export-filename", Input).value.strip()
         status = self.query_one("#export-status", Static)
-        if not name or "/" in name or "\\" in name or not name.lower().endswith(".csv"):
-            status.update("Podaj nazwę pliku CSV bez ścieżki")
+        kind = self.export_suffix[1:].upper()
+        if not name or "/" in name or "\\" in name or not name.lower().endswith(self.export_suffix):
+            status.update(f"Podaj nazwę pliku {kind} bez ścieżki")
             return
-        target = self.csv_path.parent / name
-        if target.resolve() == self.csv_path.resolve():
+        target = self.source_path.parent / name
+        if target.resolve() == self.source_path.resolve():
             status.update("Nie można nadpisać pliku źródłowego")
             return
+        if self.rendered is not None:
+            self._export_workbook(target, status)
+            return
         try:
-            raw = self.csv_path.read_bytes()
+            raw = self.source_path.read_bytes()
             encoding = "utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8"
             try:
                 raw.decode(encoding)
@@ -389,6 +445,24 @@ class AnonymizationDiffApp(App[None]):
             status.update("Nie udało się zapisać pliku")
         else:
             status.update("Zapisano plik CSV")
+
+    def _export_workbook(self, target: Path, status: Static) -> None:
+        assert self.source_path is not None and self.detector is not None
+        if target.exists():
+            status.update("Plik już istnieje")
+            return
+        try:
+            converted = mask_workbook(
+                self.source_path,
+                target,
+                detector=self.detector,
+                skip_columns=self.skipped,
+                numbering=self._numbering,
+            )
+        except (OSError, ValueError):
+            status.update("Nie udało się zapisać pliku")
+        else:
+            status.update(f"Zapisano plik XLSX · formuły zamienione na tekst: {converted}")
 
     def _show_selection(self) -> None:
         before, after, lines = build_diff(self.text, self.spans, self.active, self._numbering)
@@ -440,8 +514,14 @@ def compare_file(
     if loader is None:
         print(f"unsupported file type: {input_path.suffix}", file=sys.stderr)
         return 2
+    suffix = input_path.suffix.lower()
+    rendered: RenderedWorkbook | None = None
     try:
-        text = load_with_password(input_path, prompt=tui_password_prompt)
+        if suffix == ".xlsx":
+            rendered = render_workbook(input_path)
+            text = rendered.text
+        else:
+            text = load_with_password(input_path, prompt=tui_password_prompt)
     except PdfNoTextError:
         print("PDF has no text layer", file=sys.stderr)
         return 3
@@ -462,14 +542,14 @@ def compare_file(
 
     try:
         anonymizer = Anonymizer(model=model, revision=revision, threshold=threshold, device=device)
-        suffix = input_path.suffix.lower()
-        if suffix == ".csv":
+        if suffix in (".csv", ".xlsx"):
             app = AnonymizationDiffApp(
                 text,
                 [],
-                csv_path=input_path,
+                source_path=input_path,
                 detector=anonymizer.detect,
                 numbering_fn=anonymizer.assign,
+                rendered=rendered,
             )
         elif suffix == ".json":
             spans, numbering = detect_json(

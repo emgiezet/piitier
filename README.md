@@ -44,7 +44,7 @@ Inference runs on CPU with no network calls and no telemetry. Rules-only mode ne
 The code is Apache-2.0; the synthetic corpus and benchmark are CC BY 4.0. Every reported number is
 traceable to a report in `eval/reports/`.
 
-## Install
+## Installation
 
 **From PyPI** (no git clone required):
 
@@ -54,15 +54,51 @@ pip install 'piitier[ner]'       # adds torch + transformers for the NER model
 pip install 'piitier[onnx]'      # adds ONNX runtime inference instead of PyTorch
 ```
 
-**From source** (development):
-
-```bash
-git clone https://github.com/emgiezet/piitier && cd piitier
-uv sync            # runtime + dev dependencies (torch/transformers for the NER model)
-```
-
 Rules-only masking (`piitier mask` without `--model`) needs only the base package; importing
 `piitier` never loads torch.
+
+For source development, install [uv](https://docs.astral.sh/uv/) and use the commands below.
+Windows and Linux need x86-64: the pinned `morfeusz2` wheels cover only `win_amd64`,
+macOS universal2 and manylinux x86-64, so Windows on ARM and Linux on ARM cannot resolve
+the lockfile.
+
+### Linux and macOS
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # if uv is missing
+git clone https://github.com/emgiezet/piitier && cd piitier
+uv python install 3.12
+uv sync            # runtime + dev dependencies (torch/transformers for the NER model)
+uv run piitier --help
+```
+
+### Windows (PowerShell)
+
+```powershell
+winget install --id=astral-sh.uv -e
+# or: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+git clone https://github.com/emgiezet/piitier
+cd piitier
+uv python install 3.12
+uv sync
+uv run piitier --help
+```
+
+- Quote what PowerShell would otherwise consume: `--delimiter ";"`, `--skip-columns "PESEL,2"`.
+  `--delimiter "\t"` reaches the CLI as the two literal characters it expects.
+- Write results to a file (`-o out.txt`, `-o out.xlsx`). PowerShell's `>` re-encodes a command's
+  stdout (UTF-16 in Windows PowerShell 5.1), and a legacy console code page cannot print every
+  character a Polish document holds; for console output run `chcp 65001` or set
+  `$env:PYTHONIOENCODING = "utf-8"` first.
+- Development: `uv sync --frozen`, then
+  `uv run pre-commit install --hook-type pre-commit --hook-type pre-push` and
+  `uv run pytest -q -m "not integration"`, the gate CI runs. The gitleaks hook is a Go hook that
+  pre-commit builds on first run; install Go if that step fails.
+- `--device cuda` needs a CUDA build of torch. Check with
+  `uv run python -c "import torch; print(torch.version.cuda)"` and install a CUDA wheel from the
+  PyTorch index if it prints `None`. CI and the training workstation are Linux.
+
+## Quick start
 
 ### Download the model
 
@@ -72,13 +108,11 @@ The published model is available on Hugging Face:
 Pass `--model emgiezet/piitier` to `mask`, `mask-batch` or `compare` to download and
 cache it automatically, without preparing a local checkpoint directory first.
 
-## Quick start
-
 ### Command line
 
 ```bash
 piitier --version
-uv run piitier mask document.pdf                                        # rules only; .txt .md .csv .json .pdf (text layer)
+uv run piitier mask document.pdf                                        # rules only; .txt .md .csv .json .pdf (text layer) .xlsx
 uv run piitier mask document.pdf -o out.txt --model <checkpoint-dir> --threshold 0.78
 uv run piitier mask document.pdf --model emgiezet/piitier --revision <sha> --threshold 0.78  # Hub repo id
 uv run piitier mask customers.csv --skip-columns "ID,2"                 # keep columns by header name or 1-based index
@@ -92,15 +126,59 @@ uv run piitier scan src/ --write-allowlist .pii-allowlist               # write 
 - `mask` writes the masked document. Exit 0 on success; exit 2 on a usage or input error (missing
   file, unsupported type, invalid threshold, model download failure); exit 3 when the input PDF has
   no text layer. Error messages name the path, never the document content.
-- `compare` opens a side-by-side terminal view. For CSV it shows a table preview with per-column
-  checkboxes (all masked by default), then lets you export next to the source without overwriting
-  existing files. `--model` accepts a local directory or a Hugging Face Hub repo id; `--revision`
-  pins a Hub branch, tag, or commit hash.
+- `compare` opens a side-by-side terminal view. For CSV and XLSX it first shows a table preview
+  (up to 50 rows; the first sheet of a workbook) and per-column **Maskuj kolumny** checkboxes.
+  All columns are masked by default; uncheck columns to leave their values unchanged (in every
+  sheet of a workbook), then choose **Anonimizuj**. Export writes next to the source using an
+  editable filename (default `<name>_anonymised.csv` or `<name>_anonymised.xlsx`), without
+  overwriting existing files. Other types open the comparison view directly.
+  `--model` accepts a local directory or a Hugging Face Hub repo id; `--revision` pins a Hub
+  branch, tag, or commit hash.
 - `scan` prints `path:line:column: LABEL` for every checksum-valid identifier. Exit 0 when nothing
   outside the allowlist is found; exit 1 when unallowlisted identifiers are present; exit 2 on a
   missing path or missing allowlist file. `--write-allowlist <file>` writes fingerprints of all
   findings (merged with any existing allowlist) and exits 0 without printing findings. Run as a
   pre-commit hook to gate your own repository.
+
+### Excel workbook output
+
+```bash
+uv run piitier mask report.xlsx                              # every sheet rendered as text
+uv run piitier mask report.xlsx -o masked.xlsx                # masked workbook
+uv run piitier mask report.xlsx -o out.xlsx --skip-columns "Nr polisy,2"
+uv run piitier compare report.xlsx --model <checkpoint-dir>  # select columns, mask, export
+```
+
+`piitier mask report.xlsx -o masked.xlsx` rebuilds a workbook from masked cell values,
+supported cell styles, column widths, row heights, merged cells and freeze panes.
+Free-text styles are sanitised: fonts retain their size, bold, italic and colour, but only
+Calibri, Arial, Aptos, Cambria, Times New Roman, Courier New, Tahoma and Verdana names are kept;
+other names become Calibri. Number formats retain openpyxl's builtins and a restricted set of
+numeric/date/time/colour tokens (or a standalone `@` text section). Other custom formats,
+including quoted literals, backslash-escaped text and literals next to `@`, become `General`.
+Fill, border and alignment attributes are constrained presentation values; source protection
+and named styles are not copied.
+
+Formulas without detections stay formulas; formulas containing detected PII become masked
+**plain text**, not executable formulas, with one warning per conversion on CLI stderr.
+TUI export shows the conversion count in its success status.
+Numeric cells containing detected PII become text too.
+
+To avoid metadata leaks, comments and their authors, hyperlink targets, headers/footers,
+defined names, charts, images and other unsupported workbook objects are discarded.
+Document properties are reset. Sheet names are masked; names that become invalid or too long
+are replaced with neutral names. Formula expressions are not rewritten to follow renamed sheets,
+so review formula references after export. `--skip-columns` intentionally retains those cell
+values, including any PII. Review the output before relying on it.
+
+Workbooks without any worksheets (for example, chartsheets only) are rejected as unsupported
+or corrupt before writing an output. Numbered placeholders in TUI exports match the diff.
+
+`--skip-columns` matches row-1 headers from any sheet, or a 1-based index in every sheet.
+Unknown columns produce a warning without stopping masking. A detection spanning two cells
+is masked in both. Any other output (stdout, `-o out.txt`) is rendered text: `# <sheet>` and
+one line per row with cells joined by ` | `. `--delimiter` remains CSV-only; `--skip-columns`
+is supported only for CSV and XLSX. `piitier scan` skips binary files and does not inspect workbooks.
 
 ### JSON documents
 
@@ -214,6 +292,27 @@ hub_anon.mask(text)
 
 piitier.mask_csv(csv_text, skip_columns=["ID"], delimiter=";")  # column-aware CSV masking
 ```
+
+For workbooks, import `mask_workbook` explicitly; `import piitier` stays free of openpyxl:
+
+```python
+from pathlib import Path
+
+from piitier.xlsx import mask_workbook
+
+converted = mask_workbook(
+    Path("report.xlsx"),
+    Path("out.xlsx"),
+    detector=piitier.detect,
+    on_leak=lambda message: print(f"warning: {message} converted to text"),
+)
+```
+
+It accepts `skip_columns` and `on_unknown_column` like `mask_csv`; use `detector=anon.detect`
+for rules + NER. The return value counts formulas converted to text; `on_leak` reports each
+conversion's sheet and cell.
+For numbered workbook placeholders, pass `numbering=` with the entity-index mapping keyed by
+original rendered-workbook span offsets; clipping a detection to a cell retains its index.
 
 `Anonymizer` also accepts `predictor=` (any object with `predict(text) -> list[Span]`), so you can plug in
 your own model behind the same rules and fusion layer.
@@ -369,7 +468,7 @@ design rationale and roadmap.
 
 | Path | Contents |
 |---|---|
-| `src/piitier/` | library: `rules/` (checksum validators), `ner/` (inference), `fusion.py`, `render.py`, `loaders.py`, `csvskip.py`, `jsonmask.py`, `cli.py`, `tui.py`, `datagen/` |
+| `src/piitier/` | library: `rules/` (checksum validators), `ner/` (inference), `fusion.py`, `render.py`, `loaders.py`, `csvskip.py`, `jsonmask.py`, `xlsx.py`, `cli.py`, `tui.py`, `datagen/` |
 | `training/` | fine-tuning, calibration and ONNX export, driven by `training/configs/*.yaml` |
 | `training/model_cards/` | model cards for each released checkpoint |
 | `eval/` | metrics, baseline adapters, benchmark runner and reports |

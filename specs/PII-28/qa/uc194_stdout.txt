@@ -1,0 +1,2 @@
+$ piitier mask <tmp>/qa_pii28.xlsx --skip-columns "Brak"
+stdout rendered text with both sheets masked; stderr: warning: unknown column: Brak

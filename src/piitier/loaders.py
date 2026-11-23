@@ -1,11 +1,12 @@
 """File loaders with encoding detection.
 
-Supports .txt, .md, .csv, .json and .pdf files through an extension registry.
+Supports .txt, .md, .csv, .json, .pdf and .xlsx files through an extension registry.
 
 Invariant: text files (.txt, .md, .csv) are read as strings and masked as one,
 preserving byte-for-byte structure (Markdown syntax, delimiters, line endings).
 PDF files: all pages extracted verbatim and joined with '\\n'; empty pages preserved.
 JSON files: validate UTF-8 JSON while retaining BOM, whitespace and source escapes.
+XLSX files: every worksheet rendered as text (see ``piitier.xlsx``).
 """
 
 from __future__ import annotations
@@ -130,6 +131,13 @@ def load_pdf(path: Path, password: str | None = None) -> str:
     return "\n".join(pages_text)
 
 
+def load_xlsx(path: Path) -> str:
+    """Render every worksheet as text (see piitier.xlsx.render_workbook)."""
+    from piitier.xlsx import render_workbook  # deferred: keeps openpyxl out of CLI startup
+
+    return render_workbook(path).text
+
+
 # Registry: extension → loader function
 _LOADERS: dict[str, Callable[[Path], str]] = {
     ".txt": load_text_file,
@@ -137,6 +145,7 @@ _LOADERS: dict[str, Callable[[Path], str]] = {
     ".csv": load_text_file,
     ".json": load_json,
     ".pdf": load_pdf,
+    ".xlsx": load_xlsx,
 }
 
 

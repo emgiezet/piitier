@@ -499,7 +499,9 @@ def test_uc169_skip_columns_rejected_for_txt(tmp_txt_pesel: Path) -> None:
     rc, out, err = run_piitier_mask(["mask", str(tmp_txt_pesel), "--skip-columns", "PESEL"])
     assert rc == 2
     assert out == b""
-    assert err == f"--skip-columns is only supported for .csv files: {tmp_txt_pesel}\n".encode()
+    assert err == (
+        f"--skip-columns is only supported for .csv and .xlsx files: {tmp_txt_pesel}\n".encode()
+    )
 
 
 def test_uc170_delimiter_requires_skip_columns(skip_csv: Path) -> None:
