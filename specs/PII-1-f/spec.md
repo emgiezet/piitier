@@ -24,7 +24,7 @@ In:
   delimiters, quoting, line endings) survives byte for byte.
 - Decoding is UTF-8 first (BOM tolerated), then `cp1250`; if both fail, exit 2. Output is always
   UTF-8. A NUL byte in the first 4096 bytes means the file is binary: exit 2. Both rules are carried
-  over from `trasti/complaint-classifier/scripts/scan_pii.py` (lines 1058–1065 and 460).
+  over from an earlier private script `scan_pii.py` (lines 1058–1065 and 460).
 - Exit codes: 0 success, 2 usage or input error.
 - A loader registry keyed by extension, so PII-1-g adds `.pdf` without touching `cli.py`.
 

@@ -35,7 +35,7 @@ Change budget: 200 added lines, 5 files, 5 modules
 ## Context
 
 - `src/piitier/loaders.py` (registry) and `src/piitier/cli.py`, from PII-1-f.
-- Prior art: `trasti/complaint-classifier/scripts/scan_pii.py` lines 814–818 (page extraction), and
+- Prior art: an earlier private script `scan_pii.py` lines 814–818 (page extraction), and
   `tests/test_scan_pii.py::test_encrypted_pdf_is_not_reported_clean` (line 355) and
   `tests/fixtures.py::pdf_bytes` / `scanned_pdf_bytes` (lines 26, 81). Read them for behaviour.
   Do not copy code from that repository.

@@ -47,6 +47,9 @@ path = "src/piitier/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/piitier"]
 
+[tool.hatch.build.targets.sdist]
+include = ["/src/piitier", "/pyproject.toml", "/README.md", "/CHANGELOG.md", "/LICENSE", "/NOTICE"]
+
 [dependency-groups]
 dev = [
     "accelerate==1.15.0",

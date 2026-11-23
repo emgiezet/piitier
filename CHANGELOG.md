@@ -17,6 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - A 16-digit number next to a comma, or glued to a word that is not a hex token, is reported as a `suspect` card number and masked. This includes Polish decimal-comma fractions with 16 digits.
+- The sdist contains only `src/piitier`, `pyproject.toml`, `README.md`, `CHANGELOG.md`, `LICENSE` and `NOTICE`. It previously carried the whole repository.
 
 ### Fixed
 
