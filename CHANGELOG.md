@@ -14,10 +14,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Masked credential entry before the existing comparison UI, with cancellation and Ctrl-C handling before model loading.
 - `.json` input for `mask`, `mask-batch` and `compare`: string values are masked in place, keys, numbers and structure are left untouched (`src/piitier/jsonmask.py`). ([#24](https://github.com/emgiezet/piitier/pull/24))
 
+### Changed
+
+- A 16-digit number next to a comma, or glued to a word that is not a hex token, is reported as a `suspect` card number and masked. This includes Polish decimal-comma fractions with 16 digits.
+
 ### Fixed
 
 - Rules-only masking (`piitier.mask`, `mask_csv`, `piitier mask`, `mask-batch`) deleted the text after a 14-digit number that has REGON-14 shape and passes the Luhn check: both detectors reported the same range and both replacements were applied. `render.mask` now resolves overlapping spans before replacing.
 - The label chosen for two detections with the same range, status and risk weight depended on object identity, so the same input could be masked as `[REGON]` or `[NR_KARTY]`. The first detection in input order now wins.
+- Card numbers next to a comma or glued to a word were not detected, so comma-delimited CSV files came back unmasked; a Luhn-invalid number in those positions was dropped instead of marked `suspect`.
 
 ## [0.1.0] - 2026-10-27
 
