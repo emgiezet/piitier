@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `.github/workflows/publish.yml`: builds from the released tag and uploads to PyPI through trusted publishing on `release: published` or manual dispatch.
+- Issue forms for bug reports, feature requests and model-quality reports; security reports go through private advisories.
+- `docs/CLI.md`: full subcommand, option and exit-code reference, moved out of the README.
+- `docs/media/`: 48-second explainer video (English and Polish) on threshold, fusion, `suspect`, coreference and the renderer.
+
+### Changed
+
+- README rewritten as the public landing page with live badges.
+
 ## [0.1.1] - 2026-11-23
 
 ### Added

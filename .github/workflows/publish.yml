@@ -1,0 +1,57 @@
+name: publish
+
+# Builds the wheel and sdist from the released tag and uploads them to PyPI through
+# trusted publishing (OIDC). No API token is stored in the repository. The PyPI project
+# must list this workflow as a trusted publisher: owner emgiezet, repository piitier,
+# workflow publish.yml, environment pypi.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (for example v0.1.1)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: astral-sh/setup-uv@v10.3.2
+      - name: Build
+        run: uv build
+      - name: Version matches tag
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          want="${tag#v}"
+          got=$(uv run --no-project --with dist/*.whl python -c 'import piitier; print(piitier.__version__)')
+          test "$got" = "$want" || { echo "wheel is $got, tag is $tag"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/piitier/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
